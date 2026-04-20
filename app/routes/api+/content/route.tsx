@@ -1,7 +1,11 @@
 import { listPublishedContent } from "~/lib/content.server";
+import { requireApiToken } from "~/lib/auth.server";
 import type { Route } from "./+types/route";
 
 export async function loader({ request }: Route.LoaderArgs) {
+  const denied = requireApiToken(request);
+  if (denied) return denied;
+
   const url = new URL(request.url);
   const tag = url.searchParams.get("tag");
 
@@ -23,6 +27,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     {
       items: items.map((item) => ({
         slug: item.slug,
+        contentType: item.contentType,
         title: item.meta.title,
         description: item.meta.description,
         tags: item.meta.tags,

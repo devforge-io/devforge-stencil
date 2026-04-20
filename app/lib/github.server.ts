@@ -51,11 +51,46 @@ function getConfig(): GitHubConfig {
   return { token, owner, repo, branch, publishBranch, contentPath };
 }
 
+export type ContentType = "markdown" | "page";
+
+const CONTENT_EXTENSIONS: Record<ContentType, string> = {
+  markdown: ".md",
+  page: ".page",
+};
+
+const ALL_CONTENT_EXTENSIONS = Object.values(CONTENT_EXTENSIONS);
+
+export function contentFilePath(
+  contentPath: string,
+  slug: string,
+  type: ContentType
+): string {
+  return `${contentPath}/${slug}${CONTENT_EXTENSIONS[type]}`;
+}
+
+export function isContentFile(filename: string): boolean {
+  return ALL_CONTENT_EXTENSIONS.some((ext) => filename.endsWith(ext));
+}
+
+export function typeFromFilename(filename: string): ContentType {
+  if (filename.endsWith(".page")) return "page";
+  return "markdown";
+}
+
+export function slugFromFilename(filename: string): string {
+  for (const ext of ALL_CONTENT_EXTENSIONS) {
+    if (filename.endsWith(ext)) {
+      return filename.slice(0, -ext.length);
+    }
+  }
+  return filename.replace(/\.[^.]+$/, "");
+}
+
 export function getGitHubConfig(): GitHubConfig {
   return getConfig();
 }
 
-export async function listContentFiles(): Promise<GitHubFile[]> {
+export async function listContentFiles(): Promise<(GitHubFile & { contentType: ContentType })[]> {
   const config = getConfig();
   const octokit = getOctokit(config.token);
 
@@ -73,13 +108,14 @@ export async function listContentFiles(): Promise<GitHubFile[]> {
 
     return data
       .filter(
-        (item) => item.type === "file" && item.name.endsWith(".md")
+        (item) => item.type === "file" && isContentFile(item.name)
       )
       .map((item) => ({
         name: item.name,
         path: item.path,
         sha: item.sha,
         size: item.size ?? 0,
+        contentType: typeFromFilename(item.name),
         type: item.type as "file",
       }));
   } catch (error: unknown) {
@@ -91,11 +127,12 @@ export async function listContentFiles(): Promise<GitHubFile[]> {
 }
 
 export async function getFileContent(
-  slug: string
+  slug: string,
+  type: ContentType = "markdown"
 ): Promise<GitHubFileContent | null> {
   const config = getConfig();
   const octokit = getOctokit(config.token);
-  const filePath = `${config.contentPath}/${slug}.md`;
+  const filePath = contentFilePath(config.contentPath, slug, type);
 
   try {
     const { data } = await octokit.rest.repos.getContent({
@@ -128,11 +165,12 @@ export async function createOrUpdateFile(
   slug: string,
   content: string,
   message: string,
-  sha?: string
+  sha?: string,
+  type: ContentType = "markdown"
 ): Promise<{ sha: string }> {
   const config = getConfig();
   const octokit = getOctokit(config.token);
-  const filePath = `${config.contentPath}/${slug}.md`;
+  const filePath = contentFilePath(config.contentPath, slug, type);
 
   const params: {
     owner: string;
@@ -173,11 +211,12 @@ export async function createOrUpdateFile(
 export async function deleteFile(
   slug: string,
   sha: string,
-  message: string
+  message: string,
+  type: ContentType = "markdown"
 ): Promise<void> {
   const config = getConfig();
   const octokit = getOctokit(config.token);
-  const filePath = `${config.contentPath}/${slug}.md`;
+  const filePath = contentFilePath(config.contentPath, slug, type);
 
   await octokit.rest.repos.deleteFile({
     owner: config.owner,
@@ -191,11 +230,12 @@ export async function deleteFile(
 
 export async function getFileAtCommit(
   slug: string,
-  commitSha: string
+  commitSha: string,
+  type: ContentType = "markdown"
 ): Promise<string | null> {
   const config = getConfig();
   const octokit = getOctokit(config.token);
-  const filePath = `${config.contentPath}/${slug}.md`;
+  const filePath = contentFilePath(config.contentPath, slug, type);
 
   try {
     const { data } = await octokit.rest.repos.getContent({
@@ -217,11 +257,12 @@ export async function getFileAtCommit(
 
 export async function getFileBlobShaAtCommit(
   slug: string,
-  commitSha: string
+  commitSha: string,
+  type: ContentType = "markdown"
 ): Promise<string | null> {
   const config = getConfig();
   const octokit = getOctokit(config.token);
-  const filePath = `${config.contentPath}/${slug}.md`;
+  const filePath = contentFilePath(config.contentPath, slug, type);
 
   try {
     const { data } = await octokit.rest.repos.getContent({
@@ -243,7 +284,7 @@ export async function getFileBlobShaAtCommit(
 
 // --- Published (main branch) operations ---
 
-export async function listPublishedFiles(): Promise<GitHubFile[]> {
+export async function listPublishedFiles(): Promise<(GitHubFile & { contentType: ContentType })[]> {
   const config = getConfig();
   const octokit = getOctokit(config.token);
 
@@ -260,13 +301,14 @@ export async function listPublishedFiles(): Promise<GitHubFile[]> {
     }
 
     return data
-      .filter((item) => item.type === "file" && item.name.endsWith(".md"))
+      .filter((item) => item.type === "file" && isContentFile(item.name))
       .map((item) => ({
         name: item.name,
         path: item.path,
         sha: item.sha,
         size: item.size ?? 0,
         type: item.type as "file",
+        contentType: typeFromFilename(item.name),
       }));
   } catch (error: unknown) {
     if (isNotFoundError(error)) {
@@ -277,11 +319,12 @@ export async function listPublishedFiles(): Promise<GitHubFile[]> {
 }
 
 export async function getPublishedFileContent(
-  slug: string
+  slug: string,
+  type: ContentType = "markdown"
 ): Promise<GitHubFileContent | null> {
   const config = getConfig();
   const octokit = getOctokit(config.token);
-  const filePath = `${config.contentPath}/${slug}.md`;
+  const filePath = contentFilePath(config.contentPath, slug, type);
 
   try {
     const { data } = await octokit.rest.repos.getContent({
@@ -305,15 +348,15 @@ export async function getPublishedFileContent(
   }
 }
 
-export async function publishFile(slug: string): Promise<void> {
+export async function publishFile(slug: string, type: ContentType = "markdown"): Promise<void> {
   const config = getConfig();
   const octokit = getOctokit(config.token);
-  const filePath = `${config.contentPath}/${slug}.md`;
+  const filePath = contentFilePath(config.contentPath, slug, type);
 
   // Get the file content from the draft branch
-  const draftContent = await getFileContent(slug);
+  const draftContent = await getFileContent(slug, type);
   if (!draftContent) {
-    throw new Error(`File ${slug}.md not found on ${config.branch} branch`);
+    throw new Error(`File ${slug} not found on ${config.branch} branch`);
   }
 
   // Check if file exists on publish branch to get its SHA
@@ -357,15 +400,14 @@ export async function publishFile(slug: string): Promise<void> {
   await octokit.rest.repos.createOrUpdateFileContents(params);
 }
 
-export async function unpublishFile(slug: string): Promise<void> {
+export async function unpublishFile(slug: string, type: ContentType = "markdown"): Promise<void> {
   const config = getConfig();
   const octokit = getOctokit(config.token);
-  const filePath = `${config.contentPath}/${slug}.md`;
+  const filePath = contentFilePath(config.contentPath, slug, type);
 
-  // Get the file SHA on the publish branch
-  const published = await getPublishedFileContent(slug);
+  const published = await getPublishedFileContent(slug, type);
   if (!published) {
-    return; // Already not published
+    return;
   }
 
   await octokit.rest.repos.deleteFile({
@@ -378,16 +420,12 @@ export async function unpublishFile(slug: string): Promise<void> {
   });
 }
 
-export async function isFilePublished(slug: string): Promise<boolean> {
-  const published = await getPublishedFileContent(slug);
-  return published !== null;
-}
-
 export async function getPublishStatus(
-  slug: string
+  slug: string,
+  type: ContentType = "markdown"
 ): Promise<{ published: boolean; upToDate: boolean }> {
-  const draft = await getFileContent(slug);
-  const published = await getPublishedFileContent(slug);
+  const draft = await getFileContent(slug, type);
+  const published = await getPublishedFileContent(slug, type);
 
   if (!published) {
     return { published: false, upToDate: false };
@@ -396,17 +434,17 @@ export async function getPublishStatus(
     return { published: true, upToDate: true };
   }
 
-  // Compare content (sha is content-addressable)
   const upToDate = draft.sha === published.sha;
   return { published: true, upToDate };
 }
 
 export async function getPublishedFileSha(
-  slug: string
+  slug: string,
+  type: ContentType = "markdown"
 ): Promise<string | null> {
   const config = getConfig();
   const octokit = getOctokit(config.token);
-  const filePath = `${config.contentPath}/${slug}.md`;
+  const filePath = contentFilePath(config.contentPath, slug, type);
 
   try {
     const { data } = await octokit.rest.repos.getContent({
@@ -428,11 +466,12 @@ export async function getPublishedFileSha(
 
 export async function getFileHistory(
   slug: string,
-  branch?: string
+  branch?: string,
+  type: ContentType = "markdown"
 ): Promise<GitHubCommit[]> {
   const config = getConfig();
   const octokit = getOctokit(config.token);
-  const filePath = `${config.contentPath}/${slug}.md`;
+  const filePath = contentFilePath(config.contentPath, slug, type);
 
   const { data } = await octokit.rest.repos.listCommits({
     owner: config.owner,

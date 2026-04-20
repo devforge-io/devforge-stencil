@@ -1,6 +1,6 @@
 import { Link } from "react-router";
 import { useState, useCallback } from "react";
-import { getContentHistory } from "~/lib/content.server";
+import { getContent, getContentHistory } from "~/lib/content.server";
 import { formatDateTime } from "~/lib/format";
 import type { Route } from "./+types/route";
 
@@ -17,7 +17,11 @@ interface VersionData {
 }
 
 export async function loader({ params }: Route.LoaderArgs) {
-  const commits = await getContentHistory(params.slug);
+  const content = await getContent(params.slug);
+  if (!content) {
+    throw new Response("Not Found", { status: 404 });
+  }
+  const commits = await getContentHistory(params.slug, content.contentType);
   return { slug: params.slug, commits };
 }
 

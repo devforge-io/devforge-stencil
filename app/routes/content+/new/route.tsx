@@ -1,7 +1,8 @@
 import { Form, redirect, useNavigation } from "react-router";
 import { useState } from "react";
-import { saveContent } from "~/lib/content.server";
+import { saveContent, type ContentType } from "~/lib/content.server";
 import { MarkdownEditor } from "~/components/markdown-editor";
+import { buildPageRaw } from "~/lib/page.server";
 import type { Route } from "./+types/route";
 
 export async function action({ request }: Route.ActionArgs) {
@@ -10,6 +11,7 @@ export async function action({ request }: Route.ActionArgs) {
   const title = (formData.get("title") as string)?.trim();
   const description = (formData.get("description") as string)?.trim();
   const tags = (formData.get("tags") as string)?.trim();
+  const contentType = (formData.get("contentType") as ContentType) ?? "markdown";
   const body = (formData.get("body") as string) ?? "";
   const draft = formData.get("draft") === "on";
 
@@ -21,21 +23,34 @@ export async function action({ request }: Route.ActionArgs) {
     return { error: "Slug must be lowercase alphanumeric with hyphens" };
   }
 
-  const frontmatter = [
-    "---",
-    `title: "${title}"`,
-    description ? `description: "${description}"` : null,
-    tags ? `tags: [${tags.split(",").map((t) => `"${t.trim()}"`).join(", ")}]` : null,
-    `publishedAt: "${new Date().toISOString()}"`,
-    draft ? `draft: true` : null,
-    "---",
-  ]
-    .filter(Boolean)
-    .join("\n");
+  let raw: string;
 
-  const raw = `${frontmatter}\n\n${body}`;
+  if (contentType === "page") {
+    const fm: Record<string, unknown> = { title };
+    if (description) fm.description = description;
+    if (tags) fm.tags = tags.split(",").map((t) => t.trim());
+    fm.publishedAt = new Date().toISOString();
+    if (draft) fm.draft = true;
+    raw = buildPageRaw(fm, "{}", "", "");
+  } else {
+    const frontmatter = [
+      "---",
+      `title: "${title}"`,
+      description ? `description: "${description}"` : null,
+      tags
+        ? `tags: [${tags.split(",").map((t) => `"${t.trim()}"`).join(", ")}]`
+        : null,
+      `publishedAt: "${new Date().toISOString()}"`,
+      draft ? `draft: true` : null,
+      "---",
+    ]
+      .filter(Boolean)
+      .join("\n");
 
-  await saveContent(slug, raw);
+    raw = `${frontmatter}\n\n${body}`;
+  }
+
+  await saveContent(slug, raw, undefined, contentType);
 
   return redirect(`/content/${slug}`);
 }
@@ -45,6 +60,7 @@ export default function NewContent({ actionData }: Route.ComponentProps) {
   const isSubmitting = navigation.state === "submitting";
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
+  const [contentType, setContentType] = useState<ContentType>("markdown");
 
   const slugify = (text: string) =>
     text
@@ -57,9 +73,36 @@ export default function NewContent({ actionData }: Route.ComponentProps) {
       <h1 className="text-2xl font-bold mb-6">New Content</h1>
 
       <Form method="post" className="space-y-4">
+        {/* Content type picker */}
+        <div className="flex gap-2 mb-2">
+          {(
+            [
+              ["markdown", "Article (Markdown)"],
+              ["page", "Page (Visual Builder)"],
+            ] as const
+          ).map(([type, label]) => (
+            <button
+              key={type}
+              type="button"
+              onClick={() => setContentType(type)}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors border ${
+                contentType === type
+                  ? "bg-brand-600 text-white border-brand-600"
+                  : "bg-white dark:bg-gray-900 border-gray-300 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:border-brand-500"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <input type="hidden" name="contentType" value={contentType} />
+
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label htmlFor="title" className="block text-sm font-medium mb-1.5">
+            <label
+              htmlFor="title"
+              className="block text-sm font-medium mb-1.5"
+            >
               Title
             </label>
             <input
@@ -72,7 +115,10 @@ export default function NewContent({ actionData }: Route.ComponentProps) {
             />
           </div>
           <div>
-            <label htmlFor="slug" className="block text-sm font-medium mb-1.5">
+            <label
+              htmlFor="slug"
+              className="block text-sm font-medium mb-1.5"
+            >
               Slug
             </label>
             <input
@@ -87,7 +133,10 @@ export default function NewContent({ actionData }: Route.ComponentProps) {
         </div>
 
         <div>
-          <label htmlFor="description" className="block text-sm font-medium mb-1.5">
+          <label
+            htmlFor="description"
+            className="block text-sm font-medium mb-1.5"
+          >
             Description
           </label>
           <input
@@ -109,12 +158,20 @@ export default function NewContent({ actionData }: Route.ComponentProps) {
           />
         </div>
 
-        <div>
-          <label className="block text-sm font-medium mb-1.5">
-            Content (Markdown)
-          </label>
-          <MarkdownEditor value={body} onChange={setBody} name="body" />
-        </div>
+        {contentType === "markdown" && (
+          <div>
+            <label className="block text-sm font-medium mb-1.5">
+              Content (Markdown)
+            </label>
+            <MarkdownEditor value={body} onChange={setBody} name="body" />
+          </div>
+        )}
+
+        {contentType === "page" && (
+          <p className="text-sm text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-900 p-4 rounded-lg">
+            The visual page builder will open after you create this page.
+          </p>
+        )}
 
         <div className="flex items-center gap-2">
           <input
@@ -140,7 +197,7 @@ export default function NewContent({ actionData }: Route.ComponentProps) {
             disabled={isSubmitting}
             className="px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition-colors text-sm font-medium disabled:opacity-50"
           >
-            {isSubmitting ? "Saving..." : "Create"}
+            {isSubmitting ? "Creating..." : "Create"}
           </button>
         </div>
       </Form>

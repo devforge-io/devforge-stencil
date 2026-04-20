@@ -13,18 +13,19 @@ export async function loader({ params }: Route.LoaderArgs) {
   if (!content) {
     throw new Response("Not Found", { status: 404 });
   }
-  const publishStatus = await getContentPublishStatus(params.slug);
+  const publishStatus = await getContentPublishStatus(params.slug, content.contentType);
   return { content, publishStatus };
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
   const formData = await request.formData();
   const intent = formData.get("intent");
+  const contentType = (formData.get("contentType") as "markdown" | "page") ?? "markdown";
 
   if (intent === "publish") {
-    await publishContent(params.slug);
+    await publishContent(params.slug, contentType);
   } else if (intent === "unpublish") {
-    await unpublishContent(params.slug);
+    await unpublishContent(params.slug, contentType);
   }
 
   return { ok: true };
@@ -67,9 +68,13 @@ export default function ContentView({ loaderData }: Route.ComponentProps) {
               {content.frontmatter.description}
             </p>
           )}
+          <code className="text-xs text-gray-400 dark:text-gray-500 font-mono mt-1">
+            {content.sha.slice(0, 7)}
+          </code>
         </div>
         <div className="flex gap-2">
           <Form method="post">
+            <input type="hidden" name="contentType" value={content.contentType} />
             {publishStatus.published && publishStatus.upToDate ? (
               <button
                 type="submit"
@@ -128,12 +133,22 @@ export default function ContentView({ loaderData }: Route.ComponentProps) {
         )}
       </div>
 
-      <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg p-8">
-        <article
-          className="prose max-w-none"
-          dangerouslySetInnerHTML={{ __html: content.html }}
-        />
-      </div>
+      {content.contentType === "page" && "css" in content ? (
+        <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg overflow-hidden">
+          <iframe
+            srcDoc={`<!DOCTYPE html><html><head><script src="https://cdn.tailwindcss.com"><\/script><script>tailwind.config={prefix:'tw-'}<\/script><style>${(content as { css: string }).css}</style></head><body>${content.html}</body></html>`}
+            className="w-full min-h-[500px] border-0"
+            title={content.frontmatter.title}
+          />
+        </div>
+      ) : (
+        <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg p-8">
+          <article
+            className="prose max-w-none"
+            dangerouslySetInnerHTML={{ __html: content.html }}
+          />
+        </div>
+      )}
 
       {publishStatus.published && (
         <div className="mt-4 text-xs text-gray-400">

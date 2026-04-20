@@ -47,6 +47,15 @@ export default function ContentIndex({ loaderData }: Route.ComponentProps) {
                 <div>
                   <h2 className="font-semibold flex items-center gap-2">
                     {item.meta.title}
+                    <span
+                      className={`text-xs font-normal px-2 py-0.5 rounded-full ${
+                        item.contentType === "page"
+                          ? "bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300"
+                          : "bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300"
+                      }`}
+                    >
+                      {item.contentType === "page" ? "Page" : "Article"}
+                    </span>
                     {item.published ? (
                       item.upToDate ? (
                         <span className="text-xs font-normal px-2 py-0.5 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded-full">

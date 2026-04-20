@@ -45,3 +45,44 @@ export async function isAuthenticated(request: Request): Promise<boolean> {
   const session = await getSession(request);
   return !!session.get("username");
 }
+
+/**
+ * Validate API access. If API_TOKEN is set in env, requests must include
+ * either `Authorization: Bearer <token>` header or `?token=<token>` query param.
+ * If API_TOKEN is not set, all requests are allowed (public API).
+ *
+ * Returns null if authorized, or a Response to return if unauthorized.
+ */
+export function requireApiToken(request: Request): Response | null {
+  const apiToken = process.env.API_TOKEN;
+
+  // If no token configured, API is public
+  if (!apiToken) return null;
+
+  // Check Authorization header
+  const authHeader = request.headers.get("Authorization");
+  if (authHeader) {
+    const [scheme, token] = authHeader.split(" ", 2);
+    if (scheme?.toLowerCase() === "bearer" && token === apiToken) {
+      return null;
+    }
+  }
+
+  // Check query param
+  const url = new URL(request.url);
+  const queryToken = url.searchParams.get("token");
+  if (queryToken === apiToken) {
+    return null;
+  }
+
+  return Response.json(
+    { error: "Unauthorized. Provide a valid API token via Authorization: Bearer <token> header or ?token= query parameter." },
+    {
+      status: 401,
+      headers: {
+        "Access-Control-Allow-Origin": "*",
+        "WWW-Authenticate": "Bearer",
+      },
+    }
+  );
+}

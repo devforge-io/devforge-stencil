@@ -92,7 +92,7 @@ export function WhiteboardEditor({
 
   return (
     <div className="relative">
-      <div className="absolute top-2 right-2 z-10">
+      <div className="absolute -top-10 right-2 z-10">
         <button
           type="button"
           onClick={handleSave}

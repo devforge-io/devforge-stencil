@@ -1,6 +1,10 @@
+import { requireApiToken } from "~/lib/auth.server";
 import type { Route } from "./+types/route";
 
 export function loader({ params, request }: Route.LoaderArgs) {
+  const denied = requireApiToken(request);
+  if (denied) return denied;
+
   const url = new URL(request.url);
   const origin = url.origin;
   const slug = params.slug;

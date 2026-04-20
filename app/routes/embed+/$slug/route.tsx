@@ -1,4 +1,5 @@
 import { getPublishedContent } from "~/lib/content.server";
+import { requireApiToken } from "~/lib/auth.server";
 import type { Route } from "./+types/route";
 
 const EMBED_STYLES = `
@@ -27,7 +28,10 @@ const EMBED_STYLES = `
   hr { margin: 2rem 0; border: none; border-top: 1px solid #e5e7eb; }
 `;
 
-export async function loader({ params }: Route.LoaderArgs) {
+export async function loader({ params, request }: Route.LoaderArgs) {
+  const denied = requireApiToken(request);
+  if (denied) return denied;
+
   const content = await getPublishedContent(params.slug);
   if (!content) {
     return new Response("Not found", { status: 404 });
@@ -39,10 +43,11 @@ export async function loader({ params }: Route.LoaderArgs) {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>${escapeHtml(content.frontmatter.title)}</title>
-  <style>${EMBED_STYLES}</style>
+  ${content.contentType === "page" ? `<script src="https://cdn.tailwindcss.com"><\/script><script>tailwind.config={prefix:'tw-'}<\/script>` : ""}
+  <style>${content.contentType === "page" && "css" in content ? (content as { css: string }).css : EMBED_STYLES}</style>
 </head>
 <body class="stencil-embed">
-  <article>${content.html}</article>
+  ${content.contentType === "page" ? content.html : `<article>${content.html}</article>`}
   <script>
     // Auto-resize for iframe embedding
     function notifySize() {
