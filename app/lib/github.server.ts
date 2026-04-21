@@ -208,6 +208,70 @@ export async function createOrUpdateFile(
   }
 }
 
+// --- Compiled CSS file operations (for page content type) ---
+
+export async function saveCompiledCss(
+  slug: string,
+  css: string,
+  branch?: string
+): Promise<void> {
+  const config = getConfig();
+  const octokit = getOctokit(config.token);
+  const filePath = `${config.contentPath}/${slug}.css`;
+  const targetBranch = branch ?? config.branch;
+
+  let existingSha: string | undefined;
+  try {
+    const { data } = await octokit.rest.repos.getContent({
+      owner: config.owner,
+      repo: config.repo,
+      path: filePath,
+      ref: targetBranch,
+    });
+    if (!Array.isArray(data) && data.type === "file") {
+      existingSha = data.sha;
+    }
+  } catch {
+    // doesn't exist yet
+  }
+
+  await octokit.rest.repos.createOrUpdateFileContents({
+    owner: config.owner,
+    repo: config.repo,
+    path: filePath,
+    message: `Update compiled CSS for ${slug}`,
+    content: Buffer.from(css).toString("base64"),
+    branch: targetBranch,
+    ...(existingSha ? { sha: existingSha } : {}),
+  });
+}
+
+export async function getCompiledCss(
+  slug: string,
+  branch?: string
+): Promise<string | null> {
+  const config = getConfig();
+  const octokit = getOctokit(config.token);
+  const filePath = `${config.contentPath}/${slug}.css`;
+
+  try {
+    const { data } = await octokit.rest.repos.getContent({
+      owner: config.owner,
+      repo: config.repo,
+      path: filePath,
+      ref: branch ?? config.publishBranch,
+    });
+
+    if (Array.isArray(data) || data.type !== "file") {
+      return null;
+    }
+
+    return Buffer.from(data.content, "base64").toString("utf-8");
+  } catch {
+    return null;
+  }
+}
+
 export async function deleteFile(
   slug: string,
   sha: string,

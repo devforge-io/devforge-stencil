@@ -3,6 +3,7 @@ import { formatDate } from "~/lib/format";
 import {
   getContent,
   getContentPublishStatus,
+  getPageCompiledCss,
   publishContent,
   unpublishContent,
 } from "~/lib/content.server";
@@ -14,7 +15,15 @@ export async function loader({ params }: Route.LoaderArgs) {
     throw new Response("Not Found", { status: 404 });
   }
   const publishStatus = await getContentPublishStatus(params.slug, content.contentType);
-  return { content, publishStatus };
+
+  // Load compiled CSS for page content (from draft branch for preview)
+  let compiledCss: string | null = null;
+  if (content.contentType === "page") {
+    const { getGitHubConfig } = await import("~/lib/github.server");
+    compiledCss = await getPageCompiledCss(params.slug, getGitHubConfig().branch);
+  }
+
+  return { content, publishStatus, compiledCss };
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
@@ -136,7 +145,7 @@ export default function ContentView({ loaderData }: Route.ComponentProps) {
       {content.contentType === "page" && "css" in content ? (
         <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg overflow-hidden">
           <iframe
-            srcDoc={`<!DOCTYPE html><html><head><script src="https://cdn.tailwindcss.com"><\/script><style>${(content as { css: string }).css}</style></head><body>${content.html}</body></html>`}
+            srcDoc={`<!DOCTYPE html><html><head><style>${compiledCss || (content as { css: string }).css}</style></head><body>${content.html}</body></html>`}
             className="w-full min-h-[500px] border-0"
             title={content.frontmatter.title}
           />

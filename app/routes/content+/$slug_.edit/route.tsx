@@ -94,7 +94,12 @@ export async function action({ request, params }: Route.ActionArgs) {
     raw = `${frontmatter}\n\n${body}`;
   }
 
-  await saveContent(params.slug, raw, sha || undefined, contentType);
+  // For page type, the css field contains the compiled CSS bundle
+  const compiledCss = contentType === "page"
+    ? (formData.get("pageCss") as string) || undefined
+    : undefined;
+
+  await saveContent(params.slug, raw, sha || undefined, contentType, compiledCss);
 
   return redirect(`/content/${params.slug}`);
 }

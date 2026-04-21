@@ -1,4 +1,4 @@
-import { getPublishedContent } from "~/lib/content.server";
+import { getPublishedContent, getPageCompiledCss } from "~/lib/content.server";
 import { requireApiToken } from "~/lib/auth.server";
 import type { Route } from "./+types/route";
 
@@ -25,11 +25,17 @@ export async function loader({ params, request }: Route.LoaderArgs) {
   const format = url.searchParams.get("format");
 
   const isPage = content.contentType === "page";
-  const css = isPage && "css" in content ? (content as { css: string }).css : "";
+  let css = isPage && "css" in content ? (content as { css: string }).css : "";
+
+  // Use compiled CSS from repo if available (no CDN dependency)
+  if (isPage) {
+    const compiledCss = await getPageCompiledCss(params.slug);
+    if (compiledCss) css = compiledCss;
+  }
 
   if (format === "html") {
     const fullHtml = isPage
-      ? `<!DOCTYPE html><html><head><script src="https://cdn.tailwindcss.com"><\/script><style>${css}</style></head><body>${content.html}</body></html>`
+      ? `<!DOCTYPE html><html><head><style>${css}</style></head><body>${content.html}</body></html>`
       : content.html;
     return new Response(fullHtml, {
       headers: {

@@ -12,6 +12,8 @@ import {
   getPublishStatus,
   getPublishedFileSha,
   getFileBlobShaAtCommit,
+  saveCompiledCss,
+  getCompiledCss,
   slugFromFilename,
   typeFromFilename,
   type ContentType,
@@ -128,14 +130,28 @@ export async function saveContent(
   slug: string,
   raw: string,
   sha?: string,
-  type: ContentType = "markdown"
+  type: ContentType = "markdown",
+  compiledCss?: string
 ): Promise<{ sha: string }> {
   const isNew = !sha;
   const message = isNew ? `Create ${slug}` : `Update ${slug}`;
 
   const result = await createOrUpdateFile(slug, raw, message, sha, type);
+
+  // Save compiled CSS for page content type
+  if (type === "page" && compiledCss !== undefined) {
+    await saveCompiledCss(slug, compiledCss);
+  }
+
   contentCache.invalidate(slug);
   return result;
+}
+
+export async function getPageCompiledCss(
+  slug: string,
+  branch?: string
+): Promise<string | null> {
+  return getCompiledCss(slug, branch);
 }
 
 export async function removeContent(
@@ -202,6 +218,17 @@ export async function getContentAtVersion(
 
 export async function publishContent(slug: string, type: ContentType = "markdown"): Promise<void> {
   await publishFile(slug, type);
+
+  // Also publish the compiled CSS for page content
+  if (type === "page") {
+    const { getGitHubConfig } = await import("./github.server");
+    const config = getGitHubConfig();
+    const draftCss = await getCompiledCss(slug, config.branch);
+    if (draftCss) {
+      await saveCompiledCss(slug, draftCss, config.publishBranch);
+    }
+  }
+
   contentCache.invalidate(slug);
 }
 

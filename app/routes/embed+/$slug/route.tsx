@@ -1,4 +1,4 @@
-import { getPublishedContent } from "~/lib/content.server";
+import { getPublishedContent, getPageCompiledCss } from "~/lib/content.server";
 import { requireApiToken } from "~/lib/auth.server";
 import type { Route } from "./+types/route";
 
@@ -37,14 +37,20 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     return new Response("Not found", { status: 404 });
   }
 
+  // Use compiled CSS from repo for pages (no CDN dependency)
+  let pageCss = "";
+  if (content.contentType === "page") {
+    const compiledCss = await getPageCompiledCss(params.slug);
+    pageCss = compiledCss || ("css" in content ? (content as { css: string }).css : "");
+  }
+
   const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>${escapeHtml(content.frontmatter.title)}</title>
-  ${content.contentType === "page" ? `<script src="https://cdn.tailwindcss.com"><\/script>` : ""}
-  <style>${content.contentType === "page" && "css" in content ? (content as { css: string }).css : EMBED_STYLES}</style>
+  <style>${content.contentType === "page" ? pageCss : EMBED_STYLES}</style>
 </head>
 <body class="stencil-embed">
   ${content.contentType === "page" ? content.html : `<article>${content.html}</article>`}
