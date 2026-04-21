@@ -872,6 +872,7 @@ export function PageEditor({
               <TailwindQuickStyles
                 selectedClasses={selectedClasses}
                 onToggle={toggleClassOnSelected}
+                loadedFontUrls={externalStyles}
               />
             </div>
             <div ref={stylesRef} className={activeTab === "styles" ? "p-2 [&_.gjs-sector-title]:!text-xs [&_.gjs-sector-title]:!font-semibold [&_.gjs-sector-title]:!bg-transparent [&_.gjs-sector-title]:!border-0 [&_.gjs-sector-title]:!text-gray-600 [&_.gjs-sector-title]:dark:!text-gray-400 [&_.gjs-field]:!text-xs [&_.gjs-label-wrp]:!text-[10px]" : "hidden"} />
@@ -902,8 +903,39 @@ export function PageEditor({
                     );
                   })}
                 </div>
+                {/* Add custom Google Font by name */}
+                <div className="flex gap-1 mb-1">
+                  <input
+                    id="custom-font-input"
+                    placeholder="Type any Google Font name..."
+                    className="flex-1 px-2 py-1 border border-gray-300 dark:border-gray-700 rounded text-[11px] bg-white dark:bg-gray-800 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        const val = (e.target as HTMLInputElement).value.trim();
+                        if (val) {
+                          addGoogleFont(val);
+                          (e.target as HTMLInputElement).value = "";
+                        }
+                      }
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const input = document.getElementById("custom-font-input") as HTMLInputElement;
+                      if (input?.value.trim()) {
+                        addGoogleFont(input.value.trim());
+                        input.value = "";
+                      }
+                    }}
+                    className="px-2 py-1 bg-brand-600 text-white rounded text-[10px] font-medium hover:bg-brand-700"
+                  >
+                    Add
+                  </button>
+                </div>
                 <p className="text-[9px] text-gray-400 mb-3">
-                  Use with: <code className="text-[9px]">font-family: 'Font Name', sans-serif</code> in Styles tab
+                  Any <a href="https://fonts.google.com" target="_blank" rel="noreferrer" className="underline">Google Font</a> name works. Applied via Classes tab as <code className="text-[9px]">font-name</code>
                 </p>
               </div>
 
@@ -1242,16 +1274,39 @@ const TAILWIND_GROUPS: {
 function TailwindQuickStyles({
   selectedClasses,
   onToggle,
+  loadedFontUrls,
 }: {
   selectedClasses: string[];
   onToggle: (cls: string) => void;
+  loadedFontUrls: string[];
 }) {
   const [openGroup, setOpenGroup] = useState<string | null>("Text Size");
+
+  // Build font family classes from loaded Google Fonts
+  const fontClasses: { label: string; value: string }[] = [
+    { label: "Sans", value: "font-sans" },
+    { label: "Serif", value: "font-serif" },
+    { label: "Mono", value: "font-mono" },
+  ];
+  for (const url of loadedFontUrls) {
+    if (!url.includes("fonts.googleapis.com")) continue;
+    const match = url.match(/family=([^&:]+)/);
+    if (match) {
+      const family = match[1].replace(/\+/g, " ");
+      const key = family.toLowerCase().replace(/\s+/g, "-");
+      fontClasses.push({ label: family, value: `font-${key}` });
+    }
+  }
+
+  const allGroups = [
+    { label: "Font Family", classes: fontClasses },
+    ...TAILWIND_GROUPS,
+  ];
 
   return (
     <div>
       <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Quick Styles</p>
-      {TAILWIND_GROUPS.map((group) => (
+      {allGroups.map((group) => (
         <div key={group.label} className="mb-1">
           <button
             type="button"

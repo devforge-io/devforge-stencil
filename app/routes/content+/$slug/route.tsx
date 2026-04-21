@@ -41,7 +41,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 }
 
 export default function ContentView({ loaderData }: Route.ComponentProps) {
-  const { content, publishStatus } = loaderData;
+  const { content, publishStatus, compiledCss } = loaderData;
   const navigation = useNavigation();
   const isPublishing =
     navigation.state === "submitting" &&

@@ -101,13 +101,12 @@ export async function listContent(): Promise<ContentListItem[]> {
 }
 
 export async function getContent(slug: string): Promise<AnyContentItem | null> {
-  // Try markdown first, then page
-  let file = await getFileContent(slug, "markdown");
-  let type: ContentType = "markdown";
-  if (!file) {
-    file = await getFileContent(slug, "page");
-    type = "page";
-  }
+  // Detect content type from file listing to avoid double API calls
+  const files = await listContentFiles();
+  const match = files.find((f) => slugFromFilename(f.name) === slug);
+  const type: ContentType = match?.contentType ?? "markdown";
+
+  const file = await getFileContent(slug, type);
   if (!file) return null;
 
   const cached = contentCache.getFull(slug, file.sha);
@@ -283,12 +282,11 @@ export async function listPublishedContent(): Promise<ContentListItem[]> {
 export async function getPublishedContent(
   slug: string
 ): Promise<AnyContentItem | null> {
-  let file = await getPublishedFileContent(slug, "markdown");
-  let type: ContentType = "markdown";
-  if (!file) {
-    file = await getPublishedFileContent(slug, "page");
-    type = "page";
-  }
+  const files = await listPublishedFiles();
+  const match = files.find((f) => slugFromFilename(f.name) === slug);
+  const type: ContentType = match?.contentType ?? "markdown";
+
+  const file = await getPublishedFileContent(slug, type);
   if (!file) return null;
 
   const cacheKey = `pub:${slug}`;

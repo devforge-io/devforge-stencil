@@ -31,7 +31,12 @@ export interface GitHubCommit {
 }
 
 function getOctokit(token: string) {
-  return new Octokit({ auth: token });
+  return new Octokit({
+    auth: token,
+    headers: {
+      "X-GitHub-Api-Version": "2022-11-28",
+    },
+  });
 }
 
 function getConfig(): GitHubConfig {
