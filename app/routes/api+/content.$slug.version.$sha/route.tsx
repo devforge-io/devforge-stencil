@@ -1,4 +1,4 @@
-import { getContentAtVersion } from "~/lib/content.server";
+import { getContent, getContentAtVersion } from "~/lib/content.server";
 import { getFileAtCommit } from "~/lib/github.server";
 import * as Diff from "diff";
 import type { Route } from "./+types/route";
@@ -8,12 +8,16 @@ export async function loader({ params, request }: Route.LoaderArgs) {
   const url = new URL(request.url);
   const compareTo = url.searchParams.get("compare");
 
-  const raw = await getFileAtCommit(slug, sha);
+  // Detect content type from the current version
+  const current = await getContent(slug);
+  const type = current?.contentType ?? "markdown";
+
+  const raw = await getFileAtCommit(slug, sha, type);
   if (!raw) {
     return Response.json({ error: "Version not found" }, { status: 404 });
   }
 
-  const parsed = await getContentAtVersion(slug, sha);
+  const parsed = await getContentAtVersion(slug, sha, type);
 
   const result: {
     raw: string;
@@ -24,9 +28,8 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     html: parsed?.html ?? "",
   };
 
-  // If comparing to another version, compute a word-level diff
   if (compareTo) {
-    const compareRaw = await getFileAtCommit(slug, compareTo);
+    const compareRaw = await getFileAtCommit(slug, compareTo, type);
     if (compareRaw) {
       const changes = Diff.diffLines(compareRaw, raw);
       result.diff = changes.map((c) => ({

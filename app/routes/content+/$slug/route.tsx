@@ -136,7 +136,7 @@ export default function ContentView({ loaderData }: Route.ComponentProps) {
       {content.contentType === "page" && "css" in content ? (
         <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg overflow-hidden">
           <iframe
-            srcDoc={`<!DOCTYPE html><html><head><script src="https://cdn.tailwindcss.com"><\/script><script>tailwind.config={prefix:'tw-'}<\/script><style>${(content as { css: string }).css}</style></head><body>${content.html}</body></html>`}
+            srcDoc={`<!DOCTYPE html><html><head><script src="https://cdn.tailwindcss.com"><\/script><style>${(content as { css: string }).css}</style></head><body>${content.html}</body></html>`}
             className="w-full min-h-[500px] border-0"
             title={content.frontmatter.title}
           />

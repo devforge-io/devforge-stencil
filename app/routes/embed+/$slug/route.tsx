@@ -43,7 +43,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>${escapeHtml(content.frontmatter.title)}</title>
-  ${content.contentType === "page" ? `<script src="https://cdn.tailwindcss.com"><\/script><script>tailwind.config={prefix:'tw-'}<\/script>` : ""}
+  ${content.contentType === "page" ? `<script src="https://cdn.tailwindcss.com"><\/script>` : ""}
   <style>${content.contentType === "page" && "css" in content ? (content as { css: string }).css : EMBED_STYLES}</style>
 </head>
 <body class="stencil-embed">

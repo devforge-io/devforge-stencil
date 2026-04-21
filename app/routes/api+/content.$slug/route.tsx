@@ -29,7 +29,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
 
   if (format === "html") {
     const fullHtml = isPage
-      ? `<!DOCTYPE html><html><head><script src="https://cdn.tailwindcss.com"><\/script><script>tailwind.config={prefix:'tw-'}<\/script><style>${css}</style></head><body>${content.html}</body></html>`
+      ? `<!DOCTYPE html><html><head><script src="https://cdn.tailwindcss.com"><\/script><style>${css}</style></head><body>${content.html}</body></html>`
       : content.html;
     return new Response(fullHtml, {
       headers: {

@@ -27,12 +27,12 @@ async function loadGrapes() {
 
 function isGradientClass(c: string): boolean {
   return (
-    c.startsWith("tw-bg-gradient-") ||
-    c.startsWith("tw-from-") ||
-    c.startsWith("tw-via-") ||
-    c.startsWith("tw-to-") ||
-    c === "tw-bg-clip-text" ||
-    c === "tw-text-transparent"
+    c.startsWith("bg-gradient-") ||
+    c.startsWith("from-") ||
+    c.startsWith("via-") ||
+    c.startsWith("to-") ||
+    c === "bg-clip-text" ||
+    c === "text-transparent"
   );
 }
 
@@ -71,11 +71,16 @@ export function PageEditor({
         fromElement: false,
         storageManager: false,
 
-        // Inject Tailwind with tw- prefix into the canvas iframe
         canvas: {
           scripts: ["https://cdn.tailwindcss.com"],
           styles: [],
-          frameContent: `<script>tailwind.config={prefix:'tw-'}</script>`,
+          frameStyle: `
+            .gjs-selected.text-center {
+              display: inherit !important;
+              justify-content: inherit !important;
+              align-items: inherit !important;
+            }
+          `,
         },
 
         // Force plain text paste in the rich text editor
@@ -253,17 +258,17 @@ export function PageEditor({
         label: "Section",
         category: "Layout",
         media: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="4" width="20" height="16" rx="2"/></svg>`,
-        content: `<section class="tw-py-12 tw-px-8"><h2 class="tw-text-2xl tw-font-bold tw-mb-4">Section Title</h2><p class="tw-text-gray-600">Section content goes here.</p></section>`,
+        content: `<section class="py-12 px-8"><h2 class="text-2xl font-bold mb-4">Section Title</h2><p class="text-gray-600">Section content goes here.</p></section>`,
       });
 
       bm.add("hero", {
         label: "Hero",
         category: "Layout",
         media: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="20" height="18" rx="2"/><line x1="8" y1="9" x2="16" y2="9"/><line x1="6" y1="13" x2="18" y2="13"/><rect x="9" y="16" width="6" height="2" rx="1"/></svg>`,
-        content: `<section class="tw-py-16 tw-px-8 tw-text-center tw-bg-gray-50">
-          <h1 class="tw-text-4xl tw-font-bold tw-mb-4">Hero Title</h1>
-          <p class="tw-text-lg tw-text-gray-500 tw-max-w-xl tw-mx-auto tw-mb-8">A compelling description that draws readers in.</p>
-          <a href="#" class="tw-inline-block tw-px-6 tw-py-3 tw-bg-indigo-500 tw-text-white tw-rounded-lg tw-font-medium tw-hover:bg-indigo-600">Get Started</a>
+        content: `<section class="py-16 px-8 text-center bg-gray-50">
+          <h1 class="text-4xl font-bold mb-4">Hero Title</h1>
+          <p class="text-lg text-gray-500 max-w-xl mx-auto mb-8">A compelling description that draws readers in.</p>
+          <a href="#" class="inline-block px-6 py-3 bg-indigo-500 text-white rounded-lg font-medium hover:bg-indigo-600">Get Started</a>
         </section>`,
       });
 
@@ -271,38 +276,38 @@ export function PageEditor({
         label: "2 Columns",
         category: "Layout",
         media: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="4" width="9" height="16" rx="1"/><rect x="13" y="4" width="9" height="16" rx="1"/></svg>`,
-        content: `<div class="tw-flex tw-gap-8 tw-p-8"><div class="tw-flex-1"><h3 class="tw-text-xl tw-font-semibold tw-mb-2">Column 1</h3><p class="tw-text-gray-600">Content here.</p></div><div class="tw-flex-1"><h3 class="tw-text-xl tw-font-semibold tw-mb-2">Column 2</h3><p class="tw-text-gray-600">Content here.</p></div></div>`,
+        content: `<div class="flex gap-8 p-8"><div class="flex-1"><h3 class="text-xl font-semibold mb-2">Column 1</h3><p class="text-gray-600">Content here.</p></div><div class="flex-1"><h3 class="text-xl font-semibold mb-2">Column 2</h3><p class="text-gray-600">Content here.</p></div></div>`,
       });
 
       bm.add("three-cols", {
         label: "3 Columns",
         category: "Layout",
         media: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="4" width="6" height="16" rx="1"/><rect x="9" y="4" width="6" height="16" rx="1"/><rect x="17" y="4" width="6" height="16" rx="1"/></svg>`,
-        content: `<div class="tw-flex tw-gap-8 tw-p-8"><div class="tw-flex-1"><h3 class="tw-text-xl tw-font-semibold tw-mb-2">Col 1</h3><p class="tw-text-gray-600">Content.</p></div><div class="tw-flex-1"><h3 class="tw-text-xl tw-font-semibold tw-mb-2">Col 2</h3><p class="tw-text-gray-600">Content.</p></div><div class="tw-flex-1"><h3 class="tw-text-xl tw-font-semibold tw-mb-2">Col 3</h3><p class="tw-text-gray-600">Content.</p></div></div>`,
+        content: `<div class="flex gap-8 p-8"><div class="flex-1"><h3 class="text-xl font-semibold mb-2">Col 1</h3><p class="text-gray-600">Content.</p></div><div class="flex-1"><h3 class="text-xl font-semibold mb-2">Col 2</h3><p class="text-gray-600">Content.</p></div><div class="flex-1"><h3 class="text-xl font-semibold mb-2">Col 3</h3><p class="text-gray-600">Content.</p></div></div>`,
       });
 
       bm.add("card", {
         label: "Card",
         category: "Components",
         media: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="12" x2="21" y2="12"/></svg>`,
-        content: `<div class="tw-border tw-border-gray-200 tw-rounded-lg tw-overflow-hidden tw-max-w-sm"><div class="tw-h-44 tw-bg-gray-100"></div><div class="tw-p-5"><h3 class="tw-font-semibold tw-mb-2">Card Title</h3><p class="tw-text-gray-500 tw-text-sm">Card description goes here.</p></div></div>`,
+        content: `<div class="border border-gray-200 rounded-lg overflow-hidden max-w-sm"><div class="h-44 bg-gray-100"></div><div class="p-5"><h3 class="font-semibold mb-2">Card Title</h3><p class="text-gray-500 text-sm">Card description goes here.</p></div></div>`,
       });
 
       bm.add("btn", {
         label: "Button",
         category: "Components",
         media: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="8" width="18" height="8" rx="4"/></svg>`,
-        content: `<a href="#" class="tw-inline-block tw-px-6 tw-py-3 tw-bg-indigo-500 tw-text-white tw-rounded-lg tw-font-medium tw-hover:bg-indigo-600 tw-no-underline">Button</a>`,
+        content: `<a href="#" class="inline-block px-6 py-3 bg-indigo-500 text-white rounded-lg font-medium hover:bg-indigo-600 no-underline">Button</a>`,
       });
 
       bm.add("testimonial", {
         label: "Testimonial",
         category: "Components",
         media: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M7.5 8.5h-4a1 1 0 00-1 1v4a1 1 0 001 1h2l-1 3 3-3h0a1 1 0 001-1v-4a1 1 0 00-1-1z"/><path d="M18.5 8.5h-4a1 1 0 00-1 1v4a1 1 0 001 1h2l-1 3 3-3h0a1 1 0 001-1v-4a1 1 0 00-1-1z"/></svg>`,
-        content: `<div class="tw-bg-gray-50 tw-rounded-xl tw-p-8 tw-max-w-lg tw-mx-auto tw-text-center">
-          <p class="tw-text-gray-600 tw-italic tw-mb-4">"This is an amazing product that changed how we work."</p>
-          <p class="tw-font-semibold tw-text-sm">Jane Doe</p>
-          <p class="tw-text-gray-400 tw-text-xs">CEO, Company</p>
+        content: `<div class="bg-gray-50 rounded-xl p-8 max-w-lg mx-auto text-center">
+          <p class="text-gray-600 italic mb-4">"This is an amazing product that changed how we work."</p>
+          <p class="font-semibold text-sm">Jane Doe</p>
+          <p class="text-gray-400 text-xs">CEO, Company</p>
         </div>`,
       });
 
@@ -327,13 +332,13 @@ export function PageEditor({
         label: "Navbar",
         category: "Layout",
         media: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="4" width="20" height="4" rx="1"/><line x1="6" y1="6" x2="10" y2="6"/><line x1="14" y1="6" x2="18" y2="6"/></svg>`,
-        content: `<nav class="tw-flex tw-items-center tw-justify-between tw-px-8 tw-py-4 tw-border-b tw-border-gray-200">
-          <span class="tw-text-xl tw-font-bold">Brand</span>
-          <div class="tw-flex tw-gap-6">
-            <a href="#" class="tw-text-gray-600 tw-hover:text-gray-900 tw-no-underline tw-text-sm">Features</a>
-            <a href="#" class="tw-text-gray-600 tw-hover:text-gray-900 tw-no-underline tw-text-sm">Pricing</a>
-            <a href="#" class="tw-text-gray-600 tw-hover:text-gray-900 tw-no-underline tw-text-sm">About</a>
-            <a href="#" class="tw-px-4 tw-py-1.5 tw-bg-indigo-500 tw-text-white tw-rounded-lg tw-text-sm tw-no-underline tw-hover:bg-indigo-600">Sign Up</a>
+        content: `<nav class="flex items-center justify-between px-8 py-4 border-b border-gray-200">
+          <span class="text-xl font-bold">Brand</span>
+          <div class="flex gap-6">
+            <a href="#" class="text-gray-600 hover:text-gray-900 no-underline text-sm">Features</a>
+            <a href="#" class="text-gray-600 hover:text-gray-900 no-underline text-sm">Pricing</a>
+            <a href="#" class="text-gray-600 hover:text-gray-900 no-underline text-sm">About</a>
+            <a href="#" class="px-4 py-1.5 bg-indigo-500 text-white rounded-lg text-sm no-underline hover:bg-indigo-600">Sign Up</a>
           </div>
         </nav>`,
       });
@@ -342,12 +347,12 @@ export function PageEditor({
         label: "Footer",
         category: "Layout",
         media: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="16" width="20" height="4" rx="1"/><line x1="6" y1="18" x2="18" y2="18"/></svg>`,
-        content: `<footer class="tw-bg-gray-900 tw-text-gray-400 tw-py-12 tw-px-8">
-          <div class="tw-flex tw-gap-12 tw-mb-8">
-            <div><h4 class="tw-text-white tw-font-semibold tw-mb-3 tw-text-sm">Product</h4><ul class="tw-space-y-2 tw-text-sm"><li><a href="#" class="tw-hover:text-white tw-no-underline tw-text-gray-400">Features</a></li><li><a href="#" class="tw-hover:text-white tw-no-underline tw-text-gray-400">Pricing</a></li></ul></div>
-            <div><h4 class="tw-text-white tw-font-semibold tw-mb-3 tw-text-sm">Company</h4><ul class="tw-space-y-2 tw-text-sm"><li><a href="#" class="tw-hover:text-white tw-no-underline tw-text-gray-400">About</a></li><li><a href="#" class="tw-hover:text-white tw-no-underline tw-text-gray-400">Contact</a></li></ul></div>
+        content: `<footer class="bg-gray-900 text-gray-400 py-12 px-8">
+          <div class="flex gap-12 mb-8">
+            <div><h4 class="text-white font-semibold mb-3 text-sm">Product</h4><ul class="space-y-2 text-sm"><li><a href="#" class="hover:text-white no-underline text-gray-400">Features</a></li><li><a href="#" class="hover:text-white no-underline text-gray-400">Pricing</a></li></ul></div>
+            <div><h4 class="text-white font-semibold mb-3 text-sm">Company</h4><ul class="space-y-2 text-sm"><li><a href="#" class="hover:text-white no-underline text-gray-400">About</a></li><li><a href="#" class="hover:text-white no-underline text-gray-400">Contact</a></li></ul></div>
           </div>
-          <p class="tw-text-sm tw-border-t tw-border-gray-800 tw-pt-6">Made with Stencil CMS</p>
+          <p class="text-sm border-t border-gray-800 pt-6">Made with Stencil CMS</p>
         </footer>`,
       });
 
@@ -355,15 +360,16 @@ export function PageEditor({
         label: "Divider",
         category: "Components",
         media: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="2" y1="12" x2="22" y2="12"/></svg>`,
-        content: `<hr class="tw-border-t tw-border-gray-200 tw-my-8" />`,
+        content: `<hr class="border-t border-gray-200 my-8" />`,
       });
 
       bm.add("spacer", {
         label: "Spacer",
         category: "Components",
         media: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="12" y1="4" x2="12" y2="20" stroke-dasharray="2 2"/><line x1="4" y1="4" x2="20" y2="4"/><line x1="4" y1="20" x2="20" y2="20"/></svg>`,
-        content: `<div class="tw-h-12"></div>`,
+        content: `<div class="h-12"></div>`,
       });
+
 
       // Force plain text paste inside the canvas
       editor.on("rte:enable", () => {
@@ -687,230 +693,230 @@ const TAILWIND_GROUPS: {
   {
     label: "Text Size",
     classes: [
-      { label: "xs", value: "tw-text-xs" },
-      { label: "sm", value: "tw-text-sm" },
-      { label: "base", value: "tw-text-base" },
-      { label: "lg", value: "tw-text-lg" },
-      { label: "xl", value: "tw-text-xl" },
-      { label: "2xl", value: "tw-text-2xl" },
-      { label: "3xl", value: "tw-text-3xl" },
-      { label: "4xl", value: "tw-text-4xl" },
-      { label: "5xl", value: "tw-text-5xl" },
-      { label: "6xl", value: "tw-text-6xl" },
+      { label: "xs", value: "text-xs" },
+      { label: "sm", value: "text-sm" },
+      { label: "base", value: "text-base" },
+      { label: "lg", value: "text-lg" },
+      { label: "xl", value: "text-xl" },
+      { label: "2xl", value: "text-2xl" },
+      { label: "3xl", value: "text-3xl" },
+      { label: "4xl", value: "text-4xl" },
+      { label: "5xl", value: "text-5xl" },
+      { label: "6xl", value: "text-6xl" },
     ],
   },
   {
     label: "Font Weight",
     classes: [
-      { label: "Light", value: "tw-font-light" },
-      { label: "Normal", value: "tw-font-normal" },
-      { label: "Medium", value: "tw-font-medium" },
-      { label: "Semi", value: "tw-font-semibold" },
-      { label: "Bold", value: "tw-font-bold" },
-      { label: "Extra", value: "tw-font-extrabold" },
+      { label: "Light", value: "font-light" },
+      { label: "Normal", value: "font-normal" },
+      { label: "Medium", value: "font-medium" },
+      { label: "Semi", value: "font-semibold" },
+      { label: "Bold", value: "font-bold" },
+      { label: "Extra", value: "font-extrabold" },
     ],
   },
   {
     label: "Text Gradients",
     classes: [
-      { label: "Purple→Pink", value: "tw-bg-gradient-to-r tw-from-purple-500 tw-to-pink-500 tw-bg-clip-text tw-text-transparent" },
-      { label: "Blue→Cyan", value: "tw-bg-gradient-to-r tw-from-blue-500 tw-to-cyan-400 tw-bg-clip-text tw-text-transparent" },
-      { label: "Green→Teal", value: "tw-bg-gradient-to-r tw-from-green-500 tw-to-teal-400 tw-bg-clip-text tw-text-transparent" },
-      { label: "Red→Orange", value: "tw-bg-gradient-to-r tw-from-red-500 tw-to-orange-400 tw-bg-clip-text tw-text-transparent" },
-      { label: "Indigo→Purple", value: "tw-bg-gradient-to-r tw-from-indigo-500 tw-to-purple-500 tw-bg-clip-text tw-text-transparent" },
-      { label: "Pink→Rose", value: "tw-bg-gradient-to-r tw-from-pink-500 tw-to-rose-400 tw-bg-clip-text tw-text-transparent" },
-      { label: "Sky→Blue", value: "tw-bg-gradient-to-r tw-from-sky-400 tw-to-blue-500 tw-bg-clip-text tw-text-transparent" },
-      { label: "Yellow→Red", value: "tw-bg-gradient-to-r tw-from-yellow-400 tw-to-red-500 tw-bg-clip-text tw-text-transparent" },
-      { label: "Fuchsia→Violet", value: "tw-bg-gradient-to-r tw-from-fuchsia-500 tw-to-violet-500 tw-bg-clip-text tw-text-transparent" },
-      { label: "Sunset", value: "tw-bg-gradient-to-r tw-from-orange-400 tw-via-pink-500 tw-to-purple-500 tw-bg-clip-text tw-text-transparent" },
-      { label: "Ocean", value: "tw-bg-gradient-to-r tw-from-cyan-400 tw-via-blue-500 tw-to-indigo-600 tw-bg-clip-text tw-text-transparent" },
-      { label: "Forest", value: "tw-bg-gradient-to-r tw-from-green-400 tw-via-emerald-500 tw-to-teal-600 tw-bg-clip-text tw-text-transparent" },
+      { label: "Purple→Pink", value: "bg-gradient-to-r from-purple-500 to-pink-500 bg-clip-text text-transparent" },
+      { label: "Blue→Cyan", value: "bg-gradient-to-r from-blue-500 to-cyan-400 bg-clip-text text-transparent" },
+      { label: "Green→Teal", value: "bg-gradient-to-r from-green-500 to-teal-400 bg-clip-text text-transparent" },
+      { label: "Red→Orange", value: "bg-gradient-to-r from-red-500 to-orange-400 bg-clip-text text-transparent" },
+      { label: "Indigo→Purple", value: "bg-gradient-to-r from-indigo-500 to-purple-500 bg-clip-text text-transparent" },
+      { label: "Pink→Rose", value: "bg-gradient-to-r from-pink-500 to-rose-400 bg-clip-text text-transparent" },
+      { label: "Sky→Blue", value: "bg-gradient-to-r from-sky-400 to-blue-500 bg-clip-text text-transparent" },
+      { label: "Yellow→Red", value: "bg-gradient-to-r from-yellow-400 to-red-500 bg-clip-text text-transparent" },
+      { label: "Fuchsia→Violet", value: "bg-gradient-to-r from-fuchsia-500 to-violet-500 bg-clip-text text-transparent" },
+      { label: "Sunset", value: "bg-gradient-to-r from-orange-400 via-pink-500 to-purple-500 bg-clip-text text-transparent" },
+      { label: "Ocean", value: "bg-gradient-to-r from-cyan-400 via-blue-500 to-indigo-600 bg-clip-text text-transparent" },
+      { label: "Forest", value: "bg-gradient-to-r from-green-400 via-emerald-500 to-teal-600 bg-clip-text text-transparent" },
       { label: "None", value: "" },
     ],
   },
   {
     label: "Text Color",
     classes: [
-      { label: "Black", value: "tw-text-black" },
-      { label: "White", value: "tw-text-white" },
-      { label: "Gray", value: "tw-text-gray-600" },
-      { label: "Red", value: "tw-text-red-500" },
-      { label: "Orange", value: "tw-text-orange-500" },
-      { label: "Yellow", value: "tw-text-yellow-500" },
-      { label: "Green", value: "tw-text-green-500" },
-      { label: "Blue", value: "tw-text-blue-500" },
-      { label: "Indigo", value: "tw-text-indigo-500" },
-      { label: "Purple", value: "tw-text-purple-500" },
-      { label: "Pink", value: "tw-text-pink-500" },
+      { label: "Black", value: "text-black" },
+      { label: "White", value: "text-white" },
+      { label: "Gray", value: "text-gray-600" },
+      { label: "Red", value: "text-red-500" },
+      { label: "Orange", value: "text-orange-500" },
+      { label: "Yellow", value: "text-yellow-500" },
+      { label: "Green", value: "text-green-500" },
+      { label: "Blue", value: "text-blue-500" },
+      { label: "Indigo", value: "text-indigo-500" },
+      { label: "Purple", value: "text-purple-500" },
+      { label: "Pink", value: "text-pink-500" },
     ],
   },
   {
     label: "Text Align",
     classes: [
-      { label: "Left", value: "tw-text-left" },
-      { label: "Center", value: "tw-text-center" },
-      { label: "Right", value: "tw-text-right" },
-      { label: "Justify", value: "tw-text-justify" },
+      { label: "Left", value: "text-left" },
+      { label: "Center", value: "text-center" },
+      { label: "Right", value: "text-right" },
+      { label: "Justify", value: "text-justify" },
     ],
   },
   {
     label: "Background",
     classes: [
-      { label: "White", value: "tw-bg-white" },
-      { label: "Gray 50", value: "tw-bg-gray-50" },
-      { label: "Gray 100", value: "tw-bg-gray-100" },
-      { label: "Gray 900", value: "tw-bg-gray-900" },
-      { label: "Black", value: "tw-bg-black" },
-      { label: "Red", value: "tw-bg-red-500" },
-      { label: "Orange", value: "tw-bg-orange-500" },
-      { label: "Yellow", value: "tw-bg-yellow-500" },
-      { label: "Green", value: "tw-bg-green-500" },
-      { label: "Blue", value: "tw-bg-blue-500" },
-      { label: "Indigo", value: "tw-bg-indigo-500" },
-      { label: "Purple", value: "tw-bg-purple-500" },
-      { label: "Pink", value: "tw-bg-pink-500" },
+      { label: "White", value: "bg-white" },
+      { label: "Gray 50", value: "bg-gray-50" },
+      { label: "Gray 100", value: "bg-gray-100" },
+      { label: "Gray 900", value: "bg-gray-900" },
+      { label: "Black", value: "bg-black" },
+      { label: "Red", value: "bg-red-500" },
+      { label: "Orange", value: "bg-orange-500" },
+      { label: "Yellow", value: "bg-yellow-500" },
+      { label: "Green", value: "bg-green-500" },
+      { label: "Blue", value: "bg-blue-500" },
+      { label: "Indigo", value: "bg-indigo-500" },
+      { label: "Purple", value: "bg-purple-500" },
+      { label: "Pink", value: "bg-pink-500" },
     ],
   },
   {
     label: "Gradients",
     classes: [
-      { label: "To Right", value: "tw-bg-gradient-to-r" },
-      { label: "To Left", value: "tw-bg-gradient-to-l" },
-      { label: "To Bottom", value: "tw-bg-gradient-to-b" },
-      { label: "To Top", value: "tw-bg-gradient-to-t" },
-      { label: "To BR", value: "tw-bg-gradient-to-br" },
-      { label: "To BL", value: "tw-bg-gradient-to-bl" },
-      { label: "To TR", value: "tw-bg-gradient-to-tr" },
-      { label: "To TL", value: "tw-bg-gradient-to-tl" },
+      { label: "To Right", value: "bg-gradient-to-r" },
+      { label: "To Left", value: "bg-gradient-to-l" },
+      { label: "To Bottom", value: "bg-gradient-to-b" },
+      { label: "To Top", value: "bg-gradient-to-t" },
+      { label: "To BR", value: "bg-gradient-to-br" },
+      { label: "To BL", value: "bg-gradient-to-bl" },
+      { label: "To TR", value: "bg-gradient-to-tr" },
+      { label: "To TL", value: "bg-gradient-to-tl" },
     ],
   },
   {
     label: "Gradient From",
     classes: [
-      { label: "Red", value: "tw-from-red-500" },
-      { label: "Orange", value: "tw-from-orange-500" },
-      { label: "Yellow", value: "tw-from-yellow-400" },
-      { label: "Green", value: "tw-from-green-500" },
-      { label: "Teal", value: "tw-from-teal-500" },
-      { label: "Blue", value: "tw-from-blue-500" },
-      { label: "Indigo", value: "tw-from-indigo-500" },
-      { label: "Purple", value: "tw-from-purple-500" },
-      { label: "Pink", value: "tw-from-pink-500" },
-      { label: "Rose", value: "tw-from-rose-500" },
-      { label: "Sky", value: "tw-from-sky-400" },
-      { label: "Cyan", value: "tw-from-cyan-500" },
-      { label: "Violet", value: "tw-from-violet-500" },
-      { label: "Fuchsia", value: "tw-from-fuchsia-500" },
-      { label: "Black", value: "tw-from-black" },
-      { label: "White", value: "tw-from-white" },
-      { label: "Transparent", value: "tw-from-transparent" },
+      { label: "Red", value: "from-red-500" },
+      { label: "Orange", value: "from-orange-500" },
+      { label: "Yellow", value: "from-yellow-400" },
+      { label: "Green", value: "from-green-500" },
+      { label: "Teal", value: "from-teal-500" },
+      { label: "Blue", value: "from-blue-500" },
+      { label: "Indigo", value: "from-indigo-500" },
+      { label: "Purple", value: "from-purple-500" },
+      { label: "Pink", value: "from-pink-500" },
+      { label: "Rose", value: "from-rose-500" },
+      { label: "Sky", value: "from-sky-400" },
+      { label: "Cyan", value: "from-cyan-500" },
+      { label: "Violet", value: "from-violet-500" },
+      { label: "Fuchsia", value: "from-fuchsia-500" },
+      { label: "Black", value: "from-black" },
+      { label: "White", value: "from-white" },
+      { label: "Transparent", value: "from-transparent" },
     ],
   },
   {
     label: "Gradient Via",
     classes: [
-      { label: "Red", value: "tw-via-red-500" },
-      { label: "Orange", value: "tw-via-orange-500" },
-      { label: "Yellow", value: "tw-via-yellow-400" },
-      { label: "Green", value: "tw-via-green-500" },
-      { label: "Blue", value: "tw-via-blue-500" },
-      { label: "Indigo", value: "tw-via-indigo-500" },
-      { label: "Purple", value: "tw-via-purple-500" },
-      { label: "Pink", value: "tw-via-pink-500" },
-      { label: "Sky", value: "tw-via-sky-400" },
-      { label: "Cyan", value: "tw-via-cyan-500" },
-      { label: "Transparent", value: "tw-via-transparent" },
+      { label: "Red", value: "via-red-500" },
+      { label: "Orange", value: "via-orange-500" },
+      { label: "Yellow", value: "via-yellow-400" },
+      { label: "Green", value: "via-green-500" },
+      { label: "Blue", value: "via-blue-500" },
+      { label: "Indigo", value: "via-indigo-500" },
+      { label: "Purple", value: "via-purple-500" },
+      { label: "Pink", value: "via-pink-500" },
+      { label: "Sky", value: "via-sky-400" },
+      { label: "Cyan", value: "via-cyan-500" },
+      { label: "Transparent", value: "via-transparent" },
     ],
   },
   {
     label: "Gradient To",
     classes: [
-      { label: "Red", value: "tw-to-red-500" },
-      { label: "Orange", value: "tw-to-orange-500" },
-      { label: "Yellow", value: "tw-to-yellow-400" },
-      { label: "Green", value: "tw-to-green-500" },
-      { label: "Blue", value: "tw-to-blue-500" },
-      { label: "Indigo", value: "tw-to-indigo-500" },
-      { label: "Purple", value: "tw-to-purple-500" },
-      { label: "Pink", value: "tw-to-pink-500" },
-      { label: "Sky", value: "tw-to-sky-400" },
-      { label: "Cyan", value: "tw-to-cyan-500" },
-      { label: "Transparent", value: "tw-to-transparent" },
-      { label: "Black", value: "tw-to-black" },
-      { label: "White", value: "tw-to-white" },
+      { label: "Red", value: "to-red-500" },
+      { label: "Orange", value: "to-orange-500" },
+      { label: "Yellow", value: "to-yellow-400" },
+      { label: "Green", value: "to-green-500" },
+      { label: "Blue", value: "to-blue-500" },
+      { label: "Indigo", value: "to-indigo-500" },
+      { label: "Purple", value: "to-purple-500" },
+      { label: "Pink", value: "to-pink-500" },
+      { label: "Sky", value: "to-sky-400" },
+      { label: "Cyan", value: "to-cyan-500" },
+      { label: "Transparent", value: "to-transparent" },
+      { label: "Black", value: "to-black" },
+      { label: "White", value: "to-white" },
     ],
   },
   {
     label: "Text Gradient",
     classes: [
-      { label: "Clip Text", value: "tw-bg-clip-text" },
-      { label: "Transparent Text", value: "tw-text-transparent" },
+      { label: "Clip Text", value: "bg-clip-text" },
+      { label: "Transparent Text", value: "text-transparent" },
     ],
   },
   {
     label: "Spacing",
     classes: [
-      { label: "p-2", value: "tw-p-2" },
-      { label: "p-4", value: "tw-p-4" },
-      { label: "p-6", value: "tw-p-6" },
-      { label: "p-8", value: "tw-p-8" },
-      { label: "px-4", value: "tw-px-4" },
-      { label: "px-8", value: "tw-px-8" },
-      { label: "py-4", value: "tw-py-4" },
-      { label: "py-8", value: "tw-py-8" },
-      { label: "py-12", value: "tw-py-12" },
-      { label: "py-16", value: "tw-py-16" },
-      { label: "m-auto", value: "tw-mx-auto" },
+      { label: "p-2", value: "p-2" },
+      { label: "p-4", value: "p-4" },
+      { label: "p-6", value: "p-6" },
+      { label: "p-8", value: "p-8" },
+      { label: "px-4", value: "px-4" },
+      { label: "px-8", value: "px-8" },
+      { label: "py-4", value: "py-4" },
+      { label: "py-8", value: "py-8" },
+      { label: "py-12", value: "py-12" },
+      { label: "py-16", value: "py-16" },
+      { label: "m-auto", value: "mx-auto" },
     ],
   },
   {
     label: "Border & Radius",
     classes: [
-      { label: "border", value: "tw-border" },
-      { label: "border-0", value: "tw-border-0" },
-      { label: "rounded", value: "tw-rounded" },
-      { label: "rounded-lg", value: "tw-rounded-lg" },
-      { label: "rounded-xl", value: "tw-rounded-xl" },
-      { label: "rounded-full", value: "tw-rounded-full" },
-      { label: "shadow-sm", value: "tw-shadow-sm" },
-      { label: "shadow", value: "tw-shadow" },
-      { label: "shadow-lg", value: "tw-shadow-lg" },
-      { label: "shadow-xl", value: "tw-shadow-xl" },
+      { label: "border", value: "border" },
+      { label: "border-0", value: "border-0" },
+      { label: "rounded", value: "rounded" },
+      { label: "rounded-lg", value: "rounded-lg" },
+      { label: "rounded-xl", value: "rounded-xl" },
+      { label: "rounded-full", value: "rounded-full" },
+      { label: "shadow-sm", value: "shadow-sm" },
+      { label: "shadow", value: "shadow" },
+      { label: "shadow-lg", value: "shadow-lg" },
+      { label: "shadow-xl", value: "shadow-xl" },
     ],
   },
   {
     label: "Layout",
     classes: [
-      { label: "block", value: "tw-block" },
-      { label: "inline", value: "tw-inline-block" },
-      { label: "flex", value: "tw-flex" },
-      { label: "grid", value: "tw-grid" },
-      { label: "hidden", value: "tw-hidden" },
-      { label: "flex-col", value: "tw-flex-col" },
-      { label: "items-center", value: "tw-items-center" },
-      { label: "justify-center", value: "tw-justify-center" },
-      { label: "justify-between", value: "tw-justify-between" },
-      { label: "gap-2", value: "tw-gap-2" },
-      { label: "gap-4", value: "tw-gap-4" },
-      { label: "gap-8", value: "tw-gap-8" },
-      { label: "mx-auto", value: "tw-mx-auto" },
-      { label: "ml-auto", value: "tw-ml-auto" },
-      { label: "mr-auto", value: "tw-mr-auto" },
+      { label: "block", value: "block" },
+      { label: "inline", value: "inline-block" },
+      { label: "flex", value: "flex" },
+      { label: "grid", value: "grid" },
+      { label: "hidden", value: "hidden" },
+      { label: "flex-col", value: "flex-col" },
+      { label: "items-center", value: "items-center" },
+      { label: "justify-center", value: "justify-center" },
+      { label: "justify-between", value: "justify-between" },
+      { label: "gap-2", value: "gap-2" },
+      { label: "gap-4", value: "gap-4" },
+      { label: "gap-8", value: "gap-8" },
+      { label: "mx-auto", value: "mx-auto" },
+      { label: "ml-auto", value: "ml-auto" },
+      { label: "mr-auto", value: "mr-auto" },
     ],
   },
   {
     label: "Width",
     classes: [
-      { label: "w-full", value: "tw-w-full" },
-      { label: "w-1/2", value: "tw-w-1/2" },
-      { label: "w-1/3", value: "tw-w-1/3" },
-      { label: "w-2/3", value: "tw-w-2/3" },
-      { label: "max-w-sm", value: "tw-max-w-sm" },
-      { label: "max-w-md", value: "tw-max-w-md" },
-      { label: "max-w-lg", value: "tw-max-w-lg" },
-      { label: "max-w-xl", value: "tw-max-w-xl" },
-      { label: "max-w-2xl", value: "tw-max-w-2xl" },
-      { label: "max-w-4xl", value: "tw-max-w-4xl" },
+      { label: "w-full", value: "w-full" },
+      { label: "w-1/2", value: "w-1/2" },
+      { label: "w-1/3", value: "w-1/3" },
+      { label: "w-2/3", value: "w-2/3" },
+      { label: "max-w-sm", value: "max-w-sm" },
+      { label: "max-w-md", value: "max-w-md" },
+      { label: "max-w-lg", value: "max-w-lg" },
+      { label: "max-w-xl", value: "max-w-xl" },
+      { label: "max-w-2xl", value: "max-w-2xl" },
+      { label: "max-w-4xl", value: "max-w-4xl" },
     ],
   },
 ];
