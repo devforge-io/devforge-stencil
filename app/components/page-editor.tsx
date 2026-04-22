@@ -154,6 +154,7 @@ export function PageEditor({
   const [externalStyles, setExternalStyles] = useState<string[]>([]);
   const [externalScripts, setExternalScripts] = useState<string[]>([]);
   const [newResourceUrl, setNewResourceUrl] = useState("");
+  const [responsivePrefix, setResponsivePrefix] = useState("");
 
   // GrapesJS mount targets
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -294,7 +295,10 @@ export function PageEditor({
         plugins: [blocks.default],
         pluginsOpts: {
           [blocks.default as unknown as string]: {
-            flexGrid: true,
+            flexGrid: false,
+            addBasicStyle: false,
+            // Disable column blocks — we have our own Tailwind-based ones
+            blocks: ["text", "link", "image", "video", "map"],
           },
         },
 
@@ -401,11 +405,451 @@ export function PageEditor({
         content: `<div class="border border-gray-200 rounded-lg overflow-hidden max-w-sm"><div class="h-44 bg-gray-100"></div><div class="p-5"><h3 class="font-semibold mb-2">Card Title</h3><p class="text-gray-500 text-sm">Card description goes here.</p></div></div>`,
       });
 
+      // Button component type with style variants
+      const BUTTON_STYLES: Record<string, { label: string; classes: string }> = {
+        primary: {
+          label: "Primary",
+          classes: "inline-block px-6 py-3 bg-indigo-500 text-white rounded-lg font-medium hover:bg-indigo-600 no-underline",
+        },
+        secondary: {
+          label: "Secondary",
+          classes: "inline-block px-6 py-3 bg-gray-100 text-gray-800 rounded-lg font-medium hover:bg-gray-200 no-underline",
+        },
+        outline: {
+          label: "Outline",
+          classes: "inline-block px-6 py-3 border-2 border-indigo-500 text-indigo-500 rounded-lg font-medium hover:bg-indigo-50 no-underline",
+        },
+        ghost: {
+          label: "Ghost",
+          classes: "inline-block px-6 py-3 text-indigo-500 rounded-lg font-medium hover:bg-indigo-50 no-underline",
+        },
+        danger: {
+          label: "Danger",
+          classes: "inline-block px-6 py-3 bg-red-500 text-white rounded-lg font-medium hover:bg-red-600 no-underline",
+        },
+        success: {
+          label: "Success",
+          classes: "inline-block px-6 py-3 bg-green-500 text-white rounded-lg font-medium hover:bg-green-600 no-underline",
+        },
+        dark: {
+          label: "Dark",
+          classes: "inline-block px-6 py-3 bg-gray-900 text-white rounded-lg font-medium hover:bg-gray-800 no-underline",
+        },
+        light: {
+          label: "Light",
+          classes: "inline-block px-6 py-3 bg-white text-gray-900 border border-gray-200 rounded-lg font-medium hover:bg-gray-50 no-underline",
+        },
+        gradient: {
+          label: "Gradient",
+          classes: "inline-block px-6 py-3 bg-gradient-to-r from-indigo-500 to-purple-500 text-white rounded-lg font-medium hover:from-indigo-600 hover:to-purple-600 no-underline",
+        },
+        pill: {
+          label: "Pill",
+          classes: "inline-block px-8 py-3 bg-indigo-500 text-white rounded-full font-medium hover:bg-indigo-600 no-underline",
+        },
+        "outline-dark": {
+          label: "Outline Dark",
+          classes: "inline-block px-6 py-3 border-2 border-gray-900 text-gray-900 rounded-lg font-medium hover:bg-gray-900 hover:text-white no-underline",
+        },
+        "outline-light": {
+          label: "Outline Light",
+          classes: "inline-block px-6 py-3 border-2 border-white text-white rounded-lg font-medium hover:bg-white hover:text-gray-900 no-underline",
+        },
+      };
+
+      // Override default text type to include a Text trait in Settings
+      const dc = editor.DomComponents;
+      const origText = dc.getType("text");
+      dc.addType("text", {
+        model: {
+          defaults: {
+            ...origText?.model?.prototype?.defaults,
+            traits: [
+              { name: "textContent", label: "Text", changeProp: true },
+            ],
+          },
+          init() {
+            this.on("change:textContent", this.onTextContentChange);
+          },
+          onTextContentChange() {
+            const text = this.get("textContent") as string;
+            if (text !== undefined) {
+              const el = this.getEl();
+              if (el) el.textContent = text;
+              this.components(text);
+            }
+          },
+        },
+      });
+
+      // Override default link type to include a Text trait
+      const origLink = dc.getType("link");
+      dc.addType("link", {
+        model: {
+          defaults: {
+            ...origLink?.model?.prototype?.defaults,
+            traits: [
+              { name: "textContent", label: "Text", changeProp: true },
+              "title",
+              "href",
+              "target",
+            ],
+          },
+          init() {
+            // Read initial text
+            const el = this.getEl();
+            if (el) {
+              this.set("textContent", el.textContent?.trim() || "", { silent: true });
+            }
+            this.on("change:textContent", this.onTextChange);
+          },
+          onTextChange() {
+            const text = this.get("textContent") as string;
+            const el = this.getEl();
+            if (el && text !== undefined) {
+              el.textContent = text;
+              this.components(text);
+            }
+          },
+        },
+      });
+
+      // Button component (extends link)
+      dc.addType("button", {
+        extend: "link",
+        isComponent: (el) =>
+          el.tagName === "A" &&
+          (el.classList.contains("inline-block") || el.classList.contains("inline-flex")),
+        model: {
+          defaults: {
+            name: "Button",
+            droppable: true,
+            buttonStyle: "",
+            traits: [
+              { name: "href", label: "URL" },
+              {
+                name: "target",
+                label: "Target",
+                type: "select",
+                options: [
+                  { value: "", name: "Same window" },
+                  { value: "_blank", name: "New window" },
+                ],
+              },
+              {
+                name: "buttonStyle",
+                label: "Style",
+                type: "select",
+                changeProp: true,
+                options: Object.entries(BUTTON_STYLES).map(([value, { label }]) => ({
+                  value,
+                  name: label,
+                })),
+              },
+            ],
+          },
+          init() {
+            this.on("change:buttonStyle", this.handleStyleChange);
+          },
+          handleStyleChange() {
+            const style = this.get("buttonStyle") as string;
+            const def = BUTTON_STYLES[style];
+            if (!def) return;
+            const newClasses = def.classes.split(" ");
+            const current = this.getClasses() as string[];
+            const keep = current.filter(
+              (c: string) =>
+                c === "inline-flex" ||
+                c.startsWith("items-") ||
+                c.startsWith("gap-") ||
+                c.startsWith("justify-") ||
+                c.startsWith("w-") ||
+                c.startsWith("h-")
+            );
+            const hasInlineFlex = keep.includes("inline-flex");
+            let final = hasInlineFlex
+              ? newClasses.map((c) => (c === "inline-block" ? "inline-flex" : c))
+              : newClasses;
+            if (hasInlineFlex) {
+              final = [...final, ...keep.filter((c) => !final.includes(c))];
+            }
+            this.setClass(final);
+          },
+        },
+      });
+
+      // Icon component type — for font icons (FA, Material, Bootstrap)
+      const FA_ICONS = [
+        "fa-solid fa-arrow-right", "fa-solid fa-arrow-left", "fa-solid fa-arrow-down", "fa-solid fa-arrow-up",
+        "fa-solid fa-chevron-right", "fa-solid fa-chevron-left", "fa-solid fa-chevron-down", "fa-solid fa-chevron-up",
+        "fa-solid fa-check", "fa-solid fa-xmark", "fa-solid fa-plus", "fa-solid fa-minus",
+        "fa-solid fa-star", "fa-solid fa-heart", "fa-solid fa-thumbs-up", "fa-solid fa-fire",
+        "fa-solid fa-bolt", "fa-solid fa-rocket", "fa-solid fa-shield-halved", "fa-solid fa-crown",
+        "fa-solid fa-user", "fa-solid fa-users", "fa-solid fa-user-plus", "fa-solid fa-circle-user",
+        "fa-solid fa-envelope", "fa-solid fa-phone", "fa-solid fa-location-dot", "fa-solid fa-globe",
+        "fa-solid fa-magnifying-glass", "fa-solid fa-gear", "fa-solid fa-sliders", "fa-solid fa-filter",
+        "fa-solid fa-house", "fa-solid fa-building", "fa-solid fa-store", "fa-solid fa-landmark",
+        "fa-solid fa-cart-shopping", "fa-solid fa-bag-shopping", "fa-solid fa-credit-card", "fa-solid fa-wallet",
+        "fa-solid fa-download", "fa-solid fa-upload", "fa-solid fa-cloud", "fa-solid fa-database",
+        "fa-solid fa-play", "fa-solid fa-pause", "fa-solid fa-stop", "fa-solid fa-music",
+        "fa-solid fa-image", "fa-solid fa-camera", "fa-solid fa-video", "fa-solid fa-file",
+        "fa-solid fa-folder", "fa-solid fa-trash", "fa-solid fa-pen", "fa-solid fa-copy",
+        "fa-solid fa-link", "fa-solid fa-share", "fa-solid fa-bookmark", "fa-solid fa-bell",
+        "fa-solid fa-lock", "fa-solid fa-unlock", "fa-solid fa-eye", "fa-solid fa-eye-slash",
+        "fa-solid fa-circle-info", "fa-solid fa-circle-question", "fa-solid fa-circle-check", "fa-solid fa-circle-exclamation",
+        "fa-solid fa-triangle-exclamation", "fa-solid fa-ban", "fa-solid fa-clock", "fa-solid fa-calendar",
+        "fa-solid fa-chart-line", "fa-solid fa-chart-bar", "fa-solid fa-chart-pie", "fa-solid fa-code",
+        "fa-solid fa-terminal", "fa-solid fa-laptop", "fa-solid fa-mobile-screen", "fa-solid fa-desktop",
+        "fa-brands fa-github", "fa-brands fa-twitter", "fa-brands fa-linkedin", "fa-brands fa-discord",
+        "fa-brands fa-youtube", "fa-brands fa-instagram", "fa-brands fa-facebook", "fa-brands fa-tiktok",
+        "fa-brands fa-google", "fa-brands fa-apple", "fa-brands fa-windows", "fa-brands fa-amazon",
+        "fa-brands fa-stripe", "fa-brands fa-paypal", "fa-brands fa-figma", "fa-brands fa-slack",
+      ];
+
+      const MATERIAL_ICONS = [
+        "arrow_forward", "arrow_back", "arrow_downward", "arrow_upward",
+        "chevron_right", "chevron_left", "expand_more", "expand_less",
+        "check", "close", "add", "remove",
+        "star", "favorite", "thumb_up", "whatshot",
+        "bolt", "rocket_launch", "shield", "workspace_premium",
+        "person", "group", "person_add", "account_circle",
+        "mail", "phone", "location_on", "language",
+        "search", "settings", "tune", "filter_list",
+        "home", "apartment", "storefront", "account_balance",
+        "shopping_cart", "shopping_bag", "credit_card", "wallet",
+        "download", "upload", "cloud", "storage",
+        "play_arrow", "pause", "stop", "music_note",
+        "image", "photo_camera", "videocam", "description",
+        "folder", "delete", "edit", "content_copy",
+        "link", "share", "bookmark", "notifications",
+        "lock", "lock_open", "visibility", "visibility_off",
+        "info", "help", "check_circle", "error",
+        "warning", "block", "schedule", "calendar_today",
+        "show_chart", "bar_chart", "pie_chart", "code",
+        "terminal", "laptop", "smartphone", "desktop_windows",
+      ];
+
+      const BI_ICONS = [
+        "bi bi-arrow-right", "bi bi-arrow-left", "bi bi-arrow-down", "bi bi-arrow-up",
+        "bi bi-chevron-right", "bi bi-chevron-left", "bi bi-chevron-down", "bi bi-chevron-up",
+        "bi bi-check-lg", "bi bi-x-lg", "bi bi-plus-lg", "bi bi-dash-lg",
+        "bi bi-star-fill", "bi bi-heart-fill", "bi bi-hand-thumbs-up-fill", "bi bi-fire",
+        "bi bi-lightning-fill", "bi bi-rocket-takeoff-fill", "bi bi-shield-fill-check", "bi bi-trophy-fill",
+        "bi bi-person", "bi bi-people", "bi bi-person-plus", "bi bi-person-circle",
+        "bi bi-envelope", "bi bi-telephone", "bi bi-geo-alt", "bi bi-globe",
+        "bi bi-search", "bi bi-gear", "bi bi-sliders", "bi bi-funnel",
+        "bi bi-house", "bi bi-building", "bi bi-shop", "bi bi-bank",
+        "bi bi-cart", "bi bi-bag", "bi bi-credit-card", "bi bi-wallet2",
+        "bi bi-download", "bi bi-upload", "bi bi-cloud", "bi bi-database",
+        "bi bi-play-fill", "bi bi-pause-fill", "bi bi-stop-fill", "bi bi-music-note",
+        "bi bi-image", "bi bi-camera", "bi bi-camera-video", "bi bi-file-earmark",
+        "bi bi-folder", "bi bi-trash", "bi bi-pencil", "bi bi-clipboard",
+        "bi bi-link-45deg", "bi bi-share", "bi bi-bookmark", "bi bi-bell",
+        "bi bi-lock", "bi bi-unlock", "bi bi-eye", "bi bi-eye-slash",
+        "bi bi-info-circle", "bi bi-question-circle", "bi bi-check-circle", "bi bi-exclamation-circle",
+        "bi bi-exclamation-triangle", "bi bi-slash-circle", "bi bi-clock", "bi bi-calendar",
+        "bi bi-graph-up", "bi bi-bar-chart", "bi bi-pie-chart", "bi bi-code-slash",
+        "bi bi-terminal", "bi bi-laptop", "bi bi-phone", "bi bi-display",
+        "bi bi-github", "bi bi-twitter-x", "bi bi-linkedin", "bi bi-discord",
+        "bi bi-youtube", "bi bi-instagram", "bi bi-facebook", "bi bi-tiktok",
+      ];
+
+      dc.addType("icon", {
+        isComponent: (el) =>
+          (el.tagName === "I" && (el.className.includes("fa-") || el.className.includes("bi-") || el.className.includes("bi "))) ||
+          (el.tagName === "SPAN" && el.classList.contains("material-icons")),
+        model: {
+          defaults: {
+            tagName: "span",
+            name: "Icon",
+            droppable: false,
+            iconClass: "",
+            iconName: "",
+            biClass: "",
+            traits: [],
+          },
+          init() {
+            this.on("change:iconClass", this.handleFaChange);
+            this.on("change:iconName", this.handleMaterialChange);
+            this.on("change:biClass", this.handleBiChange);
+            // Set the right traits based on what type of icon this is
+            setTimeout(() => this.detectAndSetTraits(), 50);
+          },
+          detectAndSetTraits() {
+            const classes = (this.getClasses() as string[]).join(" ");
+            const el = this.getEl();
+
+            if (classes.includes("fa-")) {
+              this.set("traits", [
+                {
+                  name: "iconClass",
+                  label: "Icon",
+                  type: "select",
+                  changeProp: true,
+                  options: [
+                    { value: "", name: "-- Select --" },
+                    ...FA_ICONS.map((c: string) => ({ value: c, name: c.replace("fa-solid fa-", "").replace("fa-brands fa-", "") })),
+                  ],
+                },
+              ]);
+            } else if (classes.includes("material-icons")) {
+              this.set("traits", [
+                {
+                  name: "iconName",
+                  label: "Icon",
+                  type: "select",
+                  changeProp: true,
+                  options: [
+                    { value: "", name: "-- Select --" },
+                    ...MATERIAL_ICONS.map((n: string) => ({ value: n, name: n })),
+                  ],
+                },
+              ]);
+            } else if (classes.includes("bi")) {
+              this.set("traits", [
+                {
+                  name: "biClass",
+                  label: "Icon",
+                  type: "select",
+                  changeProp: true,
+                  options: [
+                    { value: "", name: "-- Select --" },
+                    ...BI_ICONS.map((c: string) => ({ value: c, name: c.replace("bi bi-", "") })),
+                  ],
+                },
+              ]);
+            }
+          },
+          handleFaChange() {
+            const cls = this.get("iconClass") as string;
+            if (!cls) return;
+            this.set("tagName", "i");
+            const sizeClasses = (this.getClasses() as string[]).filter((c: string) => c.startsWith("text-"));
+            this.setClass([...cls.split(" "), ...sizeClasses]);
+            this.components("");
+            const el = this.getEl();
+            if (el) el.textContent = "";
+          },
+          handleMaterialChange() {
+            const name = this.get("iconName") as string;
+            if (!name) return;
+            this.set("tagName", "span");
+            const sizeClasses = (this.getClasses() as string[]).filter((c: string) => c.startsWith("text-"));
+            this.setClass(["material-icons", ...sizeClasses]);
+            this.components(name);
+            const el = this.getEl();
+            if (el) el.textContent = name;
+          },
+          handleBiChange() {
+            const cls = this.get("biClass") as string;
+            if (!cls) return;
+            this.set("tagName", "i");
+            const sizeClasses = (this.getClasses() as string[]).filter((c: string) => c.startsWith("text-"));
+            this.setClass([...cls.split(" "), ...sizeClasses]);
+            this.components("");
+            const el = this.getEl();
+            if (el) el.textContent = "";
+          },
+        },
+      });
+
+      // Populate icon traits on selection
+      editor.on("component:selected", (comp: { get: (k: string) => string; set: (k: string, v: string) => void; getEl: () => HTMLElement | null; getClasses: () => string[] }) => {
+        if (comp.get("type") !== "icon") return;
+        const el = comp.getEl();
+        if (!el) return;
+        const classes = comp.getClasses().join(" ");
+        if (classes.includes("fa-")) {
+          comp.set("iconClass", classes.replace(/text-\S+/g, "").trim());
+        } else if (classes.includes("bi-") || classes.includes("bi ")) {
+          comp.set("biClass", classes.replace(/text-\S+/g, "").trim());
+        } else if (classes.includes("material-icons")) {
+          comp.set("iconName", el.textContent?.trim() || "");
+        }
+      });
+
+      // SVG icon block is always available
+      bm.add("icon-svg", {
+        label: "SVG Icon",
+        category: "Icons",
+        media: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>`,
+        content: `<svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>`,
+      });
+
       bm.add("btn", {
         label: "Button",
-        category: "Components",
+        category: "Buttons",
         media: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="8" width="18" height="8" rx="4"/></svg>`,
-        content: `<a href="#" class="inline-block px-6 py-3 bg-indigo-500 text-white rounded-lg font-medium hover:bg-indigo-600 no-underline">Button</a>`,
+        content: `<a href="#" class="${BUTTON_STYLES.primary.classes}">Button</a>`,
+      });
+
+      bm.add("btn-icon-left", {
+        label: "Icon + Label",
+        category: "Buttons",
+        media: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="8" width="18" height="8" rx="4"/><circle cx="8" cy="12" r="1.5" fill="currentColor"/><line x1="11" y1="12" x2="17" y2="12"/></svg>`,
+        content: `<a href="#" class="inline-flex items-center gap-2 px-6 py-3 bg-indigo-500 text-white rounded-lg font-medium hover:bg-indigo-600 no-underline">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+          <span data-gjs-editable="true" data-gjs-type="text">Button</span>
+        </a>`,
+      });
+
+      bm.add("btn-icon-right", {
+        label: "Label + Icon",
+        category: "Buttons",
+        media: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="8" width="18" height="8" rx="4"/><line x1="7" y1="12" x2="13" y2="12"/><circle cx="16" cy="12" r="1.5" fill="currentColor"/></svg>`,
+        content: `<a href="#" class="inline-flex items-center gap-2 px-6 py-3 bg-indigo-500 text-white rounded-lg font-medium hover:bg-indigo-600 no-underline">
+          <span data-gjs-editable="true" data-gjs-type="text">Button</span>
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+        </a>`,
+      });
+
+      bm.add("btn-icon-only", {
+        label: "Icon Only",
+        category: "Buttons",
+        media: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="6" y="6" width="12" height="12" rx="4"/><circle cx="12" cy="12" r="2" fill="currentColor"/></svg>`,
+        content: `<a href="#" class="inline-flex items-center justify-center w-12 h-12 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 no-underline">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 4v16m8-8H4"/></svg>
+        </a>`,
+      });
+
+      bm.add("btn-image", {
+        label: "Image + Label",
+        category: "Buttons",
+        media: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="6" width="18" height="12" rx="4"/><rect x="5" y="8" width="6" height="8" rx="1"/><line x1="13" y1="11" x2="19" y2="11"/><line x1="13" y1="14" x2="17" y2="14"/></svg>`,
+        content: `<a href="#" class="inline-flex items-center gap-3 px-5 py-2.5 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 no-underline text-gray-900">
+          <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32' fill='%236366f1' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='6'/%3E%3C/svg%3E" class="w-8 h-8 rounded" alt="icon" />
+          <div class="flex flex-col">
+            <span data-gjs-editable="true" data-gjs-type="text" class="font-medium text-sm">Button Label</span>
+            <span data-gjs-editable="true" data-gjs-type="text" class="text-xs text-gray-500">Description text</span>
+          </div>
+        </a>`,
+      });
+
+      bm.add("btn-group", {
+        label: "Button Group",
+        category: "Buttons",
+        media: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="8" width="9" height="8" rx="2"/><rect x="13" y="8" width="9" height="8" rx="2"/></svg>`,
+        content: `<div class="inline-flex gap-2">
+          <a href="#" class="inline-block px-6 py-3 bg-indigo-500 text-white rounded-lg font-medium hover:bg-indigo-600 no-underline">Primary</a>
+          <a href="#" class="inline-block px-6 py-3 border-2 border-indigo-500 text-indigo-500 rounded-lg font-medium hover:bg-indigo-50 no-underline">Secondary</a>
+        </div>`,
+      });
+
+      bm.add("social-btns", {
+        label: "Social Buttons",
+        category: "Buttons",
+        media: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="7" cy="12" r="3"/><circle cx="17" cy="12" r="3"/></svg>`,
+        content: `<div class="flex gap-3">
+          <a href="#" class="inline-flex items-center justify-center w-10 h-10 bg-gray-900 text-white rounded-full hover:bg-gray-700 no-underline" title="X/Twitter">
+            <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+          </a>
+          <a href="#" class="inline-flex items-center justify-center w-10 h-10 bg-blue-600 text-white rounded-full hover:bg-blue-700 no-underline" title="LinkedIn">
+            <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452z"/></svg>
+          </a>
+          <a href="#" class="inline-flex items-center justify-center w-10 h-10 bg-gray-100 text-gray-700 rounded-full hover:bg-gray-200 no-underline" title="GitHub">
+            <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg>
+          </a>
+        </div>`,
       });
 
       bm.add("testimonial", {
@@ -493,6 +937,25 @@ export function PageEditor({
         }
       });
 
+      // Purge GrapesJS CSS rules that combine gjs-selected with component classes.
+      // Must remove from GrapesJS's internal CSS Composer, not DOM stylesheets.
+      const purgeGjsSelectedRules = () => {
+        const allRules = editor.Css.getAll();
+        const toRemove: unknown[] = [];
+        allRules.forEach((rule: { selectorsToString?: () => string }) => {
+          const sel = rule.selectorsToString?.() ?? "";
+          if (sel.includes(".gjs-selected.")) {
+            toRemove.push(rule);
+          }
+        });
+        toRemove.forEach((rule) => editor.Css.remove(rule));
+      };
+      editor.on("component:selected", () => {
+        // Delay slightly so GrapesJS finishes creating the rule first
+        setTimeout(purgeGjsSelectedRules, 10);
+        setTimeout(purgeGjsSelectedRules, 100);
+      });
+
       // Listen for device changes
       editor.on("change:device", () => {
         setDevice(editor.getDevice());
@@ -515,6 +978,16 @@ export function PageEditor({
       editor.on("component:selected", syncClasses);
       editor.on("component:deselected", () => setSelectedClasses([]));
 
+      // Populate the textContent trait when a text/link/button is selected
+      editor.on("component:selected", (comp: { get: (k: string) => string; set: (k: string, v: string, o?: unknown) => void; getEl: () => HTMLElement | null }) => {
+        const type = comp.get("type");
+        if (type === "text" || type === "link" || type === "button") {
+          const el = comp.getEl();
+          if (!el) return;
+          comp.set("textContent", el.textContent?.trim() || "");
+        }
+      });
+
       // Load existing project
       if (projectData) {
         try {
@@ -532,6 +1005,18 @@ export function PageEditor({
             );
             if (fontUrls.length > 0) {
               setTimeout(() => updateTailwindFontConfig(editor, fontUrls), 500);
+            }
+            // Show icon blocks for loaded libraries
+            const styles = data._externalStyles as string[];
+            const _bm = editor.BlockManager;
+            if (styles.some((u: string) => u.includes("font-awesome"))) {
+              _bm.add("icon-fa", { label: "FA Icon", category: "Icons", media: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polygon points="12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26"/></svg>`, content: `<i class="fa-solid fa-star text-xl"></i>` });
+            }
+            if (styles.some((u: string) => u.includes("Material+Icons"))) {
+              _bm.add("icon-material", { label: "Material Icon", category: "Icons", media: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>`, content: `<span class="material-icons text-2xl">star</span>` });
+            }
+            if (styles.some((u: string) => u.includes("bootstrap-icons"))) {
+              _bm.add("icon-bi", { label: "Bootstrap Icon", category: "Icons", media: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M9 12l2 2 4-4"/></svg>`, content: `<i class="bi bi-star-fill text-xl"></i>` });
             }
           }
           if (data._externalScripts) {
@@ -630,7 +1115,9 @@ export function PageEditor({
     let css = editor.getCss() ?? "";
 
     // Strip gjs- classes from HTML
-    html = html.replace(/\s*gjs-[a-z-]+/g, "");
+    html = html.replace(/\s*gjs-[a-z0-9-]+/g, "");
+    // Strip data-gjs-* attributes
+    html = html.replace(/\s*data-gjs-[a-z-]+="[^"]*"/g, "");
     // Remove inline style attributes (styles live in CSS via #id selectors now)
     html = html.replace(/\s*style="[^"]*"/g, "");
     // Clean up empty class attributes left behind
@@ -688,35 +1175,77 @@ export function PageEditor({
     }
   }, []);
 
+  const syncIconBlocks = useCallback((styles: string[]) => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    const bm = editor.BlockManager;
+
+    const hasFa = styles.some((u) => u.includes("font-awesome"));
+    const hasMaterial = styles.some((u) => u.includes("Material+Icons"));
+    const hasBi = styles.some((u) => u.includes("bootstrap-icons"));
+
+    if (hasFa && !bm.get("icon-fa")) {
+      bm.add("icon-fa", {
+        label: "FA Icon",
+        category: "Icons",
+        media: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polygon points="12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26"/></svg>`,
+        content: `<i class="fa-solid fa-star text-xl"></i>`,
+      });
+    } else if (!hasFa && bm.get("icon-fa")) {
+      bm.remove("icon-fa");
+    }
+
+    if (hasMaterial && !bm.get("icon-material")) {
+      bm.add("icon-material", {
+        label: "Material Icon",
+        category: "Icons",
+        media: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>`,
+        content: `<span class="material-icons text-2xl">star</span>`,
+      });
+    } else if (!hasMaterial && bm.get("icon-material")) {
+      bm.remove("icon-material");
+    }
+
+    if (hasBi && !bm.get("icon-bi")) {
+      bm.add("icon-bi", {
+        label: "Bootstrap Icon",
+        category: "Icons",
+        media: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M9 12l2 2 4-4"/></svg>`,
+        content: `<i class="bi bi-star-fill text-xl"></i>`,
+      });
+    } else if (!hasBi && bm.get("icon-bi")) {
+      bm.remove("icon-bi");
+    }
+  }, []);
+
   const addExternalStyle = useCallback((url: string) => {
     if (!url || externalStyles.includes(url)) return;
     const next = [...externalStyles, url];
     setExternalStyles(next);
     if (editorRef.current) {
       injectResources(editorRef.current, [url], []);
-      // If it's a Google Font, update Tailwind config so font-{name} classes work
       if (url.includes("fonts.googleapis.com")) {
         const fontUrls = next.filter((u) => u.includes("fonts.googleapis.com"));
         updateTailwindFontConfig(editorRef.current, fontUrls);
       }
+      syncIconBlocks(next);
     }
-  }, [externalStyles]);
+  }, [externalStyles, syncIconBlocks]);
 
   const removeExternalStyle = useCallback((url: string) => {
     const next = externalStyles.filter((u) => u !== url);
     setExternalStyles(next);
-    // Remove from canvas
     const frame = editorRef.current?.Canvas.getFrameEl();
     if (frame?.contentDocument) {
       const link = frame.contentDocument.querySelector(`link[href="${url}"]`);
       link?.remove();
     }
-    // Update Tailwind font config
     if (url.includes("fonts.googleapis.com") && editorRef.current) {
       const fontUrls = next.filter((u) => u.includes("fonts.googleapis.com"));
       updateTailwindFontConfig(editorRef.current, fontUrls);
     }
-  }, [externalStyles]);
+    syncIconBlocks(next);
+  }, [externalStyles, syncIconBlocks]);
 
   const addExternalScript = useCallback((url: string) => {
     if (!url || externalScripts.includes(url)) return;
@@ -838,6 +1367,37 @@ export function PageEditor({
             <div ref={layersRef} className={activeTab === "layers" ? "p-2 [&_.gjs-layer]:!bg-transparent [&_.gjs-layer-title]:!text-xs [&_.gjs-layer-title-inn]:!text-xs" : "hidden"} />
             <div ref={selectorsRef} className="hidden" />
             <div className={activeTab === "classes" ? "p-2" : "hidden"}>
+              {/* Responsive breakpoint selector */}
+              <div className="mb-3">
+                <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Breakpoint</p>
+                <div className="flex gap-0.5">
+                  {[
+                    { label: "All", value: "" },
+                    { label: "sm", value: "sm:" },
+                    { label: "md", value: "md:" },
+                    { label: "lg", value: "lg:" },
+                    { label: "xl", value: "xl:" },
+                    { label: "2xl", value: "2xl:" },
+                  ].map((bp) => (
+                    <button
+                      key={bp.value}
+                      type="button"
+                      onClick={() => setResponsivePrefix(bp.value)}
+                      className={`px-2 py-0.5 rounded text-[10px] font-medium transition-colors ${
+                        responsivePrefix === bp.value
+                          ? "bg-brand-600 text-white"
+                          : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700"
+                      }`}
+                    >
+                      {bp.label}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-[9px] text-gray-400 mt-1">
+                  {responsivePrefix ? `Classes will be prefixed with ${responsivePrefix}` : "Classes apply to all screen sizes"}
+                </p>
+              </div>
+
               {/* Current classes on selected element */}
               {selectedClasses.length > 0 && (
                 <div className="mb-3">
@@ -873,9 +1433,13 @@ export function PageEditor({
                 selectedClasses={selectedClasses}
                 onToggle={toggleClassOnSelected}
                 loadedFontUrls={externalStyles}
+                prefix={responsivePrefix}
               />
             </div>
-            <div ref={stylesRef} className={activeTab === "styles" ? "p-2 [&_.gjs-sector-title]:!text-xs [&_.gjs-sector-title]:!font-semibold [&_.gjs-sector-title]:!bg-transparent [&_.gjs-sector-title]:!border-0 [&_.gjs-sector-title]:!text-gray-600 [&_.gjs-sector-title]:dark:!text-gray-400 [&_.gjs-field]:!text-xs [&_.gjs-label-wrp]:!text-[10px]" : "hidden"} />
+            <div className={activeTab === "styles" ? "p-2" : "hidden"}>
+              <StylesClearPanel editorRef={editorRef} />
+              <div ref={stylesRef} className="[&_.gjs-sector-title]:!text-xs [&_.gjs-sector-title]:!font-semibold [&_.gjs-sector-title]:!bg-transparent [&_.gjs-sector-title]:!border-0 [&_.gjs-sector-title]:!text-gray-600 [&_.gjs-sector-title]:dark:!text-gray-400 [&_.gjs-field]:!text-xs [&_.gjs-label-wrp]:!text-[10px]" />
+            </div>
             <div ref={traitsRef} className={activeTab === "traits" ? "p-2 [&_.gjs-trt-trait]:!text-xs [&_.gjs-label-wrp]:!text-[10px]" : "hidden"} />
 
             {/* Resources / Fonts tab */}
@@ -965,6 +1529,121 @@ export function PageEditor({
                     );
                   })}
                 </div>
+
+                {/* Show common icons when a library is active */}
+                {externalStyles.some((u) => u.includes("font-awesome")) && (
+                  <div className="mt-2">
+                    <p className="text-[9px] text-gray-400 mb-1">Common Font Awesome icons (click to copy class):</p>
+                    <div className="flex flex-wrap gap-1">
+                      {[
+                        "fa-solid fa-arrow-right",
+                        "fa-solid fa-arrow-left",
+                        "fa-solid fa-chevron-right",
+                        "fa-solid fa-chevron-down",
+                        "fa-solid fa-check",
+                        "fa-solid fa-xmark",
+                        "fa-solid fa-plus",
+                        "fa-solid fa-minus",
+                        "fa-solid fa-star",
+                        "fa-solid fa-heart",
+                        "fa-solid fa-user",
+                        "fa-solid fa-envelope",
+                        "fa-solid fa-phone",
+                        "fa-solid fa-location-dot",
+                        "fa-solid fa-magnifying-glass",
+                        "fa-solid fa-gear",
+                        "fa-solid fa-house",
+                        "fa-solid fa-cart-shopping",
+                        "fa-solid fa-download",
+                        "fa-solid fa-upload",
+                        "fa-solid fa-play",
+                        "fa-solid fa-pause",
+                        "fa-solid fa-bolt",
+                        "fa-solid fa-fire",
+                        "fa-solid fa-rocket",
+                        "fa-solid fa-shield-halved",
+                        "fa-solid fa-circle-info",
+                        "fa-solid fa-triangle-exclamation",
+                        "fa-brands fa-github",
+                        "fa-brands fa-twitter",
+                        "fa-brands fa-linkedin",
+                        "fa-brands fa-discord",
+                        "fa-brands fa-youtube",
+                        "fa-brands fa-instagram",
+                      ].map((cls) => (
+                        <button
+                          key={cls}
+                          type="button"
+                          onClick={() => navigator.clipboard.writeText(cls)}
+                          title={`Click to copy: ${cls}`}
+                          className="px-1 py-0.5 bg-gray-100 dark:bg-gray-800 rounded text-[9px] text-gray-500 hover:bg-indigo-100 hover:text-indigo-600 dark:hover:bg-indigo-900/30 transition-colors"
+                        >
+                          {cls.replace("fa-solid fa-", "").replace("fa-brands fa-", "")}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-[9px] text-gray-400 mt-1">
+                      Paste into the Icon field in Settings tab. Browse all at{" "}
+                      <a href="https://fontawesome.com/icons" target="_blank" rel="noreferrer" className="underline">fontawesome.com/icons</a>
+                    </p>
+                  </div>
+                )}
+
+                {externalStyles.some((u) => u.includes("bootstrap-icons")) && (
+                  <div className="mt-2">
+                    <p className="text-[9px] text-gray-400 mb-1">Common Bootstrap icons (click to copy):</p>
+                    <div className="flex flex-wrap gap-1">
+                      {[
+                        "bi bi-arrow-right",
+                        "bi bi-arrow-left",
+                        "bi bi-check-lg",
+                        "bi bi-x-lg",
+                        "bi bi-plus-lg",
+                        "bi bi-star-fill",
+                        "bi bi-heart-fill",
+                        "bi bi-person",
+                        "bi bi-envelope",
+                        "bi bi-telephone",
+                        "bi bi-geo-alt",
+                        "bi bi-search",
+                        "bi bi-gear",
+                        "bi bi-house",
+                        "bi bi-cart",
+                        "bi bi-download",
+                        "bi bi-play-fill",
+                        "bi bi-lightning",
+                        "bi bi-github",
+                        "bi bi-twitter-x",
+                        "bi bi-linkedin",
+                        "bi bi-discord",
+                      ].map((cls) => (
+                        <button
+                          key={cls}
+                          type="button"
+                          onClick={() => navigator.clipboard.writeText(cls)}
+                          title={`Click to copy: ${cls}`}
+                          className="px-1 py-0.5 bg-gray-100 dark:bg-gray-800 rounded text-[9px] text-gray-500 hover:bg-indigo-100 hover:text-indigo-600 dark:hover:bg-indigo-900/30 transition-colors"
+                        >
+                          {cls.replace("bi bi-", "")}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-[9px] text-gray-400 mt-1">
+                      Browse all at{" "}
+                      <a href="https://icons.getbootstrap.com" target="_blank" rel="noreferrer" className="underline">icons.getbootstrap.com</a>
+                    </p>
+                  </div>
+                )}
+
+                {externalStyles.some((u) => u.includes("Material+Icons")) && (
+                  <div className="mt-2">
+                    <p className="text-[9px] text-gray-400">
+                      Use as: <code className="text-[9px]">&lt;span class="material-icons"&gt;star&lt;/span&gt;</code>.{" "}
+                      Browse at{" "}
+                      <a href="https://fonts.google.com/icons" target="_blank" rel="noreferrer" className="underline">fonts.google.com/icons</a>
+                    </p>
+                  </div>
+                )}
               </div>
 
               {/* Active Resources */}
@@ -1235,23 +1914,128 @@ const TAILWIND_GROUPS: {
     ],
   },
   {
-    label: "Layout",
+    label: "Display",
     classes: [
       { label: "block", value: "block" },
-      { label: "inline", value: "inline-block" },
+      { label: "inline-block", value: "inline-block" },
+      { label: "inline", value: "inline" },
       { label: "flex", value: "flex" },
+      { label: "inline-flex", value: "inline-flex" },
       { label: "grid", value: "grid" },
+      { label: "inline-grid", value: "inline-grid" },
       { label: "hidden", value: "hidden" },
-      { label: "flex-col", value: "flex-col" },
-      { label: "items-center", value: "items-center" },
-      { label: "justify-center", value: "justify-center" },
-      { label: "justify-between", value: "justify-between" },
-      { label: "gap-2", value: "gap-2" },
-      { label: "gap-4", value: "gap-4" },
-      { label: "gap-8", value: "gap-8" },
+    ],
+  },
+  {
+    label: "Flex Direction",
+    classes: [
+      { label: "row", value: "flex-row" },
+      { label: "row-reverse", value: "flex-row-reverse" },
+      { label: "col", value: "flex-col" },
+      { label: "col-reverse", value: "flex-col-reverse" },
+    ],
+  },
+  {
+    label: "Flex Wrap",
+    classes: [
+      { label: "wrap", value: "flex-wrap" },
+      { label: "wrap-reverse", value: "flex-wrap-reverse" },
+      { label: "nowrap", value: "flex-nowrap" },
+    ],
+  },
+  {
+    label: "Justify Content",
+    classes: [
+      { label: "start", value: "justify-start" },
+      { label: "end", value: "justify-end" },
+      { label: "center", value: "justify-center" },
+      { label: "between", value: "justify-between" },
+      { label: "around", value: "justify-around" },
+      { label: "evenly", value: "justify-evenly" },
+    ],
+  },
+  {
+    label: "Align Items",
+    classes: [
+      { label: "start", value: "items-start" },
+      { label: "end", value: "items-end" },
+      { label: "center", value: "items-center" },
+      { label: "baseline", value: "items-baseline" },
+      { label: "stretch", value: "items-stretch" },
+    ],
+  },
+  {
+    label: "Align Self",
+    classes: [
+      { label: "auto", value: "self-auto" },
+      { label: "start", value: "self-start" },
+      { label: "end", value: "self-end" },
+      { label: "center", value: "self-center" },
+      { label: "stretch", value: "self-stretch" },
+    ],
+  },
+  {
+    label: "Flex Grow/Shrink",
+    classes: [
+      { label: "grow", value: "grow" },
+      { label: "grow-0", value: "grow-0" },
+      { label: "shrink", value: "shrink" },
+      { label: "shrink-0", value: "shrink-0" },
+      { label: "flex-1", value: "flex-1" },
+      { label: "flex-auto", value: "flex-auto" },
+      { label: "flex-initial", value: "flex-initial" },
+      { label: "flex-none", value: "flex-none" },
+      { label: "basis-0", value: "basis-0" },
+      { label: "basis-1/2", value: "basis-1/2" },
+      { label: "basis-1/3", value: "basis-1/3" },
+      { label: "basis-2/3", value: "basis-2/3" },
+      { label: "basis-1/4", value: "basis-1/4" },
+      { label: "basis-full", value: "basis-full" },
+      { label: "basis-auto", value: "basis-auto" },
+    ],
+  },
+  {
+    label: "Gap",
+    classes: [
+      { label: "0", value: "gap-0" },
+      { label: "1", value: "gap-1" },
+      { label: "2", value: "gap-2" },
+      { label: "3", value: "gap-3" },
+      { label: "4", value: "gap-4" },
+      { label: "6", value: "gap-6" },
+      { label: "8", value: "gap-8" },
+      { label: "10", value: "gap-10" },
+      { label: "12", value: "gap-12" },
+      { label: "x-2", value: "gap-x-2" },
+      { label: "x-4", value: "gap-x-4" },
+      { label: "x-8", value: "gap-x-8" },
+      { label: "y-2", value: "gap-y-2" },
+      { label: "y-4", value: "gap-y-4" },
+      { label: "y-8", value: "gap-y-8" },
+    ],
+  },
+  {
+    label: "Order",
+    classes: [
+      { label: "first", value: "order-first" },
+      { label: "last", value: "order-last" },
+      { label: "none", value: "order-none" },
+      { label: "1", value: "order-1" },
+      { label: "2", value: "order-2" },
+      { label: "3", value: "order-3" },
+      { label: "4", value: "order-4" },
+      { label: "5", value: "order-5" },
+    ],
+  },
+  {
+    label: "Auto Margins",
+    classes: [
       { label: "mx-auto", value: "mx-auto" },
       { label: "ml-auto", value: "ml-auto" },
       { label: "mr-auto", value: "mr-auto" },
+      { label: "my-auto", value: "my-auto" },
+      { label: "mt-auto", value: "mt-auto" },
+      { label: "mb-auto", value: "mb-auto" },
     ],
   },
   {
@@ -1275,12 +2059,14 @@ function TailwindQuickStyles({
   selectedClasses,
   onToggle,
   loadedFontUrls,
+  prefix,
 }: {
   selectedClasses: string[];
   onToggle: (cls: string) => void;
   loadedFontUrls: string[];
+  prefix: string;
 }) {
-  const [openGroup, setOpenGroup] = useState<string | null>("Text Size");
+  const [openGroup, setOpenGroup] = useState<string | null>("Font Family");
 
   // Build font family classes from loaded Google Fonts
   const fontClasses: { label: string; value: string }[] = [
@@ -1298,15 +2084,236 @@ function TailwindQuickStyles({
     }
   }
 
-  const allGroups = [
+  const EXTENDED_GROUPS: typeof TAILWIND_GROUPS = [
     { label: "Font Family", classes: fontClasses },
     ...TAILWIND_GROUPS,
-  ];
+    {
+      label: "Height",
+      classes: [
+        { label: "h-auto", value: "h-auto" },
+        { label: "h-full", value: "h-full" },
+        { label: "h-screen", value: "h-screen" },
+        { label: "h-8", value: "h-8" },
+        { label: "h-12", value: "h-12" },
+        { label: "h-16", value: "h-16" },
+        { label: "h-24", value: "h-24" },
+        { label: "h-32", value: "h-32" },
+        { label: "h-48", value: "h-48" },
+        { label: "h-64", value: "h-64" },
+        { label: "min-h-screen", value: "min-h-screen" },
+        { label: "min-h-0", value: "min-h-0" },
+      ],
+    },
+    {
+      label: "Grid",
+      classes: [
+        { label: "grid-cols-1", value: "grid-cols-1" },
+        { label: "grid-cols-2", value: "grid-cols-2" },
+        { label: "grid-cols-3", value: "grid-cols-3" },
+        { label: "grid-cols-4", value: "grid-cols-4" },
+        { label: "grid-cols-6", value: "grid-cols-6" },
+        { label: "grid-cols-12", value: "grid-cols-12" },
+        { label: "col-span-1", value: "col-span-1" },
+        { label: "col-span-2", value: "col-span-2" },
+        { label: "col-span-3", value: "col-span-3" },
+        { label: "col-span-4", value: "col-span-4" },
+        { label: "col-span-6", value: "col-span-6" },
+        { label: "col-span-full", value: "col-span-full" },
+        { label: "gap-1", value: "gap-1" },
+        { label: "gap-2", value: "gap-2" },
+        { label: "gap-4", value: "gap-4" },
+        { label: "gap-6", value: "gap-6" },
+        { label: "gap-8", value: "gap-8" },
+      ],
+    },
+    {
+      label: "Position",
+      classes: [
+        { label: "static", value: "static" },
+        { label: "relative", value: "relative" },
+        { label: "absolute", value: "absolute" },
+        { label: "fixed", value: "fixed" },
+        { label: "sticky", value: "sticky" },
+        { label: "inset-0", value: "inset-0" },
+        { label: "top-0", value: "top-0" },
+        { label: "right-0", value: "right-0" },
+        { label: "bottom-0", value: "bottom-0" },
+        { label: "left-0", value: "left-0" },
+        { label: "z-0", value: "z-0" },
+        { label: "z-10", value: "z-10" },
+        { label: "z-20", value: "z-20" },
+        { label: "z-50", value: "z-50" },
+      ],
+    },
+    {
+      label: "Overflow",
+      classes: [
+        { label: "visible", value: "overflow-visible" },
+        { label: "hidden", value: "overflow-hidden" },
+        { label: "scroll", value: "overflow-scroll" },
+        { label: "auto", value: "overflow-auto" },
+        { label: "x-auto", value: "overflow-x-auto" },
+        { label: "y-auto", value: "overflow-y-auto" },
+        { label: "x-hidden", value: "overflow-x-hidden" },
+        { label: "y-hidden", value: "overflow-y-hidden" },
+      ],
+    },
+    {
+      label: "Opacity",
+      classes: [
+        { label: "0", value: "opacity-0" },
+        { label: "25", value: "opacity-25" },
+        { label: "50", value: "opacity-50" },
+        { label: "75", value: "opacity-75" },
+        { label: "100", value: "opacity-100" },
+      ],
+    },
+    {
+      label: "Cursor",
+      classes: [
+        { label: "default", value: "cursor-default" },
+        { label: "pointer", value: "cursor-pointer" },
+        { label: "text", value: "cursor-text" },
+        { label: "move", value: "cursor-move" },
+        { label: "not-allowed", value: "cursor-not-allowed" },
+        { label: "grab", value: "cursor-grab" },
+      ],
+    },
+    {
+      label: "Transition",
+      classes: [
+        { label: "all", value: "transition-all" },
+        { label: "default", value: "transition" },
+        { label: "colors", value: "transition-colors" },
+        { label: "transform", value: "transition-transform" },
+        { label: "opacity", value: "transition-opacity" },
+        { label: "none", value: "transition-none" },
+        { label: "fast (150)", value: "duration-150" },
+        { label: "normal (300)", value: "duration-300" },
+        { label: "slow (500)", value: "duration-500" },
+        { label: "slower (700)", value: "duration-700" },
+      ],
+    },
+    {
+      label: "Transform",
+      classes: [
+        { label: "scale-90", value: "scale-90" },
+        { label: "scale-95", value: "scale-95" },
+        { label: "scale-100", value: "scale-100" },
+        { label: "scale-105", value: "scale-105" },
+        { label: "scale-110", value: "scale-110" },
+        { label: "rotate-0", value: "rotate-0" },
+        { label: "rotate-45", value: "rotate-45" },
+        { label: "rotate-90", value: "rotate-90" },
+        { label: "rotate-180", value: "rotate-180" },
+        { label: "-rotate-45", value: "-rotate-45" },
+        { label: "-rotate-90", value: "-rotate-90" },
+      ],
+    },
+    {
+      label: "Object Fit",
+      classes: [
+        { label: "contain", value: "object-contain" },
+        { label: "cover", value: "object-cover" },
+        { label: "fill", value: "object-fill" },
+        { label: "none", value: "object-none" },
+        { label: "scale-down", value: "object-scale-down" },
+      ],
+    },
+    {
+      label: "Aspect Ratio",
+      classes: [
+        { label: "auto", value: "aspect-auto" },
+        { label: "square", value: "aspect-square" },
+        { label: "video", value: "aspect-video" },
+      ],
+    },
+    {
+      label: "Visibility",
+      classes: [
+        { label: "visible", value: "visible" },
+        { label: "invisible", value: "invisible" },
+        { label: "sr-only", value: "sr-only" },
+      ],
+    },
+    {
+      label: "Hover States",
+      classes: [
+        { label: "hover:opacity-80", value: "hover:opacity-80" },
+        { label: "hover:opacity-90", value: "hover:opacity-90" },
+        { label: "hover:scale-105", value: "hover:scale-105" },
+        { label: "hover:scale-110", value: "hover:scale-110" },
+        { label: "hover:underline", value: "hover:underline" },
+        { label: "hover:no-underline", value: "hover:no-underline" },
+        { label: "hover:shadow-lg", value: "hover:shadow-lg" },
+        { label: "hover:shadow-xl", value: "hover:shadow-xl" },
+      ],
+    },
+    {
+      label: "Line Clamp",
+      classes: [
+        { label: "1 line", value: "line-clamp-1" },
+        { label: "2 lines", value: "line-clamp-2" },
+        { label: "3 lines", value: "line-clamp-3" },
+        { label: "none", value: "line-clamp-none" },
+        { label: "truncate", value: "truncate" },
+      ],
+    },
+    {
+      label: "Text Style",
+      classes: [
+        { label: "italic", value: "italic" },
+        { label: "not italic", value: "not-italic" },
+        { label: "underline", value: "underline" },
+        { label: "overline", value: "overline" },
+        { label: "line-through", value: "line-through" },
+        { label: "no underline", value: "no-underline" },
+        { label: "uppercase", value: "uppercase" },
+        { label: "lowercase", value: "lowercase" },
+        { label: "capitalize", value: "capitalize" },
+        { label: "normal case", value: "normal-case" },
+      ],
+    },
+    {
+      label: "Line Height",
+      classes: [
+        { label: "none", value: "leading-none" },
+        { label: "tight", value: "leading-tight" },
+        { label: "snug", value: "leading-snug" },
+        { label: "normal", value: "leading-normal" },
+        { label: "relaxed", value: "leading-relaxed" },
+        { label: "loose", value: "leading-loose" },
+      ],
+    },
+    {
+      label: "Letter Spacing",
+      classes: [
+        { label: "tighter", value: "tracking-tighter" },
+        { label: "tight", value: "tracking-tight" },
+        { label: "normal", value: "tracking-normal" },
+        { label: "wide", value: "tracking-wide" },
+        { label: "wider", value: "tracking-wider" },
+        { label: "widest", value: "tracking-widest" },
+      ],
+    },
+    {
+      label: "List Style",
+      classes: [
+        { label: "none", value: "list-none" },
+        { label: "disc", value: "list-disc" },
+        { label: "decimal", value: "list-decimal" },
+        { label: "inside", value: "list-inside" },
+        { label: "outside", value: "list-outside" },
+      ],
+    },
+  ].sort((a, b) => a.label.localeCompare(b.label));
 
   return (
     <div>
-      <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Quick Styles</p>
-      {allGroups.map((group) => (
+      <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
+        Quick Styles {prefix && <span className="text-brand-600">({prefix.replace(":", "")})</span>}
+      </p>
+      {EXTENDED_GROUPS.map((group) => (
         <div key={group.label} className="mb-1">
           <button
             type="button"
@@ -1319,13 +2326,17 @@ function TailwindQuickStyles({
           {openGroup === group.label && (
             <div className="flex flex-wrap gap-1 pb-2">
               {group.classes.map((cls) => {
-                const parts = cls.value.split(/\s+/).filter(Boolean);
+                // Apply responsive prefix to each class
+                const prefixedValue = cls.value
+                  ? cls.value.split(/\s+/).map((c) => prefix + c).join(" ")
+                  : "";
+                const parts = prefixedValue.split(/\s+/).filter(Boolean);
                 const isActive = parts.length > 0 && parts.every((p) => selectedClasses.includes(p));
                 return (
                   <button
                     key={cls.value || "none"}
                     type="button"
-                    onClick={() => onToggle(cls.value)}
+                    onClick={() => onToggle(prefixedValue)}
                     className={`px-1.5 py-0.5 rounded text-[10px] transition-colors ${
                       isActive
                         ? "bg-indigo-500 text-white"
@@ -1340,6 +2351,139 @@ function TailwindQuickStyles({
           )}
         </div>
       ))}
+    </div>
+  );
+}
+
+function StylesClearPanel({
+  editorRef,
+}: {
+  editorRef: React.RefObject<import("grapesjs").Editor | null>;
+}) {
+  const [styles, setStyles] = useState<Record<string, string>>({});
+
+  // Refresh styles when component selection changes
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (!editor) return;
+
+    const refresh = () => {
+      const selected = editor.getSelected();
+      if (!selected) { setStyles({}); return; }
+
+      // With componentFirst, styles live in #id CSS rules, not inline
+      const rule = editor.Css.getIdRule(selected.getId());
+      const ruleStyles = rule ? { ...rule.getStyle() } : {};
+
+      // Also check inline styles as fallback
+      const inlineStyles = { ...selected.getStyle() };
+
+      const merged = { ...inlineStyles, ...ruleStyles };
+      // Filter out empty values
+      const filtered: Record<string, string> = {};
+      for (const [k, v] of Object.entries(merged)) {
+        if (v && v !== "" && k !== "__p") filtered[k] = v;
+      }
+      setStyles(filtered);
+    };
+
+    editor.on("component:selected", refresh);
+    editor.on("component:deselected", () => setStyles({}));
+    editor.on("style:property:update", refresh);
+    editor.on("component:update", refresh);
+    // Poll to catch style changes that don't fire events
+    const interval = setInterval(refresh, 1000);
+
+    return () => {
+      editor.off("component:selected", refresh);
+      editor.off("style:property:update", refresh);
+      editor.off("component:update", refresh);
+      clearInterval(interval);
+    };
+  }, [editorRef]);
+
+  const removeProperty = useCallback(
+    (prop: string) => {
+      const editor = editorRef.current;
+      if (!editor) return;
+      const selected = editor.getSelected();
+      if (!selected) return;
+
+      // Remove from inline style
+      const inline = { ...selected.getStyle() };
+      delete inline[prop];
+      selected.setStyle(inline);
+
+      // Remove from #id CSS rule
+      const rule = editor.Css.getIdRule(selected.getId());
+      if (rule) {
+        const ruleStyle = { ...rule.getStyle() };
+        delete ruleStyle[prop];
+        rule.setStyle(ruleStyle);
+      }
+
+      // Trigger style manager refresh without reselecting
+      editor.trigger("component:styleUpdate", selected);
+    },
+    [editorRef]
+  );
+
+  const clearAll = useCallback(() => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    const selected = editor.getSelected();
+    if (!selected) return;
+
+    selected.setStyle({});
+
+    const rule = editor.Css.getIdRule(selected.getId());
+    if (rule) {
+      rule.setStyle({});
+    }
+
+    editor.trigger("component:styleUpdate", selected);
+  }, [editorRef]);
+
+  const entries = Object.entries(styles).filter(
+    ([, v]) => v !== undefined && v !== ""
+  );
+
+  if (entries.length === 0) return null;
+
+  return (
+    <div className="mb-3 border border-gray-200 dark:border-gray-800 rounded-lg p-2">
+      <div className="flex items-center justify-between mb-1.5">
+        <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
+          Active Inline Styles ({entries.length})
+        </p>
+        <button
+          type="button"
+          onClick={clearAll}
+          className="text-[9px] text-red-500 hover:text-red-700 font-medium"
+        >
+          Clear all
+        </button>
+      </div>
+      <div className="space-y-0.5">
+        {entries.map(([prop, value]) => (
+          <div
+            key={prop}
+            className="flex items-center gap-1 group"
+          >
+            <code className="text-[9px] text-gray-500 dark:text-gray-400 flex-1 truncate">
+              <span className="text-indigo-600 dark:text-indigo-400">{prop}</span>: {value}
+            </code>
+            <button
+              type="button"
+              onClick={() => removeProperty(prop)}
+              className="text-[9px] text-red-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
+              title={`Remove ${prop}`}
+            >
+              &times;
+            </button>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
