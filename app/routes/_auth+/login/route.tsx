@@ -1,6 +1,10 @@
 import { Form, redirect, useNavigation } from "react-router";
 import { validateToken } from "~/lib/github.server";
 import { getSession, commitSession } from "~/lib/auth.server";
+import { Button } from "~/components/ui/button";
+import { Input } from "~/components/ui/input";
+import { Label } from "~/components/ui/label";
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "~/components/ui/card";
 import type { Route } from "./+types/route";
 
 export async function action({ request }: Route.ActionArgs) {
@@ -32,53 +36,42 @@ export default function Login({ actionData }: Route.ComponentProps) {
   const isSubmitting = navigation.state === "submitting";
 
   return (
-    <div className="bg-white dark:bg-gray-900 rounded-xl shadow-sm border border-gray-200 dark:border-gray-800 p-6">
-      <h2 className="text-lg font-semibold mb-4">Sign in with GitHub</h2>
-      <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">
-        Enter a GitHub Personal Access Token with{" "}
-        <code className="text-xs bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded">
-          repo
-        </code>{" "}
-        scope to manage your content repository.
-      </p>
+    <Card className="w-full">
+      <CardHeader>
+        <CardTitle>Sign in with GitHub</CardTitle>
+        <CardDescription>
+          Enter a GitHub Personal Access Token with{" "}
+          <code className="text-xs bg-muted px-1 py-0.5 rounded">repo</code>{" "}
+          scope to manage your content repository.
+        </CardDescription>
+      </CardHeader>
+      <Form method="post">
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="token">Personal Access Token</Label>
+            <Input
+              id="token"
+              name="token"
+              type="password"
+              required
+              placeholder="ghp_..."
+            />
+          </div>
 
-      <Form method="post" className="space-y-4">
-        <div>
-          <label
-            htmlFor="token"
-            className="block text-sm font-medium mb-1.5"
-          >
-            Personal Access Token
-          </label>
-          <input
-            id="token"
-            name="token"
-            type="password"
-            required
-            placeholder="ghp_..."
-            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent"
-          />
-        </div>
-
-        {actionData?.error && (
-          <p className="text-sm text-red-600 dark:text-red-400">
-            {actionData.error}
+          {actionData?.error && (
+            <p className="text-sm text-destructive">{actionData.error}</p>
+          )}
+        </CardContent>
+        <CardFooter className="flex flex-col gap-3">
+          <Button type="submit" className="w-full" disabled={isSubmitting}>
+            {isSubmitting ? "Validating..." : "Sign In"}
+          </Button>
+          <p className="text-xs text-muted-foreground text-center">
+            The token is stored in an encrypted session cookie.
+            Repository settings are configured via environment variables.
           </p>
-        )}
-
-        <button
-          type="submit"
-          disabled={isSubmitting}
-          className="w-full px-4 py-2.5 bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition-colors text-sm font-medium disabled:opacity-50"
-        >
-          {isSubmitting ? "Validating..." : "Sign In"}
-        </button>
+        </CardFooter>
       </Form>
-
-      <p className="mt-4 text-xs text-gray-500 dark:text-gray-500">
-        The token is stored in an encrypted session cookie.
-        Repository settings are configured via environment variables.
-      </p>
-    </div>
+    </Card>
   );
 }

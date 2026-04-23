@@ -7,6 +7,10 @@ import {
   publishContent,
   unpublishContent,
 } from "~/lib/content.server";
+import { Button } from "~/components/ui/button";
+import { Badge } from "~/components/ui/badge";
+import { Card, CardContent } from "~/components/ui/card";
+import { Separator } from "~/components/ui/separator";
 import type { Route } from "./+types/route";
 
 export async function loader({ params }: Route.LoaderArgs) {
@@ -16,7 +20,6 @@ export async function loader({ params }: Route.LoaderArgs) {
   }
   const publishStatus = await getContentPublishStatus(params.slug, content.contentType);
 
-  // Load compiled CSS for page content (from draft branch for preview)
   let compiledCss: string | null = null;
   if (content.contentType === "page") {
     const { getGitHubConfig } = await import("~/lib/github.server");
@@ -54,30 +57,28 @@ export default function ContentView({ loaderData }: Route.ComponentProps) {
     <div>
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold flex items-center gap-3">
-            {content.frontmatter.title}
+          <div className="flex items-center gap-3 mb-1">
+            <h1 className="text-2xl font-bold tracking-tight">
+              {content.frontmatter.title}
+            </h1>
             {publishStatus.published ? (
               publishStatus.upToDate ? (
-                <span className="text-sm font-normal px-2.5 py-0.5 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded-full">
+                <Badge className="bg-green-500/10 text-green-700 dark:text-green-400 border-green-500/20">
                   Published
-                </span>
+                </Badge>
               ) : (
-                <span className="text-sm font-normal px-2.5 py-0.5 bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400 rounded-full">
+                <Badge className="bg-yellow-500/10 text-yellow-700 dark:text-yellow-400 border-yellow-500/20">
                   Unpublished changes
-                </span>
+                </Badge>
               )
             ) : (
-              <span className="text-sm font-normal px-2.5 py-0.5 bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 rounded-full">
-                Draft
-              </span>
+              <Badge variant="secondary">Draft</Badge>
             )}
-          </h1>
+          </div>
           {content.frontmatter.description && (
-            <p className="text-gray-600 dark:text-gray-400 mt-1">
-              {content.frontmatter.description}
-            </p>
+            <p className="text-muted-foreground">{content.frontmatter.description}</p>
           )}
-          <code className="text-xs text-gray-400 dark:text-gray-500 font-mono mt-1">
+          <code className="text-xs text-muted-foreground font-mono">
             {content.sha.slice(0, 7)}
           </code>
         </div>
@@ -85,91 +86,85 @@ export default function ContentView({ loaderData }: Route.ComponentProps) {
           <Form method="post">
             <input type="hidden" name="contentType" value={content.contentType} />
             {publishStatus.published && publishStatus.upToDate ? (
-              <button
+              <Button
                 type="submit"
                 name="intent"
                 value="unpublish"
+                variant="destructive"
+                size="sm"
                 disabled={isUnpublishing}
-                className="px-3 py-1.5 border border-red-300 dark:border-red-800 text-red-600 dark:text-red-400 rounded-lg hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors text-sm disabled:opacity-50"
               >
                 {isUnpublishing ? "Unpublishing..." : "Unpublish"}
-              </button>
+              </Button>
             ) : (
-              <button
+              <Button
                 type="submit"
                 name="intent"
                 value="publish"
+                size="sm"
+                className="bg-green-600 hover:bg-green-700 text-white"
                 disabled={isPublishing}
-                className="px-3 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm font-medium disabled:opacity-50"
               >
                 {isPublishing
                   ? "Publishing..."
                   : publishStatus.published
                     ? "Publish Changes"
                     : "Publish"}
-              </button>
+              </Button>
             )}
           </Form>
-          <Link
-            to={`/content/${content.slug}/history`}
-            className="px-3 py-1.5 border border-gray-300 dark:border-gray-700 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-sm"
-          >
+          <Button variant="outline" size="sm" render={<Link to={`/content/${content.slug}/history`} />}>
             History
-          </Link>
-          <Link
-            to={`/content/${content.slug}/edit`}
-            className="px-3 py-1.5 bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition-colors text-sm font-medium"
-          >
+          </Button>
+          <Button size="sm" render={<Link to={`/content/${content.slug}/edit`} />}>
             Edit
-          </Link>
+          </Button>
         </div>
       </div>
 
       <div className="flex gap-2 mb-4">
         {content.frontmatter.tags?.map((tag) => (
-          <span
-            key={tag}
-            className="text-xs px-2 py-0.5 bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 rounded-full"
-          >
+          <Badge key={tag} variant="outline" className="font-normal">
             {tag}
-          </span>
+          </Badge>
         ))}
         {content.frontmatter.publishedAt && (
-          <time className="text-xs text-gray-400">
-            Created{" "}
-            {formatDate(content.frontmatter.publishedAt)}
-          </time>
+          <span className="text-xs text-muted-foreground flex items-center">
+            Created {formatDate(content.frontmatter.publishedAt)}
+          </span>
         )}
       </div>
 
       {content.contentType === "page" && "css" in content ? (
-        <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg overflow-hidden">
+        <Card className="overflow-hidden">
           <iframe
-            srcDoc={`<!DOCTYPE html><html><head><style>${compiledCss || (content as { css: string }).css}</style></head><body>${content.html}</body></html>`}
+            srcDoc={`<!DOCTYPE html><html><head><script src="https://cdn.tailwindcss.com"><\/script><style>${compiledCss || (content as { css: string }).css}</style></head><body>${content.html}</body></html>`}
             className="w-full min-h-[500px] border-0"
             title={content.frontmatter.title}
           />
-        </div>
+        </Card>
       ) : (
-        <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg p-8">
-          <article
-            className="prose max-w-none"
-            dangerouslySetInnerHTML={{ __html: content.html }}
-          />
-        </div>
+        <Card>
+          <CardContent className="p-8">
+            <article
+              className="prose max-w-none"
+              dangerouslySetInnerHTML={{ __html: content.html }}
+            />
+          </CardContent>
+        </Card>
       )}
 
       {publishStatus.published && (
-        <div className="mt-4 text-xs text-gray-400">
+        <p className="mt-4 text-xs text-muted-foreground">
           Embed:{" "}
-          <code className="bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded">
+          <code className="bg-muted px-1.5 py-0.5 rounded text-xs">
             /api/content/{content.slug}
           </code>
           {" | "}
-          <code className="bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded">
+          <code className="bg-muted px-1.5 py-0.5 rounded text-xs">
             /embed/{content.slug}
           </code>
-        </div>
+        </p>
       )}
     </div>
   );

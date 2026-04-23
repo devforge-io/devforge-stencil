@@ -1,5 +1,6 @@
 import { Link } from "react-router";
 import { isAuthenticated } from "~/lib/auth.server";
+import { Button } from "~/components/ui/button";
 import type { Route } from "./+types/route";
 
 export async function loader({ request }: Route.LoaderArgs) {
@@ -11,33 +12,18 @@ export default function Index({ loaderData }: Route.ComponentProps) {
   const { loggedIn } = loaderData;
 
   return (
-    <div className="min-h-screen flex flex-col">
-      <header className="border-b border-gray-200 dark:border-gray-800">
-        <div className="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
+    <div className="min-h-screen flex flex-col bg-background">
+      <header className="border-b">
+        <div className="max-w-5xl mx-auto px-6 h-14 flex items-center justify-between">
           <h1 className="text-xl font-bold tracking-tight">Stencil</h1>
-          <nav className="flex gap-4">
+          <nav className="flex gap-2">
             {loggedIn ? (
               <>
-                <Link
-                  to="/content"
-                  className="px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition-colors text-sm font-medium"
-                >
-                  Dashboard
-                </Link>
-                <Link
-                  to="/logout"
-                  className="px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 text-sm"
-                >
-                  Logout
-                </Link>
+                <Button render={<Link to="/content" />}>Dashboard</Button>
+                <Button variant="ghost" render={<Link to="/logout" />}>Logout</Button>
               </>
             ) : (
-              <Link
-                to="/login"
-                className="px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition-colors text-sm font-medium"
-              >
-                Login
-              </Link>
+              <Button render={<Link to="/login" />}>Login</Button>
             )}
           </nav>
         </div>
@@ -48,29 +34,23 @@ export default function Index({ loaderData }: Route.ComponentProps) {
           <h2 className="text-5xl font-bold tracking-tight mb-6">
             Git-backed CMS
           </h2>
-          <p className="text-xl text-gray-600 dark:text-gray-400 mb-8 leading-relaxed">
+          <p className="text-xl text-muted-foreground mb-8 leading-relaxed">
             Stencil is a headless CMS that stores content as Markdown in your
             GitHub repository. Edit, preview, and publish with full version
             history.
           </p>
           <div className="flex gap-4 justify-center">
-            <Link
-              to={loggedIn ? "/content" : "/login"}
-              className="px-6 py-3 bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition-colors font-medium"
-            >
+            <Button size="lg" render={<Link to={loggedIn ? "/content" : "/login"} />}>
               Get Started
-            </Link>
-            <a
-              href="/api/health"
-              className="px-6 py-3 border border-gray-300 dark:border-gray-700 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-900 transition-colors font-medium"
-            >
+            </Button>
+            <Button size="lg" variant="outline" render={<a href="/api/health" />}>
               API Status
-            </a>
+            </Button>
           </div>
         </div>
       </main>
 
-      <footer className="border-t border-gray-200 dark:border-gray-800 py-6 text-center text-sm text-gray-500">
+      <footer className="border-t py-6 text-center text-sm text-muted-foreground">
         Stencil CMS &mdash; Content lives in Git
       </footer>
     </div>

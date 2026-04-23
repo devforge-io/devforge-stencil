@@ -3,6 +3,11 @@ import { useState } from "react";
 import { saveContent, type ContentType } from "~/lib/content.server";
 import { MarkdownEditor } from "~/components/markdown-editor";
 import { buildPageRaw } from "~/lib/page.server";
+import { Button } from "~/components/ui/button";
+import { Input } from "~/components/ui/input";
+import { Label } from "~/components/ui/label";
+import { Card, CardContent } from "~/components/ui/card";
+import { Checkbox } from "~/components/ui/checkbox";
 import type { Route } from "./+types/route";
 
 export async function action({ request }: Route.ActionArgs) {
@@ -70,10 +75,9 @@ export default function NewContent({ actionData }: Route.ComponentProps) {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold mb-6">New Content</h1>
+      <h1 className="text-2xl font-bold tracking-tight mb-6">New Content</h1>
 
       <Form method="post" className="space-y-4">
-        {/* Content type picker */}
         <div className="flex gap-2 mb-2">
           {(
             [
@@ -81,125 +85,81 @@ export default function NewContent({ actionData }: Route.ComponentProps) {
               ["page", "Page (Visual Builder)"],
             ] as const
           ).map(([type, label]) => (
-            <button
+            <Button
               key={type}
               type="button"
+              variant={contentType === type ? "default" : "outline"}
+              size="sm"
               onClick={() => setContentType(type)}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors border ${
-                contentType === type
-                  ? "bg-brand-600 text-white border-brand-600"
-                  : "bg-white dark:bg-gray-900 border-gray-300 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:border-brand-500"
-              }`}
             >
               {label}
-            </button>
+            </Button>
           ))}
         </div>
         <input type="hidden" name="contentType" value={contentType} />
 
         <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label
-              htmlFor="title"
-              className="block text-sm font-medium mb-1.5"
-            >
-              Title
-            </label>
-            <input
+          <div className="space-y-2">
+            <Label htmlFor="title">Title</Label>
+            <Input
               id="title"
               name="title"
               required
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
             />
           </div>
-          <div>
-            <label
-              htmlFor="slug"
-              className="block text-sm font-medium mb-1.5"
-            >
-              Slug
-            </label>
-            <input
+          <div className="space-y-2">
+            <Label htmlFor="slug">Slug</Label>
+            <Input
               id="slug"
               name="slug"
               required
               defaultValue={slugify(title)}
               key={title}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
             />
           </div>
         </div>
 
-        <div>
-          <label
-            htmlFor="description"
-            className="block text-sm font-medium mb-1.5"
-          >
-            Description
-          </label>
-          <input
-            id="description"
-            name="description"
-            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-          />
+        <div className="space-y-2">
+          <Label htmlFor="description">Description</Label>
+          <Input id="description" name="description" />
         </div>
 
-        <div>
-          <label htmlFor="tags" className="block text-sm font-medium mb-1.5">
-            Tags (comma-separated)
-          </label>
-          <input
-            id="tags"
-            name="tags"
-            placeholder="docs, tutorial"
-            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-          />
+        <div className="space-y-2">
+          <Label htmlFor="tags">Tags (comma-separated)</Label>
+          <Input id="tags" name="tags" placeholder="docs, tutorial" />
         </div>
 
         {contentType === "markdown" && (
-          <div>
-            <label className="block text-sm font-medium mb-1.5">
-              Content (Markdown)
-            </label>
+          <div className="space-y-2">
+            <Label>Content (Markdown)</Label>
             <MarkdownEditor value={body} onChange={setBody} name="body" />
           </div>
         )}
 
         {contentType === "page" && (
-          <p className="text-sm text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-900 p-4 rounded-lg">
-            The visual page builder will open after you create this page.
-          </p>
+          <Card>
+            <CardContent className="py-4">
+              <p className="text-sm text-muted-foreground">
+                The visual page builder will open after you create this page.
+              </p>
+            </CardContent>
+          </Card>
         )}
 
         <div className="flex items-center gap-2">
-          <input
-            id="draft"
-            name="draft"
-            type="checkbox"
-            className="rounded border-gray-300 dark:border-gray-700"
-          />
-          <label htmlFor="draft" className="text-sm">
-            Save as draft
-          </label>
+          <Checkbox id="draft" name="draft" value="on" />
+          <Label htmlFor="draft" className="font-normal">Save as draft</Label>
         </div>
 
         {actionData?.error && (
-          <p className="text-sm text-red-600 dark:text-red-400">
-            {actionData.error}
-          </p>
+          <p className="text-sm text-destructive">{actionData.error}</p>
         )}
 
-        <div className="flex gap-2">
-          <button
-            type="submit"
-            disabled={isSubmitting}
-            className="px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition-colors text-sm font-medium disabled:opacity-50"
-          >
-            {isSubmitting ? "Creating..." : "Create"}
-          </button>
-        </div>
+        <Button type="submit" disabled={isSubmitting}>
+          {isSubmitting ? "Creating..." : "Create"}
+        </Button>
       </Form>
     </div>
   );

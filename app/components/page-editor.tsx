@@ -1,5 +1,7 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { twMerge } from "tailwind-merge";
+import { Input } from "~/components/ui/input";
+import { ScrollArea } from "~/components/ui/scroll-area";
 import type { Editor as GrapesEditor } from "grapesjs";
 
 interface PageEditorProps {
@@ -155,6 +157,8 @@ export function PageEditor({
   const [externalScripts, setExternalScripts] = useState<string[]>([]);
   const [newResourceUrl, setNewResourceUrl] = useState("");
   const [responsivePrefix, setResponsivePrefix] = useState("");
+  const [selectedIconType, setSelectedIconType] = useState<"fa" | "material" | "bi" | null>(null);
+  const [selectedIconValue, setSelectedIconValue] = useState("");
 
   // GrapesJS mount targets
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -189,6 +193,8 @@ export function PageEditor({
               justify-content: inherit !important;
               align-items: inherit !important;
             }
+            * { font-size: inherit; }
+            a { font-size: inherit; color: inherit; }
           `,
         },
 
@@ -669,104 +675,43 @@ export function PageEditor({
             traits: [],
           },
           init() {
-            this.on("change:iconClass", this.handleFaChange);
-            this.on("change:iconName", this.handleMaterialChange);
-            this.on("change:biClass", this.handleBiChange);
-            // Set the right traits based on what type of icon this is
-            setTimeout(() => this.detectAndSetTraits(), 50);
-          },
-          detectAndSetTraits() {
-            const classes = (this.getClasses() as string[]).join(" ");
-            const el = this.getEl();
-
-            if (classes.includes("fa-")) {
-              this.set("traits", [
-                {
-                  name: "iconClass",
-                  label: "Icon",
-                  type: "select",
-                  changeProp: true,
-                  options: [
-                    { value: "", name: "-- Select --" },
-                    ...FA_ICONS.map((c: string) => ({ value: c, name: c.replace("fa-solid fa-", "").replace("fa-brands fa-", "") })),
-                  ],
-                },
-              ]);
-            } else if (classes.includes("material-icons")) {
-              this.set("traits", [
-                {
-                  name: "iconName",
-                  label: "Icon",
-                  type: "select",
-                  changeProp: true,
-                  options: [
-                    { value: "", name: "-- Select --" },
-                    ...MATERIAL_ICONS.map((n: string) => ({ value: n, name: n })),
-                  ],
-                },
-              ]);
-            } else if (classes.includes("bi")) {
-              this.set("traits", [
-                {
-                  name: "biClass",
-                  label: "Icon",
-                  type: "select",
-                  changeProp: true,
-                  options: [
-                    { value: "", name: "-- Select --" },
-                    ...BI_ICONS.map((c: string) => ({ value: c, name: c.replace("bi bi-", "") })),
-                  ],
-                },
-              ]);
-            }
-          },
-          handleFaChange() {
-            const cls = this.get("iconClass") as string;
-            if (!cls) return;
-            this.set("tagName", "i");
-            const sizeClasses = (this.getClasses() as string[]).filter((c: string) => c.startsWith("text-"));
-            this.setClass([...cls.split(" "), ...sizeClasses]);
-            this.components("");
-            const el = this.getEl();
-            if (el) el.textContent = "";
-          },
-          handleMaterialChange() {
-            const name = this.get("iconName") as string;
-            if (!name) return;
-            this.set("tagName", "span");
-            const sizeClasses = (this.getClasses() as string[]).filter((c: string) => c.startsWith("text-"));
-            this.setClass(["material-icons", ...sizeClasses]);
-            this.components(name);
-            const el = this.getEl();
-            if (el) el.textContent = name;
-          },
-          handleBiChange() {
-            const cls = this.get("biClass") as string;
-            if (!cls) return;
-            this.set("tagName", "i");
-            const sizeClasses = (this.getClasses() as string[]).filter((c: string) => c.startsWith("text-"));
-            this.setClass([...cls.split(" "), ...sizeClasses]);
-            this.components("");
-            const el = this.getEl();
-            if (el) el.textContent = "";
+            // Icon changes handled by React IconSearchPicker
           },
         },
       });
 
-      // Populate icon traits on selection
+      // Populate icon state on selection
       editor.on("component:selected", (comp: { get: (k: string) => string; set: (k: string, v: string) => void; getEl: () => HTMLElement | null; getClasses: () => string[] }) => {
-        if (comp.get("type") !== "icon") return;
+        if (comp.get("type") !== "icon") {
+          setSelectedIconType(null);
+          return;
+        }
         const el = comp.getEl();
         if (!el) return;
         const classes = comp.getClasses().join(" ");
         if (classes.includes("fa-")) {
-          comp.set("iconClass", classes.replace(/text-\S+/g, "").trim());
+          setSelectedIconType("fa");
+          setSelectedIconValue(classes.replace(/text-\S+/g, "").trim());
         } else if (classes.includes("bi-") || classes.includes("bi ")) {
-          comp.set("biClass", classes.replace(/text-\S+/g, "").trim());
+          setSelectedIconType("bi");
+          setSelectedIconValue(classes.replace(/text-\S+/g, "").trim());
         } else if (classes.includes("material-icons")) {
-          comp.set("iconName", el.textContent?.trim() || "");
+          setSelectedIconType("material");
+          setSelectedIconValue(el.textContent?.trim() || "");
         }
       });
+      editor.on("component:deselected", () => setSelectedIconType(null));
+
+      // Override default text and link blocks to remove inconsistent default styles
+      const bmAll = editor.BlockManager;
+      const textBlock = bmAll.get("text");
+      if (textBlock) {
+        textBlock.set("content", { type: "text", content: "Insert your text here" });
+      }
+      const linkBlock = bmAll.get("link");
+      if (linkBlock) {
+        linkBlock.set("content", { type: "link", content: "Link" });
+      }
 
       // SVG icon block is always available
       bm.add("icon-svg", {
@@ -1156,6 +1101,41 @@ export function PageEditor({
     onSave(projectJson, html, compiledCss);
   }, [onSave, externalStyles, externalScripts]);
 
+  const handleIconSelect = useCallback((value: string) => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    const comp = editor.getSelected();
+    if (!comp || comp.get("type") !== "icon") return;
+
+    setSelectedIconValue(value);
+
+    if (selectedIconType === "fa") {
+      comp.set("iconClass", value);
+      comp.set("tagName", "i");
+      const sizeClasses = (comp.getClasses() as string[]).filter((c: string) => c.startsWith("text-"));
+      comp.setClass([...value.split(" "), ...sizeClasses]);
+      const el = comp.getEl();
+      if (el) el.textContent = "";
+      comp.components("");
+    } else if (selectedIconType === "bi") {
+      comp.set("biClass", value);
+      comp.set("tagName", "i");
+      const sizeClasses = (comp.getClasses() as string[]).filter((c: string) => c.startsWith("text-"));
+      comp.setClass([...value.split(" "), ...sizeClasses]);
+      const el = comp.getEl();
+      if (el) el.textContent = "";
+      comp.components("");
+    } else if (selectedIconType === "material") {
+      comp.set("iconName", value);
+      comp.set("tagName", "span");
+      const sizeClasses = (comp.getClasses() as string[]).filter((c: string) => c.startsWith("text-"));
+      comp.setClass(["material-icons", ...sizeClasses]);
+      comp.components(value);
+      const el = comp.getEl();
+      if (el) el.textContent = value;
+    }
+  }, [selectedIconType]);
+
   const handleDeviceChange = useCallback((d: string) => {
     editorRef.current?.setDevice(d);
     setDevice(d);
@@ -1440,7 +1420,20 @@ export function PageEditor({
               <StylesClearPanel editorRef={editorRef} />
               <div ref={stylesRef} className="[&_.gjs-sector-title]:!text-xs [&_.gjs-sector-title]:!font-semibold [&_.gjs-sector-title]:!bg-transparent [&_.gjs-sector-title]:!border-0 [&_.gjs-sector-title]:!text-gray-600 [&_.gjs-sector-title]:dark:!text-gray-400 [&_.gjs-field]:!text-xs [&_.gjs-label-wrp]:!text-[10px]" />
             </div>
-            <div ref={traitsRef} className={activeTab === "traits" ? "p-2 [&_.gjs-trt-trait]:!text-xs [&_.gjs-label-wrp]:!text-[10px]" : "hidden"} />
+            <div className={activeTab === "traits" ? "p-2" : "hidden"}>
+              {/* Icon picker — shown when an icon component is selected */}
+              {selectedIconType && (
+                <IconSearchPicker
+                  type={selectedIconType}
+                  value={selectedIconValue}
+                  onSelect={handleIconSelect}
+                  faIcons={FA_ICONS}
+                  materialIcons={MATERIAL_ICONS}
+                  biIcons={BI_ICONS}
+                />
+              )}
+              <div ref={traitsRef} className="[&_.gjs-trt-trait]:!text-xs [&_.gjs-label-wrp]:!text-[10px]" />
+            </div>
 
             {/* Resources / Fonts tab */}
             <div className={activeTab === "resources" ? "p-2" : "hidden"}>
@@ -2484,6 +2477,87 @@ function StylesClearPanel({
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+function IconSearchPicker({
+  type,
+  value,
+  onSelect,
+  faIcons,
+  materialIcons,
+  biIcons,
+}: {
+  type: "fa" | "material" | "bi";
+  value: string;
+  onSelect: (value: string) => void;
+  faIcons: string[];
+  materialIcons: string[];
+  biIcons: string[];
+}) {
+  const [search, setSearch] = useState("");
+
+  const icons = useMemo(() => {
+    if (type === "fa") return faIcons;
+    if (type === "material") return materialIcons;
+    if (type === "bi") return biIcons;
+    return [];
+  }, [type, faIcons, materialIcons, biIcons]);
+
+  const displayName = (icon: string) => {
+    if (type === "fa") return icon.replace("fa-solid fa-", "").replace("fa-brands fa-", "");
+    if (type === "bi") return icon.replace("bi bi-", "");
+    return icon;
+  };
+
+  const filtered = useMemo(() => {
+    if (!search) return icons;
+    const q = search.toLowerCase();
+    return icons.filter((icon) => displayName(icon).toLowerCase().includes(q));
+  }, [icons, search]);
+
+  const label = type === "fa" ? "Font Awesome" : type === "material" ? "Material" : "Bootstrap";
+
+  return (
+    <div className="mb-3 border border-border rounded-lg p-2">
+      <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+        {label} Icon
+      </p>
+      <Input
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        placeholder="Search icons..."
+        className="h-7 text-xs mb-2"
+      />
+      <ScrollArea className="h-48">
+        <div className="grid grid-cols-4 gap-1">
+          {filtered.map((icon) => {
+            const name = displayName(icon);
+            const isActive = value === icon;
+            return (
+              <button
+                key={icon}
+                type="button"
+                onClick={() => onSelect(icon)}
+                title={name}
+                className={`flex flex-col items-center gap-1 p-1.5 rounded text-[9px] transition-colors ${
+                  isActive
+                    ? "bg-primary text-primary-foreground"
+                    : "hover:bg-muted text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <span className="text-base">{name.length > 6 ? name.slice(0, 6) + "..." : name}</span>
+              </button>
+            );
+          })}
+          {filtered.length === 0 && (
+            <p className="col-span-4 text-center text-[10px] text-muted-foreground py-4">
+              No icons match "{search}"
+            </p>
+          )}
+        </div>
+      </ScrollArea>
     </div>
   );
 }
