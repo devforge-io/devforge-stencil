@@ -44,6 +44,61 @@ body {
 .prose td { @apply border border-gray-300 dark:border-gray-700 px-3 py-2; }
 .prose hr { @apply my-8 border-gray-300 dark:border-gray-700; }
 
+/* Page Builder Canvas */
+.pb-canvas {
+  position: relative;
+  padding: 20px;
+  background-image: repeating-linear-gradient(
+    45deg,
+    transparent,
+    transparent 10px,
+    rgba(128, 128, 128, 0.05) 10px,
+    rgba(128, 128, 128, 0.05) 11px
+  );
+  background-color: var(--color-muted, #f1f5f9);
+}
+.pb-canvas > [data-pb-id] {
+  background-color: white;
+}
+.dark .pb-canvas > [data-pb-id] {
+  background-color: #0a0a0a;
+}
+.pb-canvas [data-pb-id] { position: relative; min-height: 2px; }
+.pb-canvas [data-pb-id]:empty { min-height: 20px; }
+
+/* Edit-mode padding on containers so edges are clickable */
+.pb-canvas [data-pb-container="true"] { padding: max(var(--pb-pad, 0px), 6px); }
+
+/* Selection & hover */
+.pb-canvas [data-pb-selected="true"] { outline: 2px solid #4c6ef5; outline-offset: -1px; z-index: 1; }
+.pb-canvas [data-pb-hover="true"]:not([data-pb-selected="true"]) { outline: 1px dashed #60a5fa; outline-offset: -1px; }
+.pb-canvas [data-pb-editing="true"] { outline: 2px solid #22c55e !important; outline-offset: -1px; }
+.pb-canvas [data-pb-drop-target="true"] { outline: 2px dashed #4c6ef5 !important; outline-offset: -2px; background: rgba(76, 110, 245, 0.06); }
+
+/* Floating label on hover */
+.pb-canvas [data-pb-hover="true"]::before,
+.pb-canvas [data-pb-selected="true"]::before {
+  content: attr(data-pb-name);
+  position: absolute;
+  top: -18px;
+  left: 0;
+  font-size: 10px;
+  line-height: 1;
+  padding: 2px 6px;
+  border-radius: 3px 3px 0 0;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 10;
+}
+.pb-canvas [data-pb-hover="true"]:not([data-pb-selected="true"])::before {
+  background: #60a5fa;
+  color: white;
+}
+.pb-canvas [data-pb-selected="true"]::before {
+  background: #4c6ef5;
+  color: white;
+}
+
 @theme inline {
   --font-heading: var(--font-sans);
   --font-sans: 'Geist Variable', sans-serif;

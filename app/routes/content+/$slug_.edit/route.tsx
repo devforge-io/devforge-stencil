@@ -4,7 +4,7 @@ import { getContent, saveContent, type ContentType } from "~/lib/content.server"
 import { listWhiteboardsForPage } from "~/lib/whiteboard.server";
 import { buildPageRaw } from "~/lib/page.server";
 import { MarkdownEditor } from "~/components/markdown-editor";
-import { PageEditor } from "~/components/page-editor";
+import { PageEditor } from "~/components/page-editor-v2";
 import type { Route } from "./+types/route";
 
 export async function loader({ params }: Route.LoaderArgs) {
