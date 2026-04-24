@@ -138,7 +138,7 @@ export async function saveContent(
   const result = await createOrUpdateFile(slug, raw, message, sha, type);
 
   // Save compiled CSS for page content type
-  if (type === "page" && compiledCss !== undefined) {
+  if (type === "page" && compiledCss != null) {
     await saveCompiledCss(slug, compiledCss);
   }
 

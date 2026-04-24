@@ -36,6 +36,39 @@ export function PageEditor({ projectData, onSave, saving = false }: PageEditorPr
 
   useEffect(() => setMounted(true), []);
 
+  // Load Tailwind CDN for dynamic canvas content
+  // The app's built-in Tailwind only covers statically-scanned classes,
+  // not the dynamic classes from page builder blocks
+  useEffect(() => {
+    if (!mounted) return;
+    const id = "pb-tailwind-cdn";
+    if (document.getElementById(id)) return;
+    const script = document.createElement("script");
+    script.id = id;
+    script.src = "https://cdn.tailwindcss.com";
+    document.head.appendChild(script);
+    return () => {
+      document.getElementById(id)?.remove();
+    };
+  }, [mounted]);
+
+  // Load external stylesheets (fonts, icon libs) into the document
+  useEffect(() => {
+    const links: HTMLLinkElement[] = [];
+    for (const url of externalStyles) {
+      if (document.querySelector(`link[href="${url}"]`)) continue;
+      const link = document.createElement("link");
+      link.rel = "stylesheet";
+      link.href = url;
+      link.setAttribute("data-pb-resource", "true");
+      document.head.appendChild(link);
+      links.push(link);
+    }
+    return () => {
+      links.forEach((l) => l.remove());
+    };
+  }, [externalStyles]);
+
   // Create store once
   const store = useMemo(() => {
     const s = createStore();
@@ -83,14 +116,41 @@ export function PageEditor({ projectData, onSave, saving = false }: PageEditorPr
   }, [selectedNode?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Save handler
+  const [savingCss, setSavingCss] = useState(false);
+
   const handleSave = useCallback(() => {
     const project = store.getProject();
     project.canvasStyles = externalStyles;
     const projectJson = JSON.stringify(project);
     const html = renderToHtml(state.root);
-    // CSS is compiled Tailwind + external imports
-    const cssImports = externalStyles.map((u) => `@import url('${u}');`).join("\n");
-    onSave(projectJson, html, cssImports);
+
+    // Compile Tailwind CSS by rendering the HTML in a hidden iframe with Tailwind CDN
+    setSavingCss(true);
+    compileTailwindCss(html, externalStyles).then((tailwindCss) => {
+      const parts: string[] = [];
+
+      // Font and resource imports
+      for (const url of externalStyles) {
+        parts.push(`@import url('${url}');`);
+      }
+
+      // Compiled Tailwind utilities
+      if (tailwindCss) {
+        parts.push("/* Compiled Tailwind CSS */");
+        parts.push(tailwindCss);
+      }
+
+      // Inline styles from nodes
+      const inlineStyles = collectInlineStyles(state.root);
+      if (inlineStyles) {
+        parts.push("/* Component styles */");
+        parts.push(inlineStyles);
+      }
+
+      const css = parts.join("\n");
+      setSavingCss(false);
+      onSave(projectJson, html, css);
+    });
   }, [store, state.root, externalStyles, onSave]);
 
   // Resource management
@@ -204,7 +264,7 @@ export function PageEditor({ projectData, onSave, saving = false }: PageEditorPr
           </span>
         </div>
         <Button size="sm" onClick={handleSave} disabled={saving}>
-          {saving ? "Saving..." : "Save"}
+          {savingCss ? "Compiling CSS..." : saving ? "Saving..." : "Save"}
         </Button>
       </div>
 
@@ -459,6 +519,94 @@ function ResourcesPanel({
 
 import { twMerge } from "tailwind-merge";
 import type { PBNode } from "~/lib/page-builder";
+
+/**
+ * Compile Tailwind CSS by rendering HTML in a hidden iframe with Tailwind CDN.
+ * Waits for the CDN to generate styles, then extracts the compiled CSS.
+ */
+function compileTailwindCss(html: string, styleUrls: string[]): Promise<string> {
+  return new Promise((resolve) => {
+    const iframe = document.createElement("iframe");
+    iframe.style.cssText = "position:fixed;left:-9999px;top:-9999px;width:1px;height:1px;";
+    document.body.appendChild(iframe);
+
+    const styleTags = styleUrls.map((u) => `<link rel="stylesheet" href="${u}" />`).join("\n");
+
+    const doc = iframe.contentDocument;
+    if (!doc) {
+      iframe.remove();
+      resolve("");
+      return;
+    }
+
+    doc.open();
+    doc.write(`<!DOCTYPE html>
+<html>
+<head>
+  ${styleTags}
+  <script src="https://cdn.tailwindcss.com"><\/script>
+</head>
+<body>${html}</body>
+</html>`);
+    doc.close();
+
+    // Wait for Tailwind CDN to compile, then extract styles
+    const extract = () => {
+      let css = "";
+      try {
+        for (const style of Array.from(doc.querySelectorAll("style"))) {
+          const text = style.textContent ?? "";
+          // Tailwind CDN generates styles with --tw- custom properties
+          if (text.includes("--tw-") || text.length > 1000) {
+            css = text;
+            break;
+          }
+        }
+      } catch {
+        // cross-origin or other error
+      }
+      iframe.remove();
+      resolve(css);
+    };
+
+    // Tailwind CDN needs time to process — poll until styles appear
+    let attempts = 0;
+    const poll = () => {
+      attempts++;
+      try {
+        const styles = doc.querySelectorAll("style");
+        for (const style of Array.from(styles)) {
+          const text = style.textContent ?? "";
+          if (text.includes("--tw-") || text.length > 1000) {
+            extract();
+            return;
+          }
+        }
+      } catch {
+        // not ready yet
+      }
+      if (attempts < 30) {
+        setTimeout(poll, 200);
+      } else {
+        extract(); // timeout — return whatever we have
+      }
+    };
+    setTimeout(poll, 500);
+  });
+}
+
+function collectInlineStyles(node: PBNode): string {
+  let css = "";
+  const entries = Object.entries(node.styles);
+  if (entries.length > 0) {
+    const props = entries.map(([k, v]) => `  ${k}: ${v};`).join("\n");
+    css += `[data-pb-id="${node.id}"] {\n${props}\n}\n`;
+  }
+  for (const child of node.children) {
+    css += collectInlineStyles(child);
+  }
+  return css;
+}
 
 const TW_GROUPS: { label: string; classes: { label: string; value: string }[] }[] = [
   { label: "Align Items", classes: [{ label: "start", value: "items-start" }, { label: "end", value: "items-end" }, { label: "center", value: "items-center" }, { label: "baseline", value: "items-baseline" }, { label: "stretch", value: "items-stretch" }] },

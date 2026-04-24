@@ -37,10 +37,14 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     return new Response("Not found", { status: 404 });
   }
 
-  // Use compiled CSS from repo for pages (no CDN dependency)
+  // Use compiled CSS from repo — try publish branch, fall back to draft
   let pageCss = "";
   if (content.contentType === "page") {
-    const compiledCss = await getPageCompiledCss(params.slug);
+    let compiledCss = await getPageCompiledCss(params.slug);
+    if (!compiledCss) {
+      const { getGitHubConfig } = await import("~/lib/github.server");
+      compiledCss = await getPageCompiledCss(params.slug, getGitHubConfig().branch);
+    }
     pageCss = compiledCss || ("css" in content ? (content as { css: string }).css : "");
   }
 
@@ -50,6 +54,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>${escapeHtml(content.frontmatter.title)}</title>
+  ${content.contentType === "page" ? `<script src="https://cdn.tailwindcss.com"><\/script>` : ""}
   <style>${content.contentType === "page" ? pageCss : EMBED_STYLES}</style>
 </head>
 <body class="stencil-embed">

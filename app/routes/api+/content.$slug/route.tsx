@@ -27,15 +27,19 @@ export async function loader({ params, request }: Route.LoaderArgs) {
   const isPage = content.contentType === "page";
   let css = isPage && "css" in content ? (content as { css: string }).css : "";
 
-  // Use compiled CSS from repo if available (no CDN dependency)
+  // Use compiled CSS from repo — try publish branch, fall back to draft
   if (isPage) {
-    const compiledCss = await getPageCompiledCss(params.slug);
+    let compiledCss = await getPageCompiledCss(params.slug);
+    if (!compiledCss) {
+      const { getGitHubConfig } = await import("~/lib/github.server");
+      compiledCss = await getPageCompiledCss(params.slug, getGitHubConfig().branch);
+    }
     if (compiledCss) css = compiledCss;
   }
 
   if (format === "html") {
     const fullHtml = isPage
-      ? `<!DOCTYPE html><html><head><style>${css}</style></head><body>${content.html}</body></html>`
+      ? `<!DOCTYPE html><html><head><script src="https://cdn.tailwindcss.com"><\/script><style>${css}</style></head><body>${content.html}</body></html>`
       : content.html;
     return new Response(fullHtml, {
       headers: {

@@ -1,5 +1,5 @@
 import { Form, Link, redirect, useNavigation, useFetcher } from "react-router";
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { getContent, saveContent, type ContentType } from "~/lib/content.server";
 import { listWhiteboardsForPage } from "~/lib/whiteboard.server";
 import { buildPageRaw } from "~/lib/page.server";
@@ -94,9 +94,9 @@ export async function action({ request, params }: Route.ActionArgs) {
     raw = `${frontmatter}\n\n${body}`;
   }
 
-  // For page type, the css field contains the compiled CSS bundle
+  // For page type, always save the CSS file
   const compiledCss = contentType === "page"
-    ? (formData.get("pageCss") as string) || undefined
+    ? (formData.get("pageCss") as string) ?? ""
     : undefined;
 
   await saveContent(params.slug, raw, sha || undefined, contentType, compiledCss);
@@ -124,19 +124,25 @@ export default function EditContent({
     setBody((current) => current + markdown);
   };
 
+  const pendingPageSave = useRef<{ projectData: string; html: string; css: string } | null>(null);
+
   const handlePageSave = useCallback(
     (projectData: string, html: string, css: string) => {
+      pendingPageSave.current = { projectData, html, css };
       setPageProjectData(projectData);
       setPageHtml(html);
       setPageCss(css);
-      // Trigger form submit after state update
-      setTimeout(() => {
-        const form = document.getElementById("edit-form") as HTMLFormElement;
-        if (form) form.requestSubmit();
-      }, 50);
     },
     []
   );
+
+  // Submit form after state has flushed to DOM
+  useEffect(() => {
+    if (!pendingPageSave.current) return;
+    pendingPageSave.current = null;
+    const form = document.getElementById("edit-form") as HTMLFormElement;
+    if (form) form.requestSubmit();
+  }, [pageProjectData, pageHtml, pageCss]);
 
   const isPage = loaderData.contentType === "page";
 
