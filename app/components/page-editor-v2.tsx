@@ -26,7 +26,7 @@ interface PageEditorProps {
   saving?: boolean;
 }
 
-type SidebarTab = "blocks" | "layers" | "properties" | "classes" | "resources";
+type SidebarTab = "blocks" | "layers" | "properties" | "classes" | "page" | "resources";
 
 export function PageEditor({ projectData, onSave, saving = false }: PageEditorProps) {
   const [mounted, setMounted] = useState(false);
@@ -76,15 +76,18 @@ export function PageEditor({ projectData, onSave, saving = false }: PageEditorPr
     ? findNode(state.root, state.selection.nodeId)
     : null;
 
-  // Auto-switch to properties when something is selected
+  // Auto-switch tabs based on selection
   useEffect(() => {
-    if (selectedNode && activeTab !== "properties") {
+    if (selectedNode && (activeTab === "blocks" || activeTab === "page")) {
       setActiveTab("properties");
+    } else if (!selectedNode && (activeTab === "properties" || activeTab === "classes")) {
+      setActiveTab("page");
     }
   }, [selectedNode?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Save handler
   const [savingCss, setSavingCss] = useState(false);
+  const [darkPreview, setDarkPreview] = useState(false);
 
   const handleSave = useCallback(() => {
     const project = store.getProject();
@@ -177,6 +180,7 @@ export function PageEditor({ projectData, onSave, saving = false }: PageEditorPr
     { id: "layers", label: "Layers" },
     { id: "properties", label: "Props" },
     { id: "classes", label: "Classes" },
+    { id: "page", label: "Page" },
     { id: "resources", label: "Fonts" },
   ];
 
@@ -231,9 +235,37 @@ export function PageEditor({ projectData, onSave, saving = false }: PageEditorPr
             {selectedNode ? `${selectedNode.name ?? selectedNode.tag}` : "No selection"}
           </span>
         </div>
-        <Button size="sm" onClick={handleSave} disabled={saving}>
-          {savingCss ? "Compiling CSS..." : saving ? "Saving..." : "Save"}
-        </Button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              const iframe = document.querySelector<HTMLIFrameElement>('[title="Page Builder Canvas"]');
+              if (!iframe?.contentDocument) return;
+              const html = iframe.contentDocument.documentElement;
+              html.classList.toggle("dark");
+              setDarkPreview(html.classList.contains("dark"));
+            }}
+            className="h-7 w-7 rounded-md border border-border flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
+            title={darkPreview ? "Switch to light preview" : "Switch to dark preview"}
+          >
+            {darkPreview ? (
+              <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="12" cy="12" r="5" />
+                <line x1="12" y1="1" x2="12" y2="3" /><line x1="12" y1="21" x2="12" y2="23" />
+                <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" /><line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
+                <line x1="1" y1="12" x2="3" y2="12" /><line x1="21" y1="12" x2="23" y2="12" />
+                <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" /><line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
+              </svg>
+            ) : (
+              <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+              </svg>
+            )}
+          </button>
+          <Button size="sm" onClick={handleSave} disabled={saving}>
+            {savingCss ? "Compiling CSS..." : saving ? "Saving..." : "Save"}
+          </Button>
+        </div>
       </div>
 
       {/* Main layout */}
@@ -289,9 +321,11 @@ export function PageEditor({ projectData, onSave, saving = false }: PageEditorPr
               )}
 
               {activeTab === "classes" && !selectedNode && (
-                <p className="text-xs text-muted-foreground text-center py-8">
-                  Select an element to manage classes
-                </p>
+                <TailwindClassesPanel store={store} node={state.root} loadedFontUrls={externalStyles} />
+              )}
+
+              {activeTab === "page" && (
+                <PageSettingsPanel store={store} root={state.root} />
               )}
 
               {activeTab === "resources" && (
@@ -919,6 +953,178 @@ function TailwindClassesPanel({
           )}
         </div>
       ))}
+    </div>
+  );
+}
+
+// --- Page Settings Panel (shown when no element is selected) ---
+
+const PAGE_PRESETS = [
+  { label: "Light", classes: "bg-white text-gray-900" },
+  { label: "Dark", classes: "bg-gray-950 text-white" },
+  { label: "Slate Dark", classes: "bg-slate-900 text-slate-100" },
+  { label: "Warm Light", classes: "bg-amber-50 text-gray-900" },
+  { label: "Cool Gray", classes: "bg-gray-100 text-gray-800" },
+  { label: "Midnight", classes: "bg-gray-900 text-gray-100" },
+];
+
+function PageSettingsPanel({
+  store,
+  root,
+}: {
+  store: PBStore;
+  root: PBNode;
+}) {
+  const [classInput, setClassInput] = useState("");
+  const classes = root.classes;
+
+  const handleAddClass = useCallback(() => {
+    const newClasses = classInput.trim().split(/\s+/).filter(Boolean);
+    if (newClasses.length === 0) return;
+    const merged = twMerge(classes.join(" "), newClasses.join(" "));
+    store.updateNode(root.id, { classes: merged.split(" ").filter(Boolean) });
+    setClassInput("");
+  }, [store, root.id, classes, classInput]);
+
+  const handleRemoveClass = useCallback(
+    (cls: string) => {
+      store.updateNode(root.id, { classes: classes.filter((c) => c !== cls) });
+    },
+    [store, root.id, classes]
+  );
+
+  const applyPreset = useCallback(
+    (presetClasses: string) => {
+      // Remove existing bg-*, text-* color classes, then apply preset
+      const filtered = classes.filter(
+        (c) => !c.startsWith("bg-") && !c.match(/^text-(white|black|gray|slate|amber|red|blue|green)/)
+      );
+      const merged = twMerge(filtered.join(" "), presetClasses);
+      store.updateNode(root.id, { classes: merged.split(" ").filter(Boolean) });
+    },
+    [store, root.id, classes]
+  );
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <p className="text-sm font-semibold mb-1">Page Settings</p>
+        <p className="text-[10px] text-muted-foreground mb-3">
+          These classes apply to the page body. Set background, text color, font, dark mode, etc.
+        </p>
+      </div>
+
+      <Separator />
+
+      {/* Quick presets */}
+      <div>
+        <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">Theme Presets</p>
+        <div className="grid grid-cols-2 gap-1.5">
+          {PAGE_PRESETS.map((preset) => {
+            const presetClasses = preset.classes.split(" ");
+            const isActive = presetClasses.every((c) => classes.includes(c));
+            return (
+              <button
+                key={preset.label}
+                type="button"
+                onClick={() => applyPreset(preset.classes)}
+                className={cn(
+                  "px-2 py-2 rounded-lg text-[11px] font-medium transition-colors border",
+                  isActive
+                    ? "border-primary bg-primary/10 text-primary"
+                    : "border-border hover:border-primary/50"
+                )}
+              >
+                {preset.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <Separator />
+
+      {/* Active body classes */}
+      {classes.length > 0 && (
+        <div>
+          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">
+            Body Classes ({classes.length})
+          </p>
+          <div className="flex flex-wrap gap-1">
+            {classes.map((cls) => (
+              <Badge key={cls} variant="secondary" className="text-[10px] font-mono px-1.5 py-0 h-5 gap-0.5">
+                {cls}
+                <button
+                  type="button"
+                  onClick={() => handleRemoveClass(cls)}
+                  className="text-muted-foreground hover:text-destructive ml-0.5"
+                >
+                  ×
+                </button>
+              </Badge>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Add class */}
+      <div className="flex gap-1">
+        <Input
+          value={classInput}
+          onChange={(e) => setClassInput(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleAddClass(); } }}
+          placeholder="bg-gray-900 text-white font-sans..."
+          className="h-7 text-xs"
+        />
+        <Button size="sm" variant="outline" className="h-7 text-[10px] px-2" onClick={handleAddClass}>
+          Add
+        </Button>
+      </div>
+
+      <Separator />
+
+      <div>
+        <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-2">Common Body Classes</p>
+        <div className="space-y-1.5">
+          {[
+            { group: "Background", options: ["bg-white", "bg-gray-50", "bg-gray-100", "bg-gray-900", "bg-gray-950", "bg-slate-900", "bg-black"] },
+            { group: "Text Color", options: ["text-gray-900", "text-gray-800", "text-gray-100", "text-white", "text-slate-100"] },
+            { group: "Font", options: ["font-sans", "font-serif", "font-mono"] },
+            { group: "Antialiasing", options: ["antialiased", "subpixel-antialiased"] },
+          ].map(({ group, options }) => (
+            <div key={group}>
+              <p className="text-[9px] text-muted-foreground mb-0.5">{group}</p>
+              <div className="flex flex-wrap gap-0.5">
+                {options.map((cls) => {
+                  const isActive = classes.includes(cls);
+                  return (
+                    <button
+                      key={cls}
+                      type="button"
+                      onClick={() => {
+                        if (isActive) {
+                          handleRemoveClass(cls);
+                        } else {
+                          const merged = twMerge(classes.join(" "), cls);
+                          store.updateNode(root.id, { classes: merged.split(" ").filter(Boolean) });
+                        }
+                      }}
+                      className={cn(
+                        "px-1.5 py-0.5 rounded text-[10px] transition-colors",
+                        isActive
+                          ? "bg-primary text-primary-foreground"
+                          : "bg-muted text-muted-foreground hover:text-foreground"
+                      )}
+                    >
+                      {cls}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }

@@ -8,7 +8,16 @@ const VOID_TAGS = new Set(["img", "hr", "br", "input", "meta", "link"]);
  */
 export function renderToHtml(node: PBNode): string {
   if (node.type === "text") {
-    return escapeHtml(node.text ?? "");
+    const tag = node.tag || "span";
+    const attrs: string[] = [];
+    if (node.classes.length > 0) attrs.push(`class="${node.classes.join(" ")}"`);
+    const styleStr = Object.entries(node.styles).map(([k, v]) => `${k}:${v}`).join(";");
+    if (styleStr) attrs.push(`style="${styleStr}"`);
+    for (const [k, v] of Object.entries(node.attributes)) {
+      attrs.push(`${k}="${escapeAttr(v)}"`);
+    }
+    const attrStr = attrs.length > 0 ? " " + attrs.join(" ") : "";
+    return `<${tag}${attrStr}>${escapeHtml(node.text ?? "")}</${tag}>`;
   }
 
   const tag = node.tag;
@@ -104,20 +113,23 @@ function domToNode(domNode: Node): PBNode | null {
     name: customName ?? getDefaultName(tag),
   });
 
+  // If element only contains text (no child elements), store text directly
+  const hasElementChildren = Array.from(el.childNodes).some(
+    (n) => n.nodeType === 1
+  );
+
+  if (!hasElementChildren && el.textContent?.trim()) {
+    node.type = "text";
+    node.text = el.textContent.trim();
+    node.editable = true;
+    node.droppable = false;
+    node.children = [];
+    return node;
+  }
+
   node.children = Array.from(el.childNodes)
     .map(domToNode)
     .filter((n): n is PBNode => n !== null);
-
-  // If element only contains text and nothing else, mark as text type
-  if (
-    node.children.length === 0 &&
-    el.childNodes.length === 1 &&
-    el.childNodes[0].nodeType === 3
-  ) {
-    node.type = "text";
-    node.text = el.textContent?.trim() ?? "";
-    node.editable = true;
-  }
 
   return node;
 }

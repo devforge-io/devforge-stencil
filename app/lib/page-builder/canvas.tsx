@@ -38,9 +38,10 @@ export function Canvas({ store, externalStyles = [] }: CanvasProps) {
   <meta name="viewport" content="width=device-width, initial-scale=1">
   ${styleTags}
   <script src="https://cdn.tailwindcss.com"><\/script>
+  <script>tailwind.config={darkMode:'class'}<\/script>
   <style>
     * { box-sizing: border-box; }
-    body { margin: 0; min-height: 100vh; font-family: system-ui, sans-serif; }
+    body { margin: 0; padding-top: 22px; min-height: 100vh; font-family: system-ui, sans-serif; }
     [data-pb-id] { position: relative; min-height: 2px; }
     [data-pb-id]:empty { min-height: 20px; }
     [data-pb-selected="true"] { outline: 2px solid #4c6ef5 !important; outline-offset: -1px; z-index: 1; }
@@ -62,7 +63,7 @@ export function Canvas({ store, externalStyles = [] }: CanvasProps) {
     [data-pb-selected="true"]::before { background: #4c6ef5; color: white; }
   </style>
 </head>
-<body style="padding:20px; background:repeating-linear-gradient(45deg,transparent,transparent 10px,rgba(128,128,128,0.04) 10px,rgba(128,128,128,0.04) 11px)"></body>
+<body></body>
 </html>`;
   }, [externalStyles]);
 
@@ -78,6 +79,11 @@ export function Canvas({ store, externalStyles = [] }: CanvasProps) {
       .join("");
 
     body.innerHTML = html || "";
+    // Apply root classes to body (for body-level styles like dark mode, bg, font)
+    body.className = root.classes.join(" ");
+    // Apply root inline styles
+    const rootStyleStr = Object.entries(root.styles).map(([k, v]) => `${k}:${v}`).join(";");
+    body.setAttribute("style", rootStyleStr || "");
   }, []);
 
   const scheduleRender = useCallback(() => {
@@ -233,6 +239,14 @@ export function Canvas({ store, externalStyles = [] }: CanvasProps) {
     iframeRef.current?.contentDocument?.querySelectorAll("[data-pb-drop-target]").forEach((h) => {
       h.removeAttribute("data-pb-drop-target");
     });
+    // Clear body highlight
+    const body = iframeRef.current?.contentDocument?.body;
+    if (body) {
+      body.style.outline = "";
+      body.style.outlineOffset = "";
+      body.style.background = "";
+      body.style.minHeight = "";
+    }
   }, []);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -240,7 +254,13 @@ export function Canvas({ store, externalStyles = [] }: CanvasProps) {
     e.stopPropagation();
     e.dataTransfer.dropEffect = e.dataTransfer.types.includes("text/pb-block-html") ? "copy" : "move";
 
-    const el = getIframeElement(e.clientX, e.clientY);
+    // Check if cursor is over the iframe area
+    const iframeRect = iframeRef.current?.getBoundingClientRect();
+    const isOverIframe = iframeRect &&
+      e.clientX >= iframeRect.left && e.clientX <= iframeRect.right &&
+      e.clientY >= iframeRect.top && e.clientY <= iframeRect.bottom;
+
+    const el = isOverIframe ? getIframeElement(e.clientX, e.clientY) : null;
     iframeRef.current?.contentDocument?.querySelectorAll("[data-pb-drop-target]").forEach((h) => h.removeAttribute("data-pb-drop-target"));
 
     const target = el?.closest("[data-pb-id]") as HTMLElement | null;
@@ -252,6 +272,11 @@ export function Canvas({ store, externalStyles = [] }: CanvasProps) {
       if (!body) return;
       const children = body.querySelectorAll(":scope > [data-pb-id]");
       if (children.length === 0) {
+        // Empty canvas — highlight body as drop target
+        body.style.outline = "2px dashed #4c6ef5";
+        body.style.outlineOffset = "-2px";
+        body.style.background = "rgba(76,110,245,0.06)";
+        body.style.minHeight = "200px";
         currentDropTarget.current = { id: storeRef.current.getRoot().id, position: "inside" };
         return;
       }
@@ -305,9 +330,18 @@ export function Canvas({ store, externalStyles = [] }: CanvasProps) {
     e.stopPropagation();
     hideIndicator();
 
-    const drop = currentDropTarget.current;
+    let drop = currentDropTarget.current;
     currentDropTarget.current = null;
-    if (!drop) return;
+
+    // If no drop target was set (e.g. dragging onto empty pb-container), use root
+    if (!drop) {
+      const blockHtml = e.dataTransfer.getData("text/pb-block-html");
+      if (blockHtml) {
+        drop = { id: storeRef.current.getRoot().id, position: "inside" };
+      } else {
+        return;
+      }
+    }
 
     const s = storeRef.current;
     const root = s.getRoot();
@@ -344,15 +378,33 @@ export function Canvas({ store, externalStyles = [] }: CanvasProps) {
   return (
     <div
       ref={wrapperRef}
-      className="relative w-full h-full"
+      className="pb-container relative w-full h-full"
+      onClick={(e) => {
+        if (e.target === wrapperRef.current) {
+          storeRef.current.select(null);
+        }
+      }}
+      onDragEnter={(e) => {
+        e.preventDefault();
+        // Disable iframe pointer events so wrapper receives drop
+        if (iframeRef.current) iframeRef.current.style.pointerEvents = "none";
+      }}
       onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
+      onDragLeave={(e) => {
+        handleDragLeave(e);
+        if (!wrapperRef.current?.contains(e.relatedTarget as Node)) {
+          if (iframeRef.current) iframeRef.current.style.pointerEvents = "";
+        }
+      }}
+      onDrop={(e) => {
+        if (iframeRef.current) iframeRef.current.style.pointerEvents = "";
+        handleDrop(e);
+      }}
     >
       <iframe
         ref={iframeRef}
         srcDoc={srcdoc}
-        className="w-full h-full border-0"
+        className="w-full h-full border-0 rounded"
         title="Page Builder Canvas"
       />
     </div>

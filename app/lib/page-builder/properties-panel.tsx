@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import type { PBNode } from "./types";
 import type { PBStore } from "./store";
 import { Input } from "~/components/ui/input";
@@ -51,6 +51,11 @@ export function PropertiesPanel({ store, node }: PropertiesPanelProps) {
 
 function TextEditor({ store, node }: { store: PBStore; node: PBNode }) {
   const [value, setValue] = useState(node.text ?? "");
+
+  // Sync when a different node is selected
+  useEffect(() => {
+    setValue(node.text ?? "");
+  }, [node.id, node.text]);
 
   const handleBlur = useCallback(() => {
     store.updateNode(node.id, { text: value });
