@@ -36,38 +36,6 @@ export function PageEditor({ projectData, onSave, saving = false }: PageEditorPr
 
   useEffect(() => setMounted(true), []);
 
-  // Load Tailwind CDN for dynamic canvas content
-  // The app's built-in Tailwind only covers statically-scanned classes,
-  // not the dynamic classes from page builder blocks
-  useEffect(() => {
-    if (!mounted) return;
-    const id = "pb-tailwind-cdn";
-    if (document.getElementById(id)) return;
-    const script = document.createElement("script");
-    script.id = id;
-    script.src = "https://cdn.tailwindcss.com";
-    document.head.appendChild(script);
-    return () => {
-      document.getElementById(id)?.remove();
-    };
-  }, [mounted]);
-
-  // Load external stylesheets (fonts, icon libs) into the document
-  useEffect(() => {
-    const links: HTMLLinkElement[] = [];
-    for (const url of externalStyles) {
-      if (document.querySelector(`link[href="${url}"]`)) continue;
-      const link = document.createElement("link");
-      link.rel = "stylesheet";
-      link.href = url;
-      link.setAttribute("data-pb-resource", "true");
-      document.head.appendChild(link);
-      links.push(link);
-    }
-    return () => {
-      links.forEach((l) => l.remove());
-    };
-  }, [externalStyles]);
 
   // Create store once
   const store = useMemo(() => {
@@ -341,7 +309,7 @@ export function PageEditor({ projectData, onSave, saving = false }: PageEditorPr
 
         {/* Canvas */}
         <div className="flex-1 bg-white dark:bg-gray-950 overflow-auto">
-          <Canvas store={store} />
+          <Canvas store={store} externalStyles={externalStyles} />
         </div>
       </div>
     </div>

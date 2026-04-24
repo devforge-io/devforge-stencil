@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback, useMemo } from "react";
 import type { PBStore } from "./store";
 import type { PBNode } from "./types";
 import { findNode, findParent } from "./utils";
@@ -6,6 +6,7 @@ import { parseHtml } from "./serializer";
 
 interface CanvasProps {
   store: PBStore;
+  externalStyles?: string[];
 }
 
 type DropPosition = "before" | "after" | "inside";
@@ -15,38 +16,68 @@ interface DropTarget {
   position: DropPosition;
 }
 
-export function Canvas({ store }: CanvasProps) {
-  const canvasRef = useRef<HTMLDivElement>(null);
+export function Canvas({ store, externalStyles = [] }: CanvasProps) {
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
   const storeRef = useRef(store);
   const pendingRender = useRef(false);
   const currentDropTarget = useRef<DropTarget | null>(null);
   const indicatorRef = useRef<HTMLDivElement | null>(null);
   storeRef.current = store;
 
+  // Build srcdoc with Tailwind CDN
+  const srcdoc = useMemo(() => {
+    const styleTags = externalStyles
+      .map((u) => `<link rel="stylesheet" href="${u}" />`)
+      .join("\n");
+
+    return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  ${styleTags}
+  <script src="https://cdn.tailwindcss.com"><\/script>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; font-family: system-ui, sans-serif; }
+    [data-pb-id] { position: relative; min-height: 2px; }
+    [data-pb-id]:empty { min-height: 20px; }
+    [data-pb-selected="true"] { outline: 2px solid #4c6ef5 !important; outline-offset: -1px; z-index: 1; }
+    [data-pb-hover="true"]:not([data-pb-selected="true"]) { outline: 1px dashed #60a5fa; outline-offset: -1px; }
+    [data-pb-editing="true"] { outline: 2px solid #22c55e !important; outline-offset: -1px; }
+    [data-pb-drop-target="true"] { outline: 2px dashed #4c6ef5 !important; outline-offset: -2px; background: rgba(76,110,245,0.06); }
+    /* Edit-mode padding on containers */
+    [data-pb-container="true"] { padding: max(var(--tw-p, 0px), 6px); }
+    /* Floating labels */
+    [data-pb-hover="true"]::before,
+    [data-pb-selected="true"]::before {
+      content: attr(data-pb-name);
+      position: absolute; top: -18px; left: 0;
+      font-size: 10px; line-height: 1; padding: 2px 6px;
+      border-radius: 3px 3px 0 0; white-space: nowrap;
+      pointer-events: none; z-index: 10;
+    }
+    [data-pb-hover="true"]:not([data-pb-selected="true"])::before { background: #60a5fa; color: white; }
+    [data-pb-selected="true"]::before { background: #4c6ef5; color: white; }
+  </style>
+</head>
+<body style="padding:20px; background:repeating-linear-gradient(45deg,transparent,transparent 10px,rgba(128,128,128,0.04) 10px,rgba(128,128,128,0.04) 11px)"></body>
+</html>`;
+  }, [externalStyles]);
+
   const render = useCallback(() => {
-    const el = canvasRef.current;
-    if (!el) return;
+    const iframe = iframeRef.current;
+    if (!iframe?.contentDocument?.body) return;
+    const body = iframe.contentDocument.body;
     const state = storeRef.current.getState();
     const root = state.root;
-
-    // Preserve the indicator element
-    const indicator = indicatorRef.current;
-    if (indicator) indicator.remove();
 
     const html = root.children
       .map((c) => renderNode(c, state.selection.nodeId))
       .join("");
 
-    el.innerHTML = html || "";
-    el.className = `pb-canvas min-h-full ${root.classes.join(" ")}`;
-
-    // Re-attach indicator
-    if (indicator) el.appendChild(indicator);
-
-    // Make all elements draggable
-    el.querySelectorAll("[data-pb-id]").forEach((child) => {
-      (child as HTMLElement).draggable = true;
-    });
+    body.innerHTML = html || "";
   }, []);
 
   const scheduleRender = useCallback(() => {
@@ -58,20 +89,25 @@ export function Canvas({ store }: CanvasProps) {
     });
   }, [render]);
 
-  // Create the drop indicator line element
+  // Create indicator element
   useEffect(() => {
     const line = document.createElement("div");
-    line.className = "pb-drop-line";
-    line.style.cssText = "position:absolute;pointer-events:none;z-index:100;display:none;";
+    line.style.cssText = "position:absolute;pointer-events:none;z-index:100;display:none;background:#4c6ef5;border-radius:2px;";
     indicatorRef.current = line;
-    canvasRef.current?.appendChild(line);
+    wrapperRef.current?.appendChild(line);
     return () => line.remove();
   }, []);
 
-  // Initial render
-  useEffect(() => render(), [render]);
+  // Render on iframe load
+  useEffect(() => {
+    const iframe = iframeRef.current;
+    if (!iframe) return;
+    const handleLoad = () => setTimeout(render, 300);
+    iframe.addEventListener("load", handleLoad);
+    return () => iframe.removeEventListener("load", handleLoad);
+  }, [render, srcdoc]);
 
-  // Re-render on store changes (skip hover-only)
+  // Re-render on store changes
   useEffect(() => {
     let lastRoot: unknown = null;
     let lastSelectedId: string | null = null;
@@ -85,119 +121,118 @@ export function Canvas({ store }: CanvasProps) {
     });
   }, [store, scheduleRender]);
 
-  // Click to select
-  const handleClick = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    const target = (e.target as HTMLElement).closest("[data-pb-id]") as HTMLElement | null;
-    storeRef.current.select(target?.getAttribute("data-pb-id") ?? null);
-  }, []);
+  // Attach click/hover/dblclick listeners inside the iframe (same-origin, works fine)
+  useEffect(() => {
+    const iframe = iframeRef.current;
+    if (!iframe) return;
 
-  // Hover highlight (DOM only, no re-render)
-  const handleMouseOver = useCallback((e: React.MouseEvent) => {
-    const el = canvasRef.current;
-    if (!el) return;
-    el.querySelectorAll("[data-pb-hover]").forEach((h) => h.removeAttribute("data-pb-hover"));
-    const target = (e.target as HTMLElement).closest("[data-pb-id]") as HTMLElement | null;
-    target?.setAttribute("data-pb-hover", "true");
-  }, []);
+    const attach = () => {
+      const doc = iframe.contentDocument;
+      if (!doc) return;
 
-  // Double-click to edit text
-  const handleDoubleClick = useCallback((e: React.MouseEvent) => {
-    const target = (e.target as HTMLElement).closest("[data-pb-id]") as HTMLElement | null;
-    if (!target) return;
-    const id = target.getAttribute("data-pb-id")!;
-    const node = findNode(storeRef.current.getRoot(), id);
-    if (!node?.editable) return;
+      doc.addEventListener("click", (e) => {
+        e.preventDefault();
+        const target = (e.target as HTMLElement).closest("[data-pb-id]") as HTMLElement | null;
+        storeRef.current.select(target?.getAttribute("data-pb-id") ?? null);
+      }, true);
 
-    e.preventDefault();
-    target.contentEditable = "true";
-    target.setAttribute("data-pb-editing", "true");
-    target.focus();
+      let lastHoverId: string | null = null;
+      doc.addEventListener("mouseover", (e) => {
+        const target = (e.target as HTMLElement).closest("[data-pb-id]") as HTMLElement | null;
+        const id = target?.getAttribute("data-pb-id") ?? null;
+        if (id === lastHoverId) return;
+        lastHoverId = id;
+        doc.querySelectorAll("[data-pb-hover]").forEach((h) => h.removeAttribute("data-pb-hover"));
+        target?.setAttribute("data-pb-hover", "true");
+      });
 
-    const finishEdit = () => {
-      target.contentEditable = "false";
-      target.removeAttribute("data-pb-editing");
-      const text = target.textContent?.trim() ?? "";
-      if (node.type === "text") {
-        storeRef.current.updateNode(id, { text });
-      }
-      target.removeEventListener("blur", finishEdit);
-      target.removeEventListener("keydown", handleKey);
+      doc.addEventListener("dblclick", (e) => {
+        const target = (e.target as HTMLElement).closest("[data-pb-id]") as HTMLElement | null;
+        if (!target) return;
+        const id = target.getAttribute("data-pb-id")!;
+        const node = findNode(storeRef.current.getRoot(), id);
+        if (!node?.editable) return;
+        e.preventDefault();
+        target.contentEditable = "true";
+        target.setAttribute("data-pb-editing", "true");
+        target.focus();
+        const finishEdit = () => {
+          target.contentEditable = "false";
+          target.removeAttribute("data-pb-editing");
+          if (node.type === "text") {
+            storeRef.current.updateNode(id, { text: target.textContent?.trim() ?? "" });
+          }
+          target.removeEventListener("blur", finishEdit);
+        };
+        target.addEventListener("blur", finishEdit);
+      }, true);
     };
 
-    const handleKey = (ev: KeyboardEvent) => {
-      if (ev.key === "Enter" && !ev.shiftKey) { ev.preventDefault(); finishEdit(); }
-      if (ev.key === "Escape") { ev.preventDefault(); target.textContent = node.text ?? ""; finishEdit(); }
-    };
-
-    target.addEventListener("blur", finishEdit);
-    target.addEventListener("keydown", handleKey);
+    iframe.addEventListener("load", attach);
+    return () => iframe.removeEventListener("load", attach);
   }, []);
 
-  const handleDragStart = useCallback((e: React.DragEvent) => {
-    const target = (e.target as HTMLElement).closest("[data-pb-id]") as HTMLElement | null;
-    if (target) {
-      e.dataTransfer.setData("text/pb-node-id", target.getAttribute("data-pb-id")!);
-      e.dataTransfer.effectAllowed = "move";
-    }
+  // --- Drag/drop on the wrapper div (avoids cross-document issues) ---
+
+  const getIframeElement = useCallback((clientX: number, clientY: number): HTMLElement | null => {
+    const iframe = iframeRef.current;
+    if (!iframe?.contentDocument) return null;
+    const rect = iframe.getBoundingClientRect();
+    const x = clientX - rect.left;
+    const y = clientY - rect.top;
+    return iframe.contentDocument.elementFromPoint(x, y) as HTMLElement | null;
   }, []);
 
-  // Show/hide the drop indicator line
-  const showIndicator = useCallback((targetEl: HTMLElement, position: DropPosition, isHorizontal: boolean) => {
+  const isParentHorizontal = useCallback((el: HTMLElement): boolean => {
+    const parent = el.parentElement;
+    if (!parent) return false;
+    const iframe = iframeRef.current;
+    if (!iframe?.contentWindow) return false;
+    const style = iframe.contentWindow.getComputedStyle(parent);
+    return style.display.includes("flex") && (style.flexDirection === "row" || style.flexDirection === "");
+  }, []);
+
+  const showIndicator = useCallback((targetEl: HTMLElement, position: DropPosition, horizontal: boolean) => {
     const line = indicatorRef.current;
-    if (!line) return;
-    const canvasRect = canvasRef.current?.getBoundingClientRect();
-    const rect = targetEl.getBoundingClientRect();
-    if (!canvasRect) return;
+    const wrapper = wrapperRef.current;
+    const iframe = iframeRef.current;
+    if (!line || !wrapper || !iframe) return;
+
+    const iRect = iframe.getBoundingClientRect();
+    const wRect = wrapper.getBoundingClientRect();
+    const eRect = targetEl.getBoundingClientRect();
+
+    // Convert iframe-internal coords to wrapper-relative
+    const top = eRect.top + iRect.top - wRect.top;
+    const left = eRect.left + iRect.left - wRect.left;
 
     line.style.display = "block";
-    line.style.background = "#4c6ef5";
-    line.style.borderRadius = "2px";
 
     if (position === "inside") {
-      // Highlight the container
       line.style.display = "none";
       targetEl.setAttribute("data-pb-drop-target", "true");
       return;
     }
 
-    if (isHorizontal) {
-      // Vertical line for flex-row parents
+    if (horizontal) {
       line.style.width = "3px";
-      line.style.height = `${rect.height}px`;
-      line.style.top = `${rect.top - canvasRect.top}px`;
-      if (position === "before") {
-        line.style.left = `${rect.left - canvasRect.left - 2}px`;
-      } else {
-        line.style.left = `${rect.right - canvasRect.left - 1}px`;
-      }
+      line.style.height = `${eRect.height}px`;
+      line.style.top = `${top}px`;
+      line.style.left = position === "before" ? `${left - 2}px` : `${left + eRect.width - 1}px`;
     } else {
-      // Horizontal line for block/column parents
       line.style.height = "3px";
-      line.style.width = `${rect.width}px`;
-      line.style.left = `${rect.left - canvasRect.left}px`;
-      if (position === "before") {
-        line.style.top = `${rect.top - canvasRect.top - 2}px`;
-      } else {
-        line.style.top = `${rect.bottom - canvasRect.top - 1}px`;
-      }
+      line.style.width = `${eRect.width}px`;
+      line.style.left = `${left}px`;
+      line.style.top = position === "before" ? `${top - 2}px` : `${top + eRect.height - 1}px`;
     }
   }, []);
 
   const hideIndicator = useCallback(() => {
     const line = indicatorRef.current;
     if (line) line.style.display = "none";
-    canvasRef.current?.querySelectorAll("[data-pb-drop-target]").forEach((h) => {
+    iframeRef.current?.contentDocument?.querySelectorAll("[data-pb-drop-target]").forEach((h) => {
       h.removeAttribute("data-pb-drop-target");
     });
-  }, []);
-
-  // Determine if parent uses horizontal (flex-row) layout
-  const isParentHorizontal = useCallback((targetEl: HTMLElement): boolean => {
-    const parent = targetEl.parentElement;
-    if (!parent) return false;
-    const style = window.getComputedStyle(parent);
-    return style.display.includes("flex") && (style.flexDirection === "row" || style.flexDirection === "");
   }, []);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -205,50 +240,34 @@ export function Canvas({ store }: CanvasProps) {
     e.stopPropagation();
     e.dataTransfer.dropEffect = e.dataTransfer.types.includes("text/pb-block-html") ? "copy" : "move";
 
-    const el = canvasRef.current;
-    if (!el) return;
+    const el = getIframeElement(e.clientX, e.clientY);
+    iframeRef.current?.contentDocument?.querySelectorAll("[data-pb-drop-target]").forEach((h) => h.removeAttribute("data-pb-drop-target"));
 
-    let target = (e.target as HTMLElement).closest("[data-pb-id]") as HTMLElement | null;
-
-    // Clear old indicators
-    el.querySelectorAll("[data-pb-drop-target]").forEach((h) => h.removeAttribute("data-pb-drop-target"));
+    const target = el?.closest("[data-pb-id]") as HTMLElement | null;
 
     if (!target) {
-      // Cursor is over the canvas but not on a child element.
-      // Find the nearest top-level child by Y position to show before/after.
-      const children = el.querySelectorAll(":scope > [data-pb-id]");
+      // Over empty area — find nearest top-level child
+      hideIndicator();
+      const body = iframeRef.current?.contentDocument?.body;
+      if (!body) return;
+      const children = body.querySelectorAll(":scope > [data-pb-id]");
       if (children.length === 0) {
-        // Empty canvas — drop inside root
-        hideIndicator();
-        el.setAttribute("data-pb-drop-target", "true");
         currentDropTarget.current = { id: storeRef.current.getRoot().id, position: "inside" };
         return;
       }
-
-      // Find which gap the cursor is in
-      let nearestChild: HTMLElement | null = null;
-      let nearestPos: DropPosition = "after";
+      let nearest: HTMLElement | null = null;
+      let pos: DropPosition = "after";
+      const iRect = iframeRef.current!.getBoundingClientRect();
+      const y = e.clientY - iRect.top;
       for (const child of Array.from(children) as HTMLElement[]) {
-        const rect = child.getBoundingClientRect();
-        if (e.clientY < rect.top + rect.height / 2) {
-          nearestChild = child;
-          nearestPos = "before";
-          break;
-        }
-        nearestChild = child;
-        nearestPos = "after";
+        const r = child.getBoundingClientRect();
+        if (y < r.top + r.height / 2) { nearest = child; pos = "before"; break; }
+        nearest = child; pos = "after";
       }
-
-      if (nearestChild) {
-        target = nearestChild;
-        const id = target.getAttribute("data-pb-id")!;
-        currentDropTarget.current = { id, position: nearestPos };
-        showIndicator(target, nearestPos, false);
-        return;
+      if (nearest) {
+        currentDropTarget.current = { id: nearest.getAttribute("data-pb-id")!, position: pos };
+        showIndicator(nearest, pos, false);
       }
-
-      hideIndicator();
-      currentDropTarget.current = { id: storeRef.current.getRoot().id, position: "inside" };
       return;
     }
 
@@ -258,35 +277,24 @@ export function Canvas({ store }: CanvasProps) {
 
     const rect = target.getBoundingClientRect();
     const horizontal = isParentHorizontal(target);
-
-    // Use X for horizontal parents, Y for vertical
-    let ratio: number;
-    if (horizontal) {
-      ratio = (e.clientX - rect.left) / rect.width;
-    } else {
-      ratio = (e.clientY - rect.top) / rect.height;
-    }
+    const ratio = horizontal
+      ? (e.clientX - iframeRef.current!.getBoundingClientRect().left - rect.left) / rect.width
+      : (e.clientY - iframeRef.current!.getBoundingClientRect().top - rect.top) / rect.height;
 
     let position: DropPosition;
-    if (ratio < 0.3) {
-      position = "before";
-    } else if (ratio > 0.7) {
-      position = "after";
-    } else if (node.droppable !== false && node.type !== "text" && node.type !== "void") {
-      position = "inside";
-    } else if (ratio < 0.5) {
-      position = "before";
-    } else {
-      position = "after";
-    }
+    if (ratio < 0.3) position = "before";
+    else if (ratio > 0.7) position = "after";
+    else if (node.droppable !== false && node.type !== "text" && node.type !== "void") position = "inside";
+    else if (ratio < 0.5) position = "before";
+    else position = "after";
 
     currentDropTarget.current = { id, position };
     hideIndicator();
     showIndicator(target, position, horizontal);
-  }, [isParentHorizontal, showIndicator, hideIndicator]);
+  }, [getIframeElement, isParentHorizontal, showIndicator, hideIndicator]);
 
   const handleDragLeave = useCallback((e: React.DragEvent) => {
-    if (!canvasRef.current?.contains(e.relatedTarget as Node)) {
+    if (!wrapperRef.current?.contains(e.relatedTarget as Node)) {
       hideIndicator();
       currentDropTarget.current = null;
     }
@@ -295,50 +303,39 @@ export function Canvas({ store }: CanvasProps) {
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-
     hideIndicator();
 
     const drop = currentDropTarget.current;
     currentDropTarget.current = null;
     if (!drop) return;
 
-    const store = storeRef.current;
-    const root = store.getRoot();
+    const s = storeRef.current;
+    const root = s.getRoot();
 
     const nodeId = e.dataTransfer.getData("text/pb-node-id");
     const blockHtml = e.dataTransfer.getData("text/pb-block-html");
 
     if (nodeId) {
-      const node = findNode(root, nodeId);
-      if (!node || nodeId === drop.id) return;
+      if (nodeId === drop.id) return;
       if (drop.position === "inside") {
-        store.moveNode(nodeId, drop.id);
+        s.moveNode(nodeId, drop.id);
       } else {
-        const parentInfo = findParent(root, drop.id);
-        if (!parentInfo) return;
-        const idx = drop.position === "before" ? parentInfo.index : parentInfo.index + 1;
-        store.moveNode(nodeId, parentInfo.parent.id, idx);
+        const p = findParent(root, drop.id);
+        if (p) s.moveNode(nodeId, p.parent.id, drop.position === "before" ? p.index : p.index + 1);
       }
       return;
     }
 
     if (blockHtml) {
       const parsed = parseHtml(blockHtml);
-      const nodesToAdd = parsed.children;
-      if (nodesToAdd.length === 0) return;
-
       if (drop.position === "inside") {
-        for (const child of nodesToAdd) {
-          store.addNode(drop.id, child);
-        }
+        for (const child of parsed.children) s.addNode(drop.id, child);
       } else {
-        const parentInfo = findParent(root, drop.id);
-        const parentId = parentInfo?.parent.id ?? root.id;
-        const idx = parentInfo
-          ? (drop.position === "before" ? parentInfo.index : parentInfo.index + 1)
-          : undefined;
-        for (let i = 0; i < nodesToAdd.length; i++) {
-          store.addNode(parentId, nodesToAdd[i], idx !== undefined ? idx + i : undefined);
+        const p = findParent(root, drop.id);
+        const parentId = p?.parent.id ?? root.id;
+        const idx = p ? (drop.position === "before" ? p.index : p.index + 1) : undefined;
+        for (let i = 0; i < parsed.children.length; i++) {
+          s.addNode(parentId, parsed.children[i], idx !== undefined ? idx + i : undefined);
         }
       }
     }
@@ -346,16 +343,19 @@ export function Canvas({ store }: CanvasProps) {
 
   return (
     <div
-      ref={canvasRef}
-      className="pb-canvas min-h-full relative"
-      onClick={handleClick}
-      onMouseOver={handleMouseOver}
-      onDoubleClick={handleDoubleClick}
-      onDragStart={handleDragStart}
+      ref={wrapperRef}
+      className="relative w-full h-full"
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
-    />
+    >
+      <iframe
+        ref={iframeRef}
+        srcDoc={srcdoc}
+        className="w-full h-full border-0"
+        title="Page Builder Canvas"
+      />
+    </div>
   );
 }
 
@@ -372,29 +372,21 @@ function renderNode(node: PBNode, selectedId: string | null): string {
 
   const tag = node.tag;
   const attrs: string[] = [`data-pb-id="${node.id}"`, `data-pb-name="${name}"`];
-  const hasChildren = node.children.length > 0;
-  if (hasChildren) attrs.push('data-pb-container="true"');
-
+  if (node.children.length > 0) attrs.push('data-pb-container="true"');
   if (node.id === selectedId) attrs.push('data-pb-selected="true"');
   if (node.classes.length > 0) attrs.push(`class="${node.classes.join(" ")}"`);
 
-  const styleStr = Object.entries(node.styles)
-    .map(([k, v]) => `${k}:${v}`)
-    .join(";");
+  const styleStr = Object.entries(node.styles).map(([k, v]) => `${k}:${v}`).join(";");
   if (styleStr) attrs.push(`style="${styleStr}"`);
 
   for (const [k, v] of Object.entries(node.attributes)) {
     attrs.push(`${k}="${v.replace(/"/g, "&quot;")}"`);
   }
 
-  const attrStr = attrs.join(" ");
-
-  if (node.type === "void") {
-    return `<${tag} ${attrStr} />`;
-  }
+  if (node.type === "void") return `<${tag} ${attrs.join(" ")} />`;
 
   const childrenHtml = node.children.map((c) => renderNode(c, selectedId)).join("");
-  return `<${tag} ${attrStr}>${childrenHtml}</${tag}>`;
+  return `<${tag} ${attrs.join(" ")}>${childrenHtml}</${tag}>`;
 }
 
 function escapeHtml(str: string): string {
