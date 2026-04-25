@@ -113,25 +113,33 @@ export default function EditContent({
   const [body, setBody] = useState(loaderData.body);
 
   // Page editor state
-  const [pageProjectData, setPageProjectData] = useState(
-    loaderData.projectData ?? "{}"
-  );
+  const [pageProjectData, setPageProjectData] = useState(loaderData.projectData ?? "{}");
   const [pageHtml, setPageHtml] = useState(loaderData.bodyHtml ?? "");
   const [pageCss, setPageCss] = useState(loaderData.css ?? "");
+  const [pageTitle, setPageTitle] = useState(loaderData.title);
+  const [pageDescription, setPageDescription] = useState(loaderData.description);
+  const [pageTags, setPageTags] = useState(loaderData.tags);
+  const [pageDraft, setPageDraft] = useState(loaderData.draft);
 
   const insertWhiteboard = (wbSlug: string, imageUrl: string) => {
     const markdown = `\n\n![${wbSlug}](${imageUrl})\n\n`;
     setBody((current) => current + markdown);
   };
 
-  const pendingPageSave = useRef<{ projectData: string; html: string; css: string } | null>(null);
+  const pendingPageSave = useRef(false);
 
   const handlePageSave = useCallback(
-    (projectData: string, html: string, css: string) => {
-      pendingPageSave.current = { projectData, html, css };
+    (projectData: string, html: string, css: string, meta?: { title: string; description: string; tags: string; draft: boolean }) => {
+      pendingPageSave.current = true;
       setPageProjectData(projectData);
       setPageHtml(html);
       setPageCss(css);
+      if (meta) {
+        setPageTitle(meta.title);
+        setPageDescription(meta.description);
+        setPageTags(meta.tags);
+        setPageDraft(meta.draft);
+      }
     },
     []
   );
@@ -139,34 +147,15 @@ export default function EditContent({
   // Submit form after state has flushed to DOM
   useEffect(() => {
     if (!pendingPageSave.current) return;
-    pendingPageSave.current = null;
+    pendingPageSave.current = false;
     const form = document.getElementById("edit-form") as HTMLFormElement;
     if (form) form.requestSubmit();
-  }, [pageProjectData, pageHtml, pageCss]);
+  }, [pageProjectData, pageHtml, pageCss, pageTitle, pageDescription, pageTags, pageDraft]);
 
   const isPage = loaderData.contentType === "page";
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-bold">Edit: {loaderData.title}</h1>
-            <span
-              className={`text-xs px-2 py-0.5 rounded-full ${
-              isPage
-                ? "bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300"
-                : "bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300"
-            }`}
-          >
-            {isPage ? "Page" : "Article"}
-            </span>
-          </div>
-          <code className="text-xs text-gray-400 dark:text-gray-500 font-mono mt-1">
-            {loaderData.sha.slice(0, 7)}
-          </code>
-        </div>
-      </div>
 
       {/* Whiteboards panel — only for markdown articles */}
       {!isPage && (
@@ -237,97 +226,37 @@ export default function EditContent({
         </div>
       )}
 
-      {/* Page editor — replaces the form for page type */}
+      {/* Page editor — form fields are inside PageEditor's Page Settings panel */}
       {isPage ? (
         <>
-          <Form method="post" id="edit-form" className="space-y-4 mb-4">
+          <Form method="post" id="edit-form">
             <input type="hidden" name="sha" value={loaderData.sha} />
             <input type="hidden" name="contentType" value="page" />
-            <input
-              type="hidden"
-              name="publishedAt"
-              value={loaderData.publishedAt}
-            />
-            <input
-              type="hidden"
-              name="projectData"
-              value={pageProjectData}
-            />
+            <input type="hidden" name="publishedAt" value={loaderData.publishedAt} />
+            <input type="hidden" name="projectData" value={pageProjectData} />
             <input type="hidden" name="pageHtml" value={pageHtml} />
             <input type="hidden" name="pageCss" value={pageCss} />
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label
-                  htmlFor="title"
-                  className="block text-sm font-medium mb-1.5"
-                >
-                  Title
-                </label>
-                <input
-                  id="title"
-                  name="title"
-                  required
-                  defaultValue={loaderData.title}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-                />
-              </div>
-              <div>
-                <label
-                  htmlFor="description"
-                  className="block text-sm font-medium mb-1.5"
-                >
-                  Description
-                </label>
-                <input
-                  id="description"
-                  name="description"
-                  defaultValue={loaderData.description}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label
-                  htmlFor="tags"
-                  className="block text-sm font-medium mb-1.5"
-                >
-                  Tags (comma-separated)
-                </label>
-                <input
-                  id="tags"
-                  name="tags"
-                  defaultValue={loaderData.tags}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-                />
-              </div>
-              <div className="flex items-end pb-1">
-                <div className="flex items-center gap-2">
-                  <input
-                    id="draft"
-                    name="draft"
-                    type="checkbox"
-                    defaultChecked={loaderData.draft}
-                    className="rounded border-gray-300 dark:border-gray-700"
-                  />
-                  <label htmlFor="draft" className="text-sm">
-                    Draft
-                  </label>
-                </div>
-              </div>
-            </div>
-
-            {actionData?.error && (
-              <p className="text-sm text-red-600 dark:text-red-400">
-                {actionData.error}
-              </p>
-            )}
+            <input type="hidden" name="title" value={pageTitle} />
+            <input type="hidden" name="description" value={pageDescription} />
+            <input type="hidden" name="tags" value={pageTags} />
+            <input type="hidden" name="draft" value={pageDraft ? "on" : ""} />
           </Form>
+
+          {actionData?.error && (
+            <p className="text-sm text-destructive mb-2">{actionData.error}</p>
+          )}
 
           <PageEditor
             projectData={loaderData.projectData}
+            meta={{
+              title: loaderData.title,
+              description: loaderData.description,
+              tags: loaderData.tags,
+              draft: loaderData.draft,
+              slug: loaderData.slug,
+              sha: loaderData.sha,
+              publishedAt: loaderData.publishedAt,
+            }}
             onSave={handlePageSave}
             saving={isSubmitting}
           />

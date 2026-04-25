@@ -97,11 +97,16 @@ function domToNode(domNode: Node): PBNode | null {
 
   const attributes: Record<string, string> = {};
   let customName: string | undefined;
+  let parentConstraint: string | undefined;
   for (const attr of Array.from(el.attributes)) {
     if (attr.name === "class" || attr.name === "style") continue;
     if (attr.name === "data-pb-name") {
       customName = attr.value;
-      continue; // Don't store in attributes — it's metadata only
+      continue;
+    }
+    if (attr.name === "data-pb-parent") {
+      parentConstraint = attr.value;
+      continue;
     }
     attributes[attr.name] = attr.value;
   }
@@ -111,6 +116,7 @@ function domToNode(domNode: Node): PBNode | null {
     styles,
     attributes,
     name: customName ?? getDefaultName(tag),
+    parentConstraint,
   });
 
   // If element only contains text (no child elements), store text directly

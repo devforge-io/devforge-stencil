@@ -4,6 +4,30 @@ import type { PBNode } from "./types";
 import { findNode, findParent } from "./utils";
 import { parseHtml } from "./serializer";
 
+/**
+ * Check if a node can be dropped at the given position.
+ * Validates parentConstraint — e.g. Column can only go inside Row.
+ */
+function canDropAt(
+  dragNode: PBNode,
+  targetId: string,
+  position: DropPosition,
+  root: PBNode
+): boolean {
+  if (!dragNode.parentConstraint) return true;
+
+  let parentNode: PBNode | null = null;
+  if (position === "inside") {
+    parentNode = findNode(root, targetId);
+  } else {
+    const p = findParent(root, targetId);
+    parentNode = p ? p.parent : null;
+  }
+
+  if (!parentNode) return false;
+  return parentNode.name === dragNode.parentConstraint;
+}
+
 interface CanvasProps {
   store: PBStore;
   externalStyles?: string[];
@@ -31,6 +55,21 @@ export function Canvas({ store, externalStyles = [] }: CanvasProps) {
       .map((u) => `<link rel="stylesheet" href="${u}" />`)
       .join("\n");
 
+    // Build Tailwind font family config from loaded Google Fonts
+    const fontFamilies: Record<string, string[]> = {};
+    for (const url of externalStyles) {
+      const match = url.match(/family=([^&:]+)/);
+      if (match) {
+        const family = match[1].replace(/\+/g, " ");
+        const key = family.toLowerCase().replace(/\s+/g, "-");
+        fontFamilies[key] = [`'${family}'`, "sans-serif"];
+      }
+    }
+    const tailwindConfig = JSON.stringify({
+      darkMode: "class",
+      theme: { extend: { fontFamily: fontFamilies } },
+    });
+
     return `<!DOCTYPE html>
 <html>
 <head>
@@ -38,8 +77,9 @@ export function Canvas({ store, externalStyles = [] }: CanvasProps) {
   <meta name="viewport" content="width=device-width, initial-scale=1">
   ${styleTags}
   <script src="https://cdn.tailwindcss.com"><\/script>
-  <script>tailwind.config={darkMode:'class'}<\/script>
+  <script>tailwind.config=${tailwindConfig}<\/script>
   <style>
+    html { -webkit-text-size-adjust: 100%; }
     * { box-sizing: border-box; }
     body { margin: 0; padding-top: 22px; min-height: 100vh; font-family: system-ui, sans-serif; }
     [data-pb-id] { position: relative; min-height: 2px; }
@@ -54,13 +94,29 @@ export function Canvas({ store, externalStyles = [] }: CanvasProps) {
     [data-pb-hover="true"]::before,
     [data-pb-selected="true"]::before {
       content: attr(data-pb-name);
-      position: absolute; top: -18px; left: 0;
-      font-size: 10px; line-height: 1; padding: 2px 6px;
+      position: absolute; top: -16px; left: 0;
+      font-size: 9px; line-height: 14px; padding: 0 5px;
       border-radius: 3px 3px 0 0; white-space: nowrap;
       pointer-events: none; z-index: 10;
     }
     [data-pb-hover="true"]:not([data-pb-selected="true"])::before { background: #60a5fa; color: white; }
     [data-pb-selected="true"]::before { background: #4c6ef5; color: white; }
+    /* Selection toolbar */
+    .pb-toolbar {
+      position: absolute; display: none; z-index: 20;
+      background: #1e1e1e; border-radius: 4px; padding: 1px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+      gap: 0; align-items: center;
+    }
+    .pb-toolbar.visible { display: flex; }
+    .pb-toolbar button {
+      background: none; border: none; color: #aaa; cursor: pointer;
+      width: 22px; height: 22px; display: flex; align-items: center; justify-content: center;
+      border-radius: 3px; padding: 0;
+    }
+    .pb-toolbar button:hover { background: #333; color: white; }
+    .pb-toolbar button.danger:hover { background: #dc2626; color: white; }
+    .pb-toolbar .sep { width: 1px; height: 14px; background: #444; margin: 0 1px; }
   </style>
 </head>
 <body></body>
@@ -74,16 +130,49 @@ export function Canvas({ store, externalStyles = [] }: CanvasProps) {
     const state = storeRef.current.getState();
     const root = state.root;
 
+    // Preserve toolbar before wiping innerHTML
+    const toolbar = body.querySelector(".pb-toolbar");
+    if (toolbar) toolbar.remove();
+
     const html = root.children
       .map((c) => renderNode(c, state.selection.nodeId))
       .join("");
 
     body.innerHTML = html || "";
+
+    // Re-append toolbar
+    if (toolbar) body.appendChild(toolbar);
+
+    // Make all elements draggable
+    body.querySelectorAll("[data-pb-id]").forEach((el) => {
+      (el as HTMLElement).draggable = true;
+    });
+    // Prevent native drag on SVG internals so the SVG element itself drags
+    body.querySelectorAll("svg[data-pb-id] *").forEach((el) => {
+      (el as HTMLElement).setAttribute("draggable", "false");
+      el.addEventListener("dragstart", (e) => e.preventDefault());
+    });
+
     // Apply root classes to body (for body-level styles like dark mode, bg, font)
     body.className = root.classes.join(" ");
     // Apply root inline styles
     const rootStyleStr = Object.entries(root.styles).map(([k, v]) => `${k}:${v}`).join(";");
     body.setAttribute("style", rootStyleStr || "");
+
+    // Auto-detect dark mode from root classes and apply to <html>
+    const isDark = root.classes.some((c) =>
+      c === "bg-gray-900" || c === "bg-gray-950" || c === "bg-black" ||
+      c === "bg-slate-900" || c === "bg-slate-950" || c === "bg-zinc-900" ||
+      c === "bg-zinc-950" || c === "bg-neutral-900" || c === "bg-neutral-950"
+    );
+    const htmlEl = iframe.contentDocument.documentElement;
+    if (isDark) {
+      htmlEl.classList.add("dark");
+    } else if (!htmlEl.dataset.pbDarkManual) {
+      // Only auto-remove if dark wasn't set manually via the toggle button
+      htmlEl.classList.remove("dark");
+    }
+
   }, []);
 
   const scheduleRender = useCallback(() => {
@@ -136,7 +225,164 @@ export function Canvas({ store, externalStyles = [] }: CanvasProps) {
       const doc = iframe.contentDocument;
       if (!doc) return;
 
+      // Create selection toolbar
+      const toolbar = doc.createElement("div");
+      toolbar.className = "pb-toolbar";
+      toolbar.innerHTML = `
+        <button data-action="move-up" title="Move up">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+        </button>
+        <button data-action="move-down" title="Move down">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M19 12l-7 7-7-7"/></svg>
+        </button>
+        <div class="sep"></div>
+        <button data-action="size-down" class="size-btn" title="Decrease size" style="display:none">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/></svg>
+        </button>
+        <span class="size-label" style="display:none;color:#888;font-size:9px;padding:0 2px;"></span>
+        <button data-action="size-up" class="size-btn" title="Increase size" style="display:none">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+        </button>
+        <div class="sep size-btn" style="display:none"></div>
+        <button data-action="duplicate" title="Duplicate">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+        </button>
+        <button data-action="parent" title="Select parent">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19V5M5 12l7-7 7 7"/><rect x="3" y="2" width="18" height="4" rx="1" fill="currentColor" opacity="0.3"/></svg>
+        </button>
+        <div class="sep"></div>
+        <button data-action="delete" class="danger" title="Delete">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+        </button>
+      `;
+      doc.body.appendChild(toolbar);
+
+      // Tailwind size steps
+      const WH_SIZES = ["3", "3.5", "4", "5", "6", "7", "8", "9", "10", "12", "14", "16", "20", "24"];
+      const TEXT_SIZES = ["xs", "sm", "base", "lg", "xl", "2xl", "3xl", "4xl", "5xl", "6xl", "7xl", "8xl", "9xl"];
+
+      type IconSizeMode = "wh" | "text" | null;
+
+      function getIconSizeMode(node: PBNode): IconSizeMode {
+        if (node.tag === "svg") return "wh";
+        if (node.tag === "i" || (node.tag === "span" && node.classes.includes("material-icons"))) return "text";
+        return null;
+      }
+
+      function getCurrentSize(node: PBNode, mode: IconSizeMode): string | null {
+        if (mode === "wh") {
+          for (const cls of node.classes) {
+            const m = cls.match(/^w-(\S+)$/);
+            if (m && WH_SIZES.includes(m[1])) return m[1];
+          }
+          return null;
+        }
+        if (mode === "text") {
+          for (const cls of node.classes) {
+            const m = cls.match(/^text-(\S+)$/);
+            if (m && TEXT_SIZES.includes(m[1])) return m[1];
+          }
+          return null;
+        }
+        return null;
+      }
+
+      // Toolbar actions
+      toolbar.addEventListener("click", (e) => {
+        const btn = (e.target as HTMLElement).closest("button");
+        if (!btn) return;
+        e.stopPropagation();
+        const action = btn.getAttribute("data-action");
+        const store = storeRef.current;
+        const selId = store.getState().selection.nodeId;
+        if (!selId) return;
+        const root = store.getRoot();
+
+        if (action === "delete") {
+          store.removeNode(selId);
+        } else if (action === "duplicate") {
+          store.duplicateNode(selId);
+        } else if (action === "move-up" || action === "move-down") {
+          const p = findParent(root, selId);
+          if (!p) return;
+          const dir = action === "move-up" ? -1 : 1;
+          const newIdx = p.index + dir;
+          if (newIdx < 0 || newIdx >= p.parent.children.length) return;
+          store.moveNode(selId, p.parent.id, newIdx);
+        } else if (action === "parent") {
+          const p = findParent(root, selId);
+          if (p && p.parent.id !== root.id) {
+            store.select(p.parent.id);
+          }
+        } else if (action === "size-up" || action === "size-down") {
+          const node = findNode(root, selId);
+          if (!node) return;
+          const mode = getIconSizeMode(node);
+          if (!mode) return;
+
+          const sizes = mode === "wh" ? WH_SIZES : TEXT_SIZES;
+          const currentSize = getCurrentSize(node, mode);
+          const currentIdx = currentSize ? sizes.indexOf(currentSize) : -1;
+          const defaultIdx = mode === "wh" ? 2 : 4; // w-4 or text-xl
+          const newIdx2 = action === "size-up"
+            ? Math.min(sizes.length - 1, (currentIdx >= 0 ? currentIdx : defaultIdx) + 1)
+            : Math.max(0, (currentIdx >= 0 ? currentIdx : defaultIdx) - 1);
+          const newSize = sizes[newIdx2];
+
+          let newClasses: string[];
+          if (mode === "wh") {
+            newClasses = node.classes
+              .filter((c) => !c.match(/^[wh]-\S+$/))
+              .concat([`w-${newSize}`, `h-${newSize}`]);
+          } else {
+            newClasses = node.classes
+              .filter((c) => !c.match(/^text-(xs|sm|base|lg|xl|[2-9]xl)$/))
+              .concat([`text-${newSize}`]);
+          }
+          store.updateNode(selId, { classes: newClasses });
+        }
+      });
+
+      // Position toolbar on selection
+      const positionToolbar = () => {
+        const store = storeRef.current;
+        const selId = store.getState().selection.nodeId;
+        if (!selId) {
+          toolbar.classList.remove("visible");
+          return;
+        }
+        const el = doc.querySelector(`[data-pb-id="${selId}"]`) as HTMLElement | null;
+        if (!el) {
+          toolbar.classList.remove("visible");
+          return;
+        }
+        const rect = el.getBoundingClientRect();
+        toolbar.style.top = `${rect.top + doc.documentElement.scrollTop - 30}px`;
+        toolbar.style.left = `${rect.left}px`;
+        toolbar.style.right = "auto";
+        toolbar.classList.add("visible");
+
+        // Show/hide size buttons for icons
+        const node = findNode(store.getRoot(), selId);
+        const sizeMode = node ? getIconSizeMode(node) : null;
+        toolbar.querySelectorAll(".size-btn, .size-label").forEach((el) => {
+          (el as HTMLElement).style.display = sizeMode ? "" : "none";
+        });
+        if (sizeMode && node) {
+          const size = getCurrentSize(node, sizeMode) ?? "—";
+          const label = toolbar.querySelector(".size-label") as HTMLElement;
+          if (label) label.textContent = sizeMode === "wh" ? `w${size}` : size;
+        }
+      };
+
+      // Re-position toolbar on store changes and scroll
+      storeRef.current.subscribe(positionToolbar);
+      doc.addEventListener("scroll", positionToolbar);
+      setTimeout(positionToolbar, 100);
+
       doc.addEventListener("click", (e) => {
+        // Don't deselect when clicking the toolbar
+        if ((e.target as HTMLElement).closest(".pb-toolbar")) return;
         e.preventDefault();
         const target = (e.target as HTMLElement).closest("[data-pb-id]") as HTMLElement | null;
         storeRef.current.select(target?.getAttribute("data-pb-id") ?? null);
@@ -171,6 +417,139 @@ export function Canvas({ store, externalStyles = [] }: CanvasProps) {
           target.removeEventListener("blur", finishEdit);
         };
         target.addEventListener("blur", finishEdit);
+      }, true);
+
+      // --- Internal drag/drop (moving elements within the canvas) ---
+      let internalDragId: string | null = null;
+      let internalDropTarget: DropTarget | null = null;
+
+      // Create indicator line inside iframe
+      const iLine = doc.createElement("div");
+      iLine.style.cssText = "position:absolute;pointer-events:none;z-index:100;display:none;background:#4c6ef5;border-radius:2px;";
+      doc.body.appendChild(iLine);
+
+      // Track mousedown target to identify the intended drag element
+      // (SVGs don't support HTML draggable, so dragstart fires on the parent)
+      let mouseDownTarget: HTMLElement | null = null;
+      doc.addEventListener("mousedown", (e) => {
+        mouseDownTarget = e.target as HTMLElement;
+      }, true);
+
+      doc.addEventListener("dragstart", (e) => {
+        // Use the mousedown target to find the intended element — if the user
+        // clicked inside an SVG, find that SVG's data-pb-id, not the parent's
+        const origin = mouseDownTarget ?? e.target as HTMLElement;
+        const svg = origin.closest("svg[data-pb-id]") as HTMLElement | null;
+        const target = svg ?? (e.target as HTMLElement).closest("[data-pb-id]") as HTMLElement | null;
+        if (!target || !e.dataTransfer) return;
+        internalDragId = target.getAttribute("data-pb-id");
+        e.dataTransfer.effectAllowed = "move";
+        e.dataTransfer.setData("text/pb-internal", "true");
+        target.style.opacity = "0.4";
+      }, true);
+
+      doc.addEventListener("dragend", (e) => {
+        // Restore opacity
+        if (internalDragId) {
+          const el = doc.querySelector(`[data-pb-id="${internalDragId}"]`) as HTMLElement | null;
+          if (el) el.style.opacity = "";
+        }
+        internalDragId = null;
+        internalDropTarget = null;
+        iLine.style.display = "none";
+        doc.querySelectorAll("[data-pb-drop-target]").forEach((h) => h.removeAttribute("data-pb-drop-target"));
+      }, true);
+
+      doc.addEventListener("dragover", (e) => {
+        if (!internalDragId) return;
+        e.preventDefault();
+        if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+
+        const target = (e.target as HTMLElement).closest("[data-pb-id]") as HTMLElement | null;
+        doc.querySelectorAll("[data-pb-drop-target]").forEach((h) => h.removeAttribute("data-pb-drop-target"));
+        iLine.style.display = "none";
+
+        if (!target || target.getAttribute("data-pb-id") === internalDragId) return;
+
+        const id = target.getAttribute("data-pb-id")!;
+        const node = findNode(storeRef.current.getRoot(), id);
+        if (!node) return;
+
+        const rect = target.getBoundingClientRect();
+        const parent = target.parentElement;
+        const isHoriz = parent ? (() => {
+          const s = doc.defaultView?.getComputedStyle(parent);
+          return s?.display.includes("flex") && (s.flexDirection === "row" || s.flexDirection === "");
+        })() : false;
+
+        const ratio = isHoriz
+          ? (e.clientX - rect.left) / rect.width
+          : (e.clientY - rect.top) / rect.height;
+
+        let position: DropPosition;
+        if (ratio < 0.3) position = "before";
+        else if (ratio > 0.7) position = "after";
+        else if (node.droppable !== false && node.type !== "text" && node.type !== "void") position = "inside";
+        else if (ratio < 0.5) position = "before";
+        else position = "after";
+
+        // Validate parent constraint for internal drags
+        if (internalDragId) {
+          const dragNode = findNode(storeRef.current.getRoot(), internalDragId);
+          if (dragNode && !canDropAt(dragNode, id, position, storeRef.current.getRoot())) {
+            return;
+          }
+        }
+
+        internalDropTarget = { id, position };
+
+        if (position === "inside") {
+          target.setAttribute("data-pb-drop-target", "true");
+        } else {
+          iLine.style.display = "block";
+          if (isHoriz) {
+            iLine.style.width = "3px";
+            iLine.style.height = `${rect.height}px`;
+            iLine.style.top = `${rect.top + doc.documentElement.scrollTop}px`;
+            iLine.style.left = position === "before"
+              ? `${rect.left - 2}px`
+              : `${rect.right - 1}px`;
+          } else {
+            iLine.style.height = "3px";
+            iLine.style.width = `${rect.width}px`;
+            iLine.style.left = `${rect.left}px`;
+            iLine.style.top = position === "before"
+              ? `${rect.top + doc.documentElement.scrollTop - 2}px`
+              : `${rect.bottom + doc.documentElement.scrollTop - 1}px`;
+          }
+        }
+      }, true);
+
+      doc.addEventListener("drop", (e) => {
+        if (!internalDragId || !internalDropTarget) return;
+        e.preventDefault();
+        e.stopPropagation();
+
+        const store = storeRef.current;
+        const root = store.getRoot();
+        const drop = internalDropTarget;
+
+        if (internalDragId === drop.id) return;
+
+        if (drop.position === "inside") {
+          store.moveNode(internalDragId, drop.id);
+        } else {
+          const p = findParent(root, drop.id);
+          if (p) {
+            const idx = drop.position === "before" ? p.index : p.index + 1;
+            store.moveNode(internalDragId, p.parent.id, idx);
+          }
+        }
+
+        internalDragId = null;
+        internalDropTarget = null;
+        iLine.style.display = "none";
+        doc.querySelectorAll("[data-pb-drop-target]").forEach((h) => h.removeAttribute("data-pb-drop-target"));
       }, true);
     };
 
@@ -252,7 +631,7 @@ export function Canvas({ store, externalStyles = [] }: CanvasProps) {
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    e.dataTransfer.dropEffect = e.dataTransfer.types.includes("text/pb-block-html") ? "copy" : "move";
+    e.dataTransfer.dropEffect = Array.from(e.dataTransfer.types).includes("text/pb-block-html") ? "copy" : "move";
 
     // Check if cursor is over the iframe area
     const iframeRect = iframeRef.current?.getBoundingClientRect();
@@ -362,14 +741,20 @@ export function Canvas({ store, externalStyles = [] }: CanvasProps) {
 
     if (blockHtml) {
       const parsed = parseHtml(blockHtml);
+      // Validate parent constraints
+      const validChildren = parsed.children.filter((child) =>
+        canDropAt(child, drop.id, drop.position, root)
+      );
+      if (validChildren.length === 0) return;
+
       if (drop.position === "inside") {
-        for (const child of parsed.children) s.addNode(drop.id, child);
+        for (const child of validChildren) s.addNode(drop.id, child);
       } else {
         const p = findParent(root, drop.id);
         const parentId = p?.parent.id ?? root.id;
         const idx = p ? (drop.position === "before" ? p.index : p.index + 1) : undefined;
-        for (let i = 0; i < parsed.children.length; i++) {
-          s.addNode(parentId, parsed.children[i], idx !== undefined ? idx + i : undefined);
+        for (let i = 0; i < validChildren.length; i++) {
+          s.addNode(parentId, validChildren[i], idx !== undefined ? idx + i : undefined);
         }
       }
     }
@@ -386,8 +771,11 @@ export function Canvas({ store, externalStyles = [] }: CanvasProps) {
       }}
       onDragEnter={(e) => {
         e.preventDefault();
-        // Disable iframe pointer events so wrapper receives drop
-        if (iframeRef.current) iframeRef.current.style.pointerEvents = "none";
+        // Only disable iframe pointer events for external drags (from sidebar blocks)
+        // Internal drags (from within the iframe) are handled by iframe's own listeners
+        if (Array.from(e.dataTransfer.types).includes("text/pb-block-html")) {
+          if (iframeRef.current) iframeRef.current.style.pointerEvents = "none";
+        }
       }}
       onDragOver={handleDragOver}
       onDragLeave={(e) => {
@@ -424,7 +812,7 @@ function renderNode(node: PBNode, selectedId: string | null): string {
 
   const tag = node.tag;
   const attrs: string[] = [`data-pb-id="${node.id}"`, `data-pb-name="${name}"`];
-  if (node.children.length > 0) attrs.push('data-pb-container="true"');
+  if (node.children.length > 0 && tag !== "svg") attrs.push('data-pb-container="true"');
   if (node.id === selectedId) attrs.push('data-pb-selected="true"');
   if (node.classes.length > 0) attrs.push(`class="${node.classes.join(" ")}"`);
 

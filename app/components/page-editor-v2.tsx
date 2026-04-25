@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback, useReducer } from "react";
+import { useState, useEffect, useMemo, useCallback, useReducer, createElement } from "react";
 import {
   createStore,
   Canvas,
@@ -15,22 +15,35 @@ import {
 } from "~/lib/page-builder";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
+import { Label } from "~/components/ui/label";
 import { ScrollArea } from "~/components/ui/scroll-area";
 import { Separator } from "~/components/ui/separator";
 import { Badge } from "~/components/ui/badge";
 import { cn } from "~/lib/utils";
 
+interface PageMeta {
+  title: string;
+  description: string;
+  tags: string;
+  draft: boolean;
+  slug: string;
+  sha: string;
+  publishedAt: string;
+}
+
 interface PageEditorProps {
   projectData?: string;
-  onSave: (projectData: string, html: string, css: string) => void;
+  meta?: PageMeta;
+  onSave: (projectData: string, html: string, css: string, meta?: PageMeta) => void;
   saving?: boolean;
 }
 
-type SidebarTab = "blocks" | "layers" | "properties" | "classes" | "page" | "resources";
+type SidebarTab = "blocks" | "layers" | "properties" | "classes" | "page" | "icons" | "resources";
 
-export function PageEditor({ projectData, onSave, saving = false }: PageEditorProps) {
+export function PageEditor({ projectData, meta, onSave, saving = false }: PageEditorProps) {
   const [mounted, setMounted] = useState(false);
   const [activeTab, setActiveTab] = useState<SidebarTab>("blocks");
+  const [pageMeta, setPageMeta] = useState<PageMeta>(meta ?? { title: "", description: "", tags: "", draft: false, slug: "", sha: "", publishedAt: "" });
   const [externalStyles, setExternalStyles] = useState<string[]>([]);
   const [newResourceUrl, setNewResourceUrl] = useState("");
 
@@ -85,6 +98,43 @@ export function PageEditor({ projectData, onSave, saving = false }: PageEditorPr
     }
   }, [selectedNode?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Build blocks list with dynamic icon blocks based on loaded libraries
+  const allBlocks = useMemo(() => {
+    const iconBlocks: import("~/lib/page-builder").PBBlock[] = [];
+
+    if (externalStyles.some((u) => u.includes("font-awesome"))) {
+      iconBlocks.push({
+        id: "icon-fa",
+        label: "FA Icon",
+        category: "Icons",
+        icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polygon points="12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26"/></svg>`,
+        content: `<i data-pb-name="Icon" class="fa-solid fa-star text-xl"></i>`,
+      });
+    }
+
+    if (externalStyles.some((u) => u.includes("Material+Icons"))) {
+      iconBlocks.push({
+        id: "icon-material",
+        label: "Material Icon",
+        category: "Icons",
+        icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>`,
+        content: `<span data-pb-name="Icon" class="material-icons text-2xl">star</span>`,
+      });
+    }
+
+    if (externalStyles.some((u) => u.includes("bootstrap-icons"))) {
+      iconBlocks.push({
+        id: "icon-bi",
+        label: "Bootstrap Icon",
+        category: "Icons",
+        icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M9 12l2 2 4-4"/></svg>`,
+        content: `<i data-pb-name="Icon" class="bi bi-star-fill text-xl"></i>`,
+      });
+    }
+
+    return [...DEFAULT_BLOCKS, ...iconBlocks];
+  }, [externalStyles]);
+
   // Save handler
   const [savingCss, setSavingCss] = useState(false);
   const [darkPreview, setDarkPreview] = useState(false);
@@ -105,6 +155,13 @@ export function PageEditor({ projectData, onSave, saving = false }: PageEditorPr
         parts.push(`@import url('${url}');`);
       }
 
+      // Generate font-family classes for loaded Google Fonts
+      const fontRules = generateFontCssRules(externalStyles);
+      if (fontRules) {
+        parts.push("/* Font family classes */");
+        parts.push(fontRules);
+      }
+
       // Compiled Tailwind utilities
       if (tailwindCss) {
         parts.push("/* Compiled Tailwind CSS */");
@@ -120,7 +177,7 @@ export function PageEditor({ projectData, onSave, saving = false }: PageEditorPr
 
       const css = parts.join("\n");
       setSavingCss(false);
-      onSave(projectJson, html, css);
+      onSave(projectJson, html, css, pageMeta);
     });
   }, [store, state.root, externalStyles, onSave]);
 
@@ -181,6 +238,7 @@ export function PageEditor({ projectData, onSave, saving = false }: PageEditorPr
     { id: "properties", label: "Props" },
     { id: "classes", label: "Classes" },
     { id: "page", label: "Page" },
+    { id: "icons", label: "Icons" },
     { id: "resources", label: "Fonts" },
   ];
 
@@ -243,7 +301,9 @@ export function PageEditor({ projectData, onSave, saving = false }: PageEditorPr
               if (!iframe?.contentDocument) return;
               const html = iframe.contentDocument.documentElement;
               html.classList.toggle("dark");
-              setDarkPreview(html.classList.contains("dark"));
+              const isDark = html.classList.contains("dark");
+              html.dataset.pbDarkManual = isDark ? "true" : "";
+              setDarkPreview(isDark);
             }}
             className="h-7 w-7 rounded-md border border-border flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
             title={darkPreview ? "Switch to light preview" : "Switch to dark preview"}
@@ -271,7 +331,7 @@ export function PageEditor({ projectData, onSave, saving = false }: PageEditorPr
       {/* Main layout */}
       <div className="flex" style={{ height: "calc(100vh - 200px)", minHeight: "600px" }}>
         {/* Sidebar */}
-        <div className="w-64 shrink-0 border-r flex flex-col bg-muted/20">
+        <div className="w-64 shrink-0 border-r flex flex-col bg-muted/20 overflow-hidden">
           {/* Tabs */}
           <div className="flex overflow-x-auto border-b scrollbar-none">
             {sidebarTabs.map((tab) => (
@@ -292,10 +352,10 @@ export function PageEditor({ projectData, onSave, saving = false }: PageEditorPr
           </div>
 
           {/* Tab content */}
-          <ScrollArea className="flex-1">
+          <div className="flex-1 overflow-y-auto">
             <div className="p-2">
               {activeTab === "blocks" && (
-                <BlockPanel blocks={DEFAULT_BLOCKS} />
+                <BlockPanel blocks={allBlocks} />
               )}
 
               {activeTab === "layers" && (
@@ -325,7 +385,11 @@ export function PageEditor({ projectData, onSave, saving = false }: PageEditorPr
               )}
 
               {activeTab === "page" && (
-                <PageSettingsPanel store={store} root={state.root} />
+                <PageSettingsPanel store={store} root={state.root} pageMeta={pageMeta} onMetaChange={setPageMeta} />
+              )}
+
+              {activeTab === "icons" && (
+                <ReactIconsPicker store={store} />
               )}
 
               {activeTab === "resources" && (
@@ -338,7 +402,7 @@ export function PageEditor({ projectData, onSave, saving = false }: PageEditorPr
                 />
               )}
             </div>
-          </ScrollArea>
+          </div>
         </div>
 
         {/* Canvas */}
@@ -597,6 +661,22 @@ function compileTailwindCss(html: string, styleUrls: string[]): Promise<string> 
   });
 }
 
+/**
+ * Generate CSS rules for font-{name} classes from loaded Google Font URLs.
+ * These are self-contained — no Tailwind config needed in the consuming app.
+ */
+function generateFontCssRules(styleUrls: string[]): string {
+  const rules: string[] = [];
+  for (const url of styleUrls) {
+    const match = url.match(/family=([^&:]+)/);
+    if (!match) continue;
+    const family = match[1].replace(/\+/g, " ");
+    const key = family.toLowerCase().replace(/\s+/g, "-");
+    rules.push(`.font-${key} { font-family: '${family}', sans-serif; }`);
+  }
+  return rules.join("\n");
+}
+
 function collectInlineStyles(node: PBNode): string {
   let css = "";
   const entries = Object.entries(node.styles);
@@ -711,8 +791,14 @@ const TW_GROUPS: { label: string; classes: { label: string; value: string }[] }[
   { label: "Width", classes: [{ label: "full", value: "w-full" }, { label: "1/2", value: "w-1/2" }, { label: "1/3", value: "w-1/3" }, { label: "2/3", value: "w-2/3" }, { label: "max-w-sm", value: "max-w-sm" }, { label: "max-w-md", value: "max-w-md" }, { label: "max-w-lg", value: "max-w-lg" }, { label: "max-w-xl", value: "max-w-xl" }, { label: "max-w-2xl", value: "max-w-2xl" }, { label: "max-w-4xl", value: "max-w-4xl" }] },
   { label: "Aspect Ratio", classes: [{ label: "auto", value: "aspect-auto" }, { label: "square", value: "aspect-square" }, { label: "video", value: "aspect-video" }] },
   { label: "Cursor", classes: [{ label: "default", value: "cursor-default" }, { label: "pointer", value: "cursor-pointer" }, { label: "text", value: "cursor-text" }, { label: "move", value: "cursor-move" }, { label: "not-allowed", value: "cursor-not-allowed" }, { label: "grab", value: "cursor-grab" }] },
-  { label: "Gradients", classes: [{ label: "To Right", value: "bg-gradient-to-r" }, { label: "To Left", value: "bg-gradient-to-l" }, { label: "To Bottom", value: "bg-gradient-to-b" }, { label: "To Top", value: "bg-gradient-to-t" }, { label: "To BR", value: "bg-gradient-to-br" }, { label: "To BL", value: "bg-gradient-to-bl" }] },
-  { label: "Gradient From", classes: [
+  { label: "BG Gradient: Direction", classes: [
+    { label: "→ Right", value: "bg-gradient-to-r" }, { label: "← Left", value: "bg-gradient-to-l" },
+    { label: "↓ Bottom", value: "bg-gradient-to-b" }, { label: "↑ Top", value: "bg-gradient-to-t" },
+    { label: "↘ BR", value: "bg-gradient-to-br" }, { label: "↙ BL", value: "bg-gradient-to-bl" },
+    { label: "↗ TR", value: "bg-gradient-to-tr" }, { label: "↖ TL", value: "bg-gradient-to-tl" },
+    { label: "None", value: "" },
+  ] },
+  { label: "BG Gradient: From", classes: [
     { label: "Black", value: "from-black" }, { label: "White", value: "from-white" }, { label: "Transparent", value: "from-transparent" },
     { label: "Slate 500", value: "from-slate-500" }, { label: "Gray 500", value: "from-gray-500" },
     { label: "Red 400", value: "from-red-400" }, { label: "Red 500", value: "from-red-500" }, { label: "Red 600", value: "from-red-600" },
@@ -731,16 +817,16 @@ const TW_GROUPS: { label: string; classes: { label: string; value: string }[] }[
     { label: "Pink 400", value: "from-pink-400" }, { label: "Pink 500", value: "from-pink-500" },
     { label: "Rose 400", value: "from-rose-400" }, { label: "Rose 500", value: "from-rose-500" },
   ] },
-  { label: "Gradient Via", classes: [
-    { label: "Transparent", value: "via-transparent" },
-    { label: "Red 500", value: "via-red-500" }, { label: "Orange 500", value: "via-orange-500" }, { label: "Yellow 400", value: "via-yellow-400" },
-    { label: "Green 500", value: "via-green-500" }, { label: "Emerald 500", value: "via-emerald-500" }, { label: "Teal 500", value: "via-teal-500" },
-    { label: "Cyan 500", value: "via-cyan-500" }, { label: "Sky 500", value: "via-sky-500" },
-    { label: "Blue 500", value: "via-blue-500" }, { label: "Indigo 500", value: "via-indigo-500" },
-    { label: "Violet 500", value: "via-violet-500" }, { label: "Purple 500", value: "via-purple-500" },
-    { label: "Fuchsia 500", value: "via-fuchsia-500" }, { label: "Pink 500", value: "via-pink-500" }, { label: "Rose 500", value: "via-rose-500" },
+  { label: "BG Gradient: Via", classes: [
+    { label: "None", value: "" }, { label: "Transparent", value: "via-transparent" },
+    { label: "Red", value: "via-red-500" }, { label: "Orange", value: "via-orange-500" }, { label: "Yellow", value: "via-yellow-400" },
+    { label: "Green", value: "via-green-500" }, { label: "Emerald", value: "via-emerald-500" }, { label: "Teal", value: "via-teal-500" },
+    { label: "Cyan", value: "via-cyan-500" }, { label: "Sky", value: "via-sky-500" },
+    { label: "Blue", value: "via-blue-500" }, { label: "Indigo", value: "via-indigo-500" },
+    { label: "Violet", value: "via-violet-500" }, { label: "Purple", value: "via-purple-500" },
+    { label: "Fuchsia", value: "via-fuchsia-500" }, { label: "Pink", value: "via-pink-500" }, { label: "Rose", value: "via-rose-500" },
   ] },
-  { label: "Gradient To", classes: [
+  { label: "BG Gradient: To", classes: [
     { label: "Black", value: "to-black" }, { label: "White", value: "to-white" }, { label: "Transparent", value: "to-transparent" },
     { label: "Red 400", value: "to-red-400" }, { label: "Red 500", value: "to-red-500" },
     { label: "Orange 400", value: "to-orange-400" }, { label: "Orange 500", value: "to-orange-500" },
@@ -754,7 +840,25 @@ const TW_GROUPS: { label: string; classes: { label: string; value: string }[] }[
     { label: "Fuchsia 500", value: "to-fuchsia-500" }, { label: "Pink 500", value: "to-pink-500" },
     { label: "Rose 500", value: "to-rose-500" },
   ] },
-  { label: "Text Gradients", classes: [{ label: "Purple→Pink", value: "bg-gradient-to-r from-purple-500 to-pink-500 bg-clip-text text-transparent" }, { label: "Blue→Cyan", value: "bg-gradient-to-r from-blue-500 to-cyan-400 bg-clip-text text-transparent" }, { label: "Green→Teal", value: "bg-gradient-to-r from-green-500 to-teal-400 bg-clip-text text-transparent" }, { label: "Red→Orange", value: "bg-gradient-to-r from-red-500 to-orange-400 bg-clip-text text-transparent" }, { label: "Sunset", value: "bg-gradient-to-r from-orange-400 via-pink-500 to-purple-500 bg-clip-text text-transparent" }, { label: "Ocean", value: "bg-gradient-to-r from-cyan-400 via-blue-500 to-indigo-600 bg-clip-text text-transparent" }, { label: "None", value: "" }] },
+  { label: "Text Gradient: Presets", classes: [
+    { label: "Purple→Pink", value: "bg-gradient-to-r from-purple-500 to-pink-500 bg-clip-text text-transparent" },
+    { label: "Blue→Cyan", value: "bg-gradient-to-r from-blue-500 to-cyan-400 bg-clip-text text-transparent" },
+    { label: "Green→Teal", value: "bg-gradient-to-r from-green-500 to-teal-400 bg-clip-text text-transparent" },
+    { label: "Red→Orange", value: "bg-gradient-to-r from-red-500 to-orange-400 bg-clip-text text-transparent" },
+    { label: "Indigo→Purple", value: "bg-gradient-to-r from-indigo-500 to-purple-500 bg-clip-text text-transparent" },
+    { label: "Pink→Rose", value: "bg-gradient-to-r from-pink-500 to-rose-400 bg-clip-text text-transparent" },
+    { label: "Sky→Blue", value: "bg-gradient-to-r from-sky-400 to-blue-500 bg-clip-text text-transparent" },
+    { label: "Yellow→Red", value: "bg-gradient-to-r from-yellow-400 to-red-500 bg-clip-text text-transparent" },
+    { label: "Fuchsia→Violet", value: "bg-gradient-to-r from-fuchsia-500 to-violet-500 bg-clip-text text-transparent" },
+    { label: "Sunset", value: "bg-gradient-to-r from-orange-400 via-pink-500 to-purple-500 bg-clip-text text-transparent" },
+    { label: "Ocean", value: "bg-gradient-to-r from-cyan-400 via-blue-500 to-indigo-600 bg-clip-text text-transparent" },
+    { label: "Forest", value: "bg-gradient-to-r from-green-400 via-emerald-500 to-teal-600 bg-clip-text text-transparent" },
+    { label: "None", value: "" },
+  ] },
+  { label: "Text Gradient: Clip", classes: [
+    { label: "Clip Text", value: "bg-clip-text" },
+    { label: "Transparent Text", value: "text-transparent" },
+  ] },
   { label: "Grid", classes: [{ label: "cols-1", value: "grid-cols-1" }, { label: "cols-2", value: "grid-cols-2" }, { label: "cols-3", value: "grid-cols-3" }, { label: "cols-4", value: "grid-cols-4" }, { label: "cols-6", value: "grid-cols-6" }, { label: "cols-12", value: "grid-cols-12" }, { label: "span-1", value: "col-span-1" }, { label: "span-2", value: "col-span-2" }, { label: "span-3", value: "col-span-3" }, { label: "span-4", value: "col-span-4" }, { label: "span-6", value: "col-span-6" }, { label: "span-full", value: "col-span-full" }] },
   { label: "Order", classes: [{ label: "first", value: "order-first" }, { label: "last", value: "order-last" }, { label: "none", value: "order-none" }, { label: "1", value: "order-1" }, { label: "2", value: "order-2" }, { label: "3", value: "order-3" }, { label: "4", value: "order-4" }, { label: "5", value: "order-5" }] },
   { label: "Hover States", classes: [{ label: "hover:opacity-80", value: "hover:opacity-80" }, { label: "hover:opacity-90", value: "hover:opacity-90" }, { label: "hover:scale-105", value: "hover:scale-105" }, { label: "hover:scale-110", value: "hover:scale-110" }, { label: "hover:underline", value: "hover:underline" }, { label: "hover:no-underline", value: "hover:no-underline" }, { label: "hover:shadow-lg", value: "hover:shadow-lg" }, { label: "hover:shadow-xl", value: "hover:shadow-xl" }] },
@@ -812,13 +916,27 @@ function TailwindClassesPanel({
     ...TW_GROUPS,
   ].sort((a, b) => a.label.localeCompare(b.label));
 
+  // Auto-add gradient direction when from/via/to classes are added without one
+  const ensureGradientDirection = useCallback(
+    (allClasses: string[]): string[] => {
+      const hasGradientColor = allClasses.some((c) => c.startsWith("from-") || c.startsWith("via-") || c.startsWith("to-"));
+      const hasGradientDir = allClasses.some((c) => c.startsWith("bg-gradient-"));
+      if (hasGradientColor && !hasGradientDir) {
+        return ["bg-gradient-to-r", ...allClasses];
+      }
+      return allClasses;
+    },
+    []
+  );
+
   const handleAddClass = useCallback(() => {
     const newClasses = classInput.trim().split(/\s+/).filter(Boolean);
     if (newClasses.length === 0) return;
     const merged = twMerge(classes.join(" "), newClasses.join(" "));
-    store.updateNode(node.id, { classes: merged.split(" ").filter(Boolean) });
+    const final = ensureGradientDirection(merged.split(" ").filter(Boolean));
+    store.updateNode(node.id, { classes: final });
     setClassInput("");
-  }, [store, node.id, classes, classInput]);
+  }, [store, node.id, classes, classInput, ensureGradientDirection]);
 
   const handleRemoveClass = useCallback(
     (cls: string) => {
@@ -837,10 +955,11 @@ function TailwindClassesPanel({
         store.updateNode(node.id, { classes: classes.filter((c) => !toAdd.includes(c)) });
       } else {
         const merged = twMerge(classes.join(" "), toAdd.join(" "));
-        store.updateNode(node.id, { classes: merged.split(" ").filter(Boolean) });
+        const final = ensureGradientDirection(merged.split(" ").filter(Boolean));
+        store.updateNode(node.id, { classes: final });
       }
     },
-    [store, node.id, classes, prefix]
+    [store, node.id, classes, prefix, ensureGradientDirection]
   );
 
   return (
@@ -971,9 +1090,13 @@ const PAGE_PRESETS = [
 function PageSettingsPanel({
   store,
   root,
+  pageMeta,
+  onMetaChange,
 }: {
   store: PBStore;
   root: PBNode;
+  pageMeta: PageMeta;
+  onMetaChange: (meta: PageMeta) => void;
 }) {
   const [classInput, setClassInput] = useState("");
   const classes = root.classes;
@@ -1009,12 +1132,55 @@ function PageSettingsPanel({
     <div className="space-y-4">
       <div>
         <p className="text-sm font-semibold mb-1">Page Settings</p>
-        <p className="text-[10px] text-muted-foreground mb-3">
-          These classes apply to the page body. Set background, text color, font, dark mode, etc.
-        </p>
+      </div>
+
+      {/* Page meta fields */}
+      <div className="space-y-2">
+        <div className="space-y-1">
+          <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">Title</Label>
+          <Input
+            value={pageMeta.title}
+            onChange={(e) => onMetaChange({ ...pageMeta, title: e.target.value })}
+            className="h-7 text-xs"
+          />
+        </div>
+        <div className="space-y-1">
+          <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">Description</Label>
+          <Input
+            value={pageMeta.description}
+            onChange={(e) => onMetaChange({ ...pageMeta, description: e.target.value })}
+            className="h-7 text-xs"
+          />
+        </div>
+        <div className="space-y-1">
+          <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">Tags (comma-separated)</Label>
+          <Input
+            value={pageMeta.tags}
+            onChange={(e) => onMetaChange({ ...pageMeta, tags: e.target.value })}
+            className="h-7 text-xs"
+            placeholder="docs, tutorial"
+          />
+        </div>
+        <div className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            id="page-draft"
+            checked={pageMeta.draft}
+            onChange={(e) => onMetaChange({ ...pageMeta, draft: e.target.checked })}
+            className="rounded border-border"
+          />
+          <Label htmlFor="page-draft" className="text-xs font-normal">Draft</Label>
+        </div>
+        <code className="text-[10px] text-muted-foreground font-mono block">
+          {pageMeta.sha ? pageMeta.sha.slice(0, 7) : "new"}
+        </code>
       </div>
 
       <Separator />
+
+      <p className="text-[10px] text-muted-foreground">
+        Body classes — set background, text color, font, dark mode.
+      </p>
 
       {/* Quick presets */}
       <div>
@@ -1125,6 +1291,178 @@ function PageSettingsPanel({
           ))}
         </div>
       </div>
+    </div>
+  );
+}
+
+// --- React Icons Picker ---
+
+import {
+  REACT_ICON_CATEGORIES,
+  ALL_REACT_ICONS,
+  renderReactIconToSvg,
+  iconDisplayName,
+} from "~/lib/page-builder/react-icons";
+
+function ReactIconsPicker({ store }: { store: import("~/lib/page-builder").PBStore }) {
+  const [search, setSearch] = useState("");
+  const [openCat, setOpenCat] = useState<string | null>("Actions");
+  const [inserting, setInserting] = useState<string | null>(null);
+  const [iconModule, setIconModule] = useState<Record<string, React.ComponentType<{ size?: number }>> | null>(null);
+  const [iconSvgCache, setIconSvgCache] = useState<Map<string, string>>(new Map());
+
+  // Load react-icons/lu module and pre-render all curated icons to SVG strings
+  useEffect(() => {
+    Promise.all([
+      import("react-icons/lu"),
+      import("react-dom/server"),
+    ]).then(([mod, { renderToStaticMarkup }]) => {
+      const icons = mod as unknown as Record<string, React.ComponentType<{ size?: number }>>;
+      setIconModule(icons);
+      // Pre-render all curated icons
+      const cache = new Map<string, string>();
+      for (const name of ALL_REACT_ICONS) {
+        const Comp = icons[name];
+        if (Comp) {
+          try {
+            let svg = renderToStaticMarkup(createElement(Comp, { size: 24 }));
+            // Keep width/height as-is (24px) — they act as default size
+            // Tailwind w-/h- classes will override via CSS when applied
+            cache.set(name, svg);
+          } catch {
+            // skip
+          }
+        }
+      }
+      setIconSvgCache(cache);
+    });
+  }, []);
+
+  const categories = Object.keys(REACT_ICON_CATEGORIES).sort();
+
+  const filteredIcons = useMemo(() => {
+    if (!search) return null;
+    const q = search.toLowerCase();
+    return ALL_REACT_ICONS.filter((name) =>
+      iconDisplayName(name).includes(q)
+    );
+  }, [search]);
+
+  const getIconHtml = useCallback(
+    (iconName: string): string => {
+      const svg = iconSvgCache.get(iconName);
+      if (!svg) return "";
+      // Insert data-pb-name directly on the SVG element
+      return svg.replace("<svg", `<svg data-pb-name="Svg - ${iconDisplayName(iconName)}" class="block w-6 h-6 shrink-0"`);
+    },
+    [iconSvgCache]
+  );
+
+  const handleInsert = useCallback(
+    (iconName: string) => {
+      const html = getIconHtml(iconName);
+      if (!html) return;
+      setInserting(iconName);
+      const parsed = parseHtml(html);
+      const selectedId = store.getState().selection.nodeId;
+      const targetId = selectedId ?? store.getRoot().id;
+      for (const child of parsed.children) {
+        store.addNode(targetId, child);
+      }
+      setInserting(null);
+    },
+    [store, getIconHtml]
+  );
+
+  const renderIconGrid = (icons: string[]) => (
+    <div className="grid grid-cols-5 gap-1">
+      {icons.map((name) => {
+        const IconComp = iconModule?.[name];
+        return (
+          <div
+            key={name}
+            draggable
+            onDragStart={(e) => {
+              const html = getIconHtml(name);
+              if (html) {
+                e.dataTransfer.setData("text/pb-block-html", html);
+                e.dataTransfer.effectAllowed = "copy";
+              }
+            }}
+            onClick={() => handleInsert(name)}
+            title={iconDisplayName(name)}
+            className={cn(
+              "flex flex-col items-center gap-0.5 p-2 rounded transition-colors cursor-grab active:cursor-grabbing",
+              inserting === name
+                ? "bg-primary/20 text-primary"
+                : "hover:bg-muted text-muted-foreground hover:text-foreground"
+            )}
+          >
+            {IconComp ? <IconComp size={18} /> : <span className="w-[18px] h-[18px]" />}
+            <span className="text-[8px] truncate w-full text-center leading-tight">
+              {iconDisplayName(name).slice(0, 12)}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+
+  if (!iconModule) {
+    return (
+      <div className="flex items-center justify-center py-8">
+        <p className="text-xs text-muted-foreground">Loading icons...</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <div>
+        <p className="text-sm font-semibold mb-1">React Icons (Lucide)</p>
+        <p className="text-[10px] text-muted-foreground mb-2">
+          Click an icon to insert it. Icons render as inline SVGs — no external library needed.
+        </p>
+      </div>
+
+      <Input
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        placeholder="Search icons..."
+        className="h-7 text-xs"
+      />
+
+      {filteredIcons && (
+        <div>
+          <p className="text-[10px] text-muted-foreground mb-1">
+            {filteredIcons.length} result{filteredIcons.length !== 1 ? "s" : ""}
+          </p>
+          {renderIconGrid(filteredIcons)}
+          {filteredIcons.length === 0 && (
+            <p className="text-xs text-muted-foreground text-center py-4">
+              No icons match "{search}"
+            </p>
+          )}
+        </div>
+      )}
+
+      {!filteredIcons && (
+        <div>
+          {categories.map((cat) => (
+            <div key={cat} className="mb-1">
+              <button
+                type="button"
+                onClick={() => setOpenCat(openCat === cat ? null : cat)}
+                className="w-full flex items-center justify-between text-[11px] font-medium text-muted-foreground py-1 hover:text-foreground"
+              >
+                {cat} ({REACT_ICON_CATEGORIES[cat].length})
+                <span className="text-[9px]">{openCat === cat ? "▲" : "▼"}</span>
+              </button>
+              {openCat === cat && renderIconGrid(REACT_ICON_CATEGORIES[cat])}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

@@ -14,7 +14,7 @@ export const DEFAULT_BLOCKS: PBBlock[] = [
     label: "Column",
     category: "Layout",
     icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="6" y="2" width="12" height="20" rx="1"/><line x1="6" y1="9" x2="18" y2="9"/><line x1="6" y1="15" x2="18" y2="15"/></svg>`,
-    content: `<div data-pb-name="Column" class="flex-1"></div>`,
+    content: `<div data-pb-name="Column" data-pb-parent="Row" class="flex-1"></div>`,
   },
   {
     id: "section",
@@ -28,7 +28,7 @@ export const DEFAULT_BLOCKS: PBBlock[] = [
     label: "Hero",
     category: "Layout",
     icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="20" height="18" rx="2"/><line x1="8" y1="9" x2="16" y2="9"/><line x1="6" y1="13" x2="18" y2="13"/><rect x="9" y="16" width="6" height="2" rx="1"/></svg>`,
-    content: `<section data-pb-name="Hero" class="py-16 px-8 text-center bg-gray-50 dark:bg-gray-900"><h1 data-pb-name="Heading" class="text-4xl font-bold mb-4 dark:text-white">Hero Title</h1><p data-pb-name="Text" class="text-lg text-gray-500 dark:text-gray-400 max-w-xl mx-auto mb-8">A compelling description that draws readers in.</p><a data-pb-name="Button" href="#" class="inline-block px-6 py-3 bg-indigo-500 hover:bg-indigo-600 text-white rounded-lg font-medium no-underline">Get Started</a></section>`,
+    content: `<section data-pb-name="Hero" class="py-16 px-8 text-center bg-gray-50 dark:bg-gray-900"><h1 data-pb-name="Heading" class="text-4xl font-bold mb-4 dark:text-white">Hero Title</h1><p data-pb-name="Text" class="text-lg text-gray-500 dark:text-gray-400 max-w-xl mx-auto mb-8">A compelling description that draws readers in.</p><a data-pb-name="Button" href="#" class="inline-flex items-center gap-2 px-6 py-3 bg-indigo-500 hover:bg-indigo-600 text-white rounded-lg font-medium no-underline"><span data-pb-name="Label">Get Started</span></a></section>`,
   },
   {
     id: "two-cols",
@@ -49,7 +49,7 @@ export const DEFAULT_BLOCKS: PBBlock[] = [
     label: "Navbar",
     category: "Layout",
     icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="4" width="20" height="4" rx="1"/><line x1="6" y1="6" x2="10" y2="6"/><line x1="14" y1="6" x2="18" y2="6"/></svg>`,
-    content: `<nav data-pb-name="Navbar" class="flex items-center justify-between px-8 py-4 border-b border-gray-200 dark:border-gray-800"><span data-pb-name="Brand" class="text-xl font-bold dark:text-white">Brand</span><div data-pb-name="Nav Links" class="flex gap-6"><a data-pb-name="Link" href="#" class="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white no-underline text-sm">Features</a><a data-pb-name="Link" href="#" class="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white no-underline text-sm">Pricing</a><a data-pb-name="Link" href="#" class="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white no-underline text-sm">About</a><a data-pb-name="Button" href="#" class="px-4 py-1.5 bg-indigo-500 hover:bg-indigo-600 text-white rounded-lg text-sm no-underline">Sign Up</a></div></nav>`,
+    content: `<nav data-pb-name="Navbar" class="flex items-center justify-between px-8 py-4 border-b border-gray-200 dark:border-gray-800"><span data-pb-name="Brand" class="text-xl font-bold dark:text-white">Brand</span><div data-pb-name="Nav Links" class="flex gap-6"><a data-pb-name="Link" href="#" class="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white no-underline text-sm">Features</a><a data-pb-name="Link" href="#" class="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white no-underline text-sm">Pricing</a><a data-pb-name="Link" href="#" class="text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white no-underline text-sm">About</a><a data-pb-name="Button" href="#" class="inline-flex items-center gap-2 px-4 py-1.5 bg-indigo-500 hover:bg-indigo-600 text-white rounded-lg text-sm no-underline"><span data-pb-name="Label">Sign Up</span></a></div></nav>`,
   },
   {
     id: "footer",
@@ -100,7 +100,7 @@ export const DEFAULT_BLOCKS: PBBlock[] = [
     label: "Button",
     category: "Basic",
     icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="8" width="18" height="8" rx="4"/></svg>`,
-    content: `<a data-pb-name="Button" href="#" class="inline-block px-6 py-3 bg-indigo-500 hover:bg-indigo-600 text-white rounded-lg font-medium no-underline">Button</a>`,
+    content: `<a data-pb-name="Button" href="#" class="inline-flex items-center gap-2 px-6 py-3 bg-indigo-500 hover:bg-indigo-600 text-white rounded-lg font-medium no-underline"><span data-pb-name="Label">Button</span></a>`,
   },
   {
     id: "divider",
@@ -144,6 +144,6 @@ export const DEFAULT_BLOCKS: PBBlock[] = [
     label: "Pricing Card",
     category: "Components",
     icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="3" width="16" height="18" rx="2"/><line x1="4" y1="9" x2="20" y2="9"/></svg>`,
-    content: `<div data-pb-name="Pricing Card" class="border border-gray-200 dark:border-gray-700 rounded-xl p-8 max-w-xs text-center bg-white dark:bg-gray-800"><h3 data-pb-name="Plan Name" class="text-lg font-semibold mb-1 dark:text-white">Pro Plan</h3><p data-pb-name="Description" class="text-gray-400 text-sm mb-4">For growing teams</p><p data-pb-name="Price" class="text-4xl font-bold mb-6 dark:text-white">$49<span class="text-base font-normal text-gray-400">/mo</span></p><ul data-pb-name="Features" class="text-sm text-gray-600 dark:text-gray-400 space-y-2 mb-8 text-left list-none p-0"><li>Unlimited projects</li><li>Priority support</li><li>Advanced analytics</li></ul><a data-pb-name="Button" href="#" class="block w-full py-2.5 bg-indigo-500 hover:bg-indigo-600 text-white rounded-lg font-medium no-underline text-center">Get Started</a></div>`,
+    content: `<div data-pb-name="Pricing Card" class="border border-gray-200 dark:border-gray-700 rounded-xl p-8 max-w-xs text-center bg-white dark:bg-gray-800"><h3 data-pb-name="Plan Name" class="text-lg font-semibold mb-1 dark:text-white">Pro Plan</h3><p data-pb-name="Description" class="text-gray-400 text-sm mb-4">For growing teams</p><p data-pb-name="Price" class="text-4xl font-bold mb-6 dark:text-white">$49<span class="text-base font-normal text-gray-400">/mo</span></p><ul data-pb-name="Features" class="text-sm text-gray-600 dark:text-gray-400 space-y-2 mb-8 text-left list-none p-0"><li>Unlimited projects</li><li>Priority support</li><li>Advanced analytics</li></ul><a data-pb-name="Button" href="#" class="flex items-center justify-center gap-2 w-full py-2.5 bg-indigo-500 hover:bg-indigo-600 text-white rounded-lg font-medium no-underline text-center"><span data-pb-name="Label">Get Started</span></a></div>`,
   },
 ];

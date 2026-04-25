@@ -11,6 +11,7 @@ export interface PBNode {
   editable?: boolean;
   droppable?: boolean;
   draggable?: boolean;
+  parentConstraint?: string; // if set, can only be dropped inside a node with this name
 }
 
 export interface PBBlock {
