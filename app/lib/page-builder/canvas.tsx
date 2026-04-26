@@ -147,9 +147,8 @@ export function Canvas({ store, externalStyles = [] }: CanvasProps) {
     body.querySelectorAll("[data-pb-id]").forEach((el) => {
       (el as HTMLElement).draggable = true;
     });
-    // Prevent native drag on SVG internals so the SVG element itself drags
-    body.querySelectorAll("svg[data-pb-id] *").forEach((el) => {
-      (el as HTMLElement).setAttribute("draggable", "false");
+    // Prevent native drag on SVG internals
+    body.querySelectorAll("svg *").forEach((el) => {
       el.addEventListener("dragstart", (e) => e.preventDefault());
     });
 
@@ -428,19 +427,8 @@ export function Canvas({ store, externalStyles = [] }: CanvasProps) {
       iLine.style.cssText = "position:absolute;pointer-events:none;z-index:100;display:none;background:#4c6ef5;border-radius:2px;";
       doc.body.appendChild(iLine);
 
-      // Track mousedown target to identify the intended drag element
-      // (SVGs don't support HTML draggable, so dragstart fires on the parent)
-      let mouseDownTarget: HTMLElement | null = null;
-      doc.addEventListener("mousedown", (e) => {
-        mouseDownTarget = e.target as HTMLElement;
-      }, true);
-
       doc.addEventListener("dragstart", (e) => {
-        // Use the mousedown target to find the intended element — if the user
-        // clicked inside an SVG, find that SVG's data-pb-id, not the parent's
-        const origin = mouseDownTarget ?? e.target as HTMLElement;
-        const svg = origin.closest("svg[data-pb-id]") as HTMLElement | null;
-        const target = svg ?? (e.target as HTMLElement).closest("[data-pb-id]") as HTMLElement | null;
+        const target = (e.target as HTMLElement).closest("[data-pb-id]") as HTMLElement | null;
         if (!target || !e.dataTransfer) return;
         internalDragId = target.getAttribute("data-pb-id");
         e.dataTransfer.effectAllowed = "move";
@@ -811,8 +799,37 @@ function renderNode(node: PBNode, selectedId: string | null): string {
   }
 
   const tag = node.tag;
+
+  // SVGs can't be HTML-dragged — wrap in a draggable <span> for the canvas
+  if (tag === "svg") {
+    const wrapAttrs: string[] = [
+      `data-pb-id="${node.id}"`,
+      `data-pb-name="${name}"`,
+    ];
+    if (node.id === selectedId) wrapAttrs.push('data-pb-selected="true"');
+    // Move layout classes (w-*, h-*, block, shrink-*, m-*, p-*) to the wrapper
+    const layoutRe = /^(w-|h-|block|inline|shrink|grow|m[xytblr]?-|p[xytblr]?-|self-|flex-)/;
+    const wrapClasses = node.classes.filter((c) => layoutRe.test(c));
+    const svgClasses = node.classes.filter((c) => !layoutRe.test(c));
+    if (wrapClasses.length > 0) wrapAttrs.push(`class="${wrapClasses.join(" ")}"`);
+
+    const svgAttrs: string[] = [];
+    if (svgClasses.length > 0) svgAttrs.push(`class="${svgClasses.join(" ")}"`);
+    // SVG needs w-full h-full to fill the wrapper
+    else svgAttrs.push('class="w-full h-full"');
+
+    const styleStr = Object.entries(node.styles).map(([k, v]) => `${k}:${v}`).join(";");
+    if (styleStr) svgAttrs.push(`style="${styleStr}"`);
+    for (const [k, v] of Object.entries(node.attributes)) {
+      svgAttrs.push(`${k}="${v.replace(/"/g, "&quot;")}"`);
+    }
+
+    const childrenHtml = node.children.map((c) => renderNode(c, selectedId)).join("");
+    return `<span ${wrapAttrs.join(" ")}><svg ${svgAttrs.join(" ")}>${childrenHtml}</svg></span>`;
+  }
+
   const attrs: string[] = [`data-pb-id="${node.id}"`, `data-pb-name="${name}"`];
-  if (node.children.length > 0 && tag !== "svg") attrs.push('data-pb-container="true"');
+  if (node.children.length > 0) attrs.push('data-pb-container="true"');
   if (node.id === selectedId) attrs.push('data-pb-selected="true"');
   if (node.classes.length > 0) attrs.push(`class="${node.classes.join(" ")}"`);
 
