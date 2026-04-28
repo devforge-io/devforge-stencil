@@ -63,8 +63,12 @@ function nodeToWiki(node: Node): string {
     }
     case "sup": {
       if (el.classList.contains("wiki-cite")) {
+        const isSelfClose = el.getAttribute("data-ref-selfclose") === "true";
         const refText = el.getAttribute("data-ref-text");
         const refName = el.getAttribute("data-ref-name");
+        // Self-closing ref: <ref name="x" />
+        if (isSelfClose && refName) return `<ref name="${refName}" />`;
+        // Full ref: <ref name="x">content</ref> or <ref>content</ref>
         if (refText) {
           const nameAttr = refName ? ` name="${refName}"` : "";
           return `<ref${nameAttr}>${refText}</ref>`;
@@ -220,6 +224,7 @@ export function WikipediaEditor({
     isWiki: boolean;
     refText: string;
     refName: string;
+    isSelfClose: boolean;
   } | null>(null);
 
   const handlePreviewClick = useCallback((e: React.MouseEvent) => {
@@ -242,6 +247,7 @@ export function WikipediaEditor({
         isWiki: link.classList.contains("wiki-link"),
         refText: "",
         refName: "",
+        isSelfClose: false,
       });
       setToolbarPos(null);
       return;
@@ -264,6 +270,7 @@ export function WikipediaEditor({
         isWiki: false,
         refText: cite.getAttribute("data-ref-text") ?? "",
         refName: cite.getAttribute("data-ref-name") ?? "",
+        isSelfClose: cite.getAttribute("data-ref-selfclose") === "true",
       });
       setToolbarPos(null);
       return;
@@ -519,6 +526,7 @@ export function WikipediaEditor({
                 isWiki={editPopover.isWiki}
                 refText={editPopover.refText}
                 refName={editPopover.refName}
+                isSelfClose={editPopover.isSelfClose}
                 onSave={handlePopoverSave}
                 onRemove={handlePopoverRemove}
                 onClose={() => setEditPopover(null)}
@@ -640,6 +648,7 @@ function EditPopover({
   isWiki,
   refText,
   refName,
+  isSelfClose,
   onSave,
   onRemove,
   onClose,
@@ -652,6 +661,7 @@ function EditPopover({
   isWiki: boolean;
   refText: string;
   refName: string;
+  isSelfClose: boolean;
   onSave: (updates: { href?: string; text?: string; refText?: string; refName?: string }) => void;
   onRemove: () => void;
   onClose: () => void;
@@ -736,6 +746,37 @@ function EditPopover({
               Save
             </button>
           </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Self-closing ref — just show info, not editable
+  if (isSelfClose) {
+    return (
+      <div
+        ref={popoverRef}
+        className="absolute z-50 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl p-3 space-y-2"
+        style={{ left: `${x}px`, top: `${y}px`, minWidth: "240px" }}
+      >
+        <div className="text-[10px] uppercase tracking-wide text-gray-400 font-semibold">
+          Citation Reference
+        </div>
+        <p className="text-sm text-gray-600 dark:text-gray-300">
+          References <code className="text-xs bg-gray-100 dark:bg-gray-700 px-1 py-0.5 rounded font-mono">{refName}</code>
+        </p>
+        <p className="text-[10px] text-gray-400">
+          This is a back-reference to a named citation defined elsewhere. Edit the original citation to change its content.
+        </p>
+        <div className="flex items-center justify-between pt-1">
+          <button type="button" onClick={onRemove}
+            className="text-xs text-red-500 hover:text-red-700 dark:hover:text-red-400">
+            Remove reference
+          </button>
+          <button type="button" onClick={onClose}
+            className="px-2 py-1 text-xs text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 rounded">
+            Close
+          </button>
         </div>
       </div>
     );

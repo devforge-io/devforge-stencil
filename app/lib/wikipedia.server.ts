@@ -291,8 +291,14 @@ function wikitextToHtml(wikitext: string): string {
 
   // Protect <ref> content from template extraction — store raw ref content
   const refBlocks: string[] = [];
-  text = text.replace(/<ref(\s+name="[^"]*")?\s*>([\s\S]*?)<\/ref>/gi, (_m, nameAttr, content) => {
-    refBlocks.push(_m); // store the full <ref>...</ref> tag
+  text = text.replace(/<ref(\s+name="[^"]*")?\s*>([\s\S]*?)<\/ref>/gi, (_m) => {
+    refBlocks.push(_m);
+    return `\x00REF${refBlocks.length - 1}\x00`;
+  });
+
+  // Also protect self-closing refs
+  text = text.replace(/<ref\s+name="[^"]*"\s*\/>/gi, (_m) => {
+    refBlocks.push(_m);
     return `\x00REF${refBlocks.length - 1}\x00`;
   });
 
@@ -302,6 +308,17 @@ function wikitextToHtml(wikitext: string): string {
 
   // Restore ref blocks after template extraction
   text = text.replace(/\x00REF(\d+)\x00/g, (_m, idx) => refBlocks[Number(idx)]);
+
+  // Pre-collect all named refs so self-closing refs can reference them
+  // (first pass: register all full <ref name="x">content</ref> without rendering)
+  const fullRefRegex = /<ref\s+name="([^"]*)"\s*>([\s\S]*?)<\/ref>/gi;
+  let refMatch;
+  while ((refMatch = fullRefRegex.exec(text)) !== null) {
+    const name = refMatch[1];
+    const rawContent = refMatch[2].trim();
+    const rendered = renderRefContent(rawContent);
+    refCollector.add(name, rendered);
+  }
 
   // Render templates
   const renderedTpls = templates.map((t) => renderTemplate(t.name, t.params, refCollector, t.raw));
@@ -398,13 +415,15 @@ function inlineFormat(text: string, refCollector: RefCollector): string {
     return `<sup class="wiki-cite" data-ref-text="${escapeAttr(rawContent)}"${nameAttr}><a href="#cite-note-${idx + 1}" id="cite-ref-${idx + 1}">[${idx + 1}]</a></sup>`;
   });
 
-  // Self-closing ref: <ref name="x" />
+  // Self-closing ref: <ref name="x" /> — references a previously defined named ref
   text = text.replace(/<ref\s+name="([^"]*)"\s*\/>/gi, (_m, name) => {
     const idx = refCollector.getIndex(name);
     if (idx !== undefined) {
-      return `<sup class="wiki-cite" data-ref-name="${escapeAttr(name)}"><a href="#cite-note-${idx + 1}">[${idx + 1}]</a></sup>`;
+      const originalText = refCollector.refs[idx]?.text ?? "";
+      // Store the original raw wikitext if available, for round-tripping
+      return `<sup class="wiki-cite" data-ref-name="${escapeAttr(name)}" data-ref-selfclose="true"><a href="#cite-note-${idx + 1}">[${idx + 1}]</a></sup>`;
     }
-    return `<sup class="wiki-cite">[?]</sup>`;
+    return `<sup class="wiki-cite" data-ref-name="${escapeAttr(name)}" data-ref-selfclose="true">[?]</sup>`;
   });
 
   // Images
