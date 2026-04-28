@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback, useMemo } from "react";
+import { useEffect, useRef, useCallback, useMemo, memo } from "react";
 import type { PBStore } from "./store";
 import type { PBNode } from "./types";
 import { findNode, findParent } from "./utils";
@@ -40,13 +40,14 @@ interface DropTarget {
   position: DropPosition;
 }
 
-export function Canvas({ store, externalStyles = [] }: CanvasProps) {
+export const Canvas = memo(function Canvas({ store, externalStyles = [] }: CanvasProps) {
   const wrapperRef = useRef<HTMLDivElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const storeRef = useRef(store);
   const pendingRender = useRef(false);
   const currentDropTarget = useRef<DropTarget | null>(null);
   const indicatorRef = useRef<HTMLDivElement | null>(null);
+  const lastRenderedTreeHtml = useRef<string>("");
   storeRef.current = store;
 
   // Build srcdoc with Tailwind CDN
@@ -70,9 +71,12 @@ export function Canvas({ store, externalStyles = [] }: CanvasProps) {
       theme: { extend: { fontFamily: fontFamilies } },
     });
 
+    const baseUrl = typeof window !== "undefined" ? window.location.origin : "";
+
     return `<!DOCTYPE html>
 <html>
 <head>
+  <base href="${baseUrl}/" />
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   ${styleTags}
@@ -127,13 +131,34 @@ export function Canvas({ store, externalStyles = [] }: CanvasProps) {
     const iframe = iframeRef.current;
     if (!iframe?.contentDocument?.body) return;
     const body = iframe.contentDocument.body;
+    const doc = iframe.contentDocument;
     const state = storeRef.current.getState();
     const root = state.root;
+
+    // Build tree HTML WITHOUT selection to compare against last render
+    const treeHtml = root.children
+      .map((c) => renderNode(c, null))
+      .join("");
+
+    if (treeHtml === lastRenderedTreeHtml.current) {
+      // Tree hasn't changed — just update selection in-place
+      doc.querySelectorAll("[data-pb-selected]").forEach((el) =>
+        el.removeAttribute("data-pb-selected")
+      );
+      if (state.selection.nodeId) {
+        const sel = doc.querySelector(`[data-pb-id="${state.selection.nodeId}"]`);
+        if (sel) sel.setAttribute("data-pb-selected", "true");
+      }
+      return;
+    }
+
+    lastRenderedTreeHtml.current = treeHtml;
 
     // Preserve toolbar before wiping innerHTML
     const toolbar = body.querySelector(".pb-toolbar");
     if (toolbar) toolbar.remove();
 
+    // Full re-render — build HTML with selection markers
     const html = root.children
       .map((c) => renderNode(c, state.selection.nodeId))
       .join("");
@@ -164,7 +189,7 @@ export function Canvas({ store, externalStyles = [] }: CanvasProps) {
       c === "bg-slate-900" || c === "bg-slate-950" || c === "bg-zinc-900" ||
       c === "bg-zinc-950" || c === "bg-neutral-900" || c === "bg-neutral-950"
     );
-    const htmlEl = iframe.contentDocument.documentElement;
+    const htmlEl = doc.documentElement;
     if (isDark) {
       htmlEl.classList.add("dark");
     } else if (!htmlEl.dataset.pbDarkManual) {
@@ -203,15 +228,8 @@ export function Canvas({ store, externalStyles = [] }: CanvasProps) {
 
   // Re-render on store changes
   useEffect(() => {
-    let lastRoot: unknown = null;
-    let lastSelectedId: string | null = null;
     return store.subscribe(() => {
-      const state = store.getState();
-      if (state.root !== lastRoot || state.selection.nodeId !== lastSelectedId) {
-        lastRoot = state.root;
-        lastSelectedId = state.selection.nodeId;
-        scheduleRender();
-      }
+      scheduleRender();
     });
   }, [store, scheduleRender]);
 
@@ -553,7 +571,12 @@ export function Canvas({ store, externalStyles = [] }: CanvasProps) {
     const rect = iframe.getBoundingClientRect();
     const x = clientX - rect.left;
     const y = clientY - rect.top;
-    return iframe.contentDocument.elementFromPoint(x, y) as HTMLElement | null;
+    // Temporarily restore pointer-events so elementFromPoint works
+    const pe = iframe.style.pointerEvents;
+    if (pe === "none") iframe.style.pointerEvents = "auto";
+    const el = iframe.contentDocument.elementFromPoint(x, y) as HTMLElement | null;
+    if (pe === "none") iframe.style.pointerEvents = "none";
+    return el;
   }, []);
 
   const isParentHorizontal = useCallback((el: HTMLElement): boolean => {
@@ -785,7 +808,7 @@ export function Canvas({ store, externalStyles = [] }: CanvasProps) {
       />
     </div>
   );
-}
+});
 
 function renderNode(node: PBNode, selectedId: string | null): string {
   const name = node.name ?? node.tag;

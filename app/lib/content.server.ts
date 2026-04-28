@@ -218,14 +218,39 @@ export async function getContentAtVersion(
 export async function publishContent(slug: string, type: ContentType = "markdown"): Promise<void> {
   await publishFile(slug, type);
 
+  const { getGitHubConfig, publishAsset } = await import("./github.server");
+  const config = getGitHubConfig();
+
   // Also publish the compiled CSS for page content
   if (type === "page") {
-    const { getGitHubConfig } = await import("./github.server");
-    const config = getGitHubConfig();
     const draftCss = await getCompiledCss(slug, config.branch);
     if (draftCss) {
       await saveCompiledCss(slug, draftCss, config.publishBranch);
     }
+  }
+
+  // Publish any referenced assets (images etc.) from draft to publish branch
+  const content = await getContent(slug);
+  if (content) {
+    const raw = "raw" in content ? (content.raw as string) : "";
+    const html = "html" in content ? (content.html as string) : "";
+    const projectData = "projectData" in content ? (content.projectData as string) : "";
+    const allText = `${raw}\n${html}\n${projectData}`;
+
+    // Find all /api/assets/filename references
+    const assetRefs = new Set<string>();
+    const regex = /\/api\/assets\/([^\s"'<>?#)]+)/g;
+    let match;
+    while ((match = regex.exec(allText)) !== null) {
+      assetRefs.add(match[1]);
+    }
+
+    // Publish each referenced asset
+    await Promise.all(
+      Array.from(assetRefs).map((filename) =>
+        publishAsset(filename).catch(() => {})
+      )
+    );
   }
 
   contentCache.invalidate(slug);

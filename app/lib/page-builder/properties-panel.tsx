@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useMemo } from "react";
+import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import type { PBNode } from "./types";
 import type { PBStore } from "./store";
 import { Input } from "~/components/ui/input";
@@ -284,7 +284,7 @@ function AttributeEditor({ store, node }: { store: PBStore; node: PBNode }) {
   const [newVal, setNewVal] = useState("");
 
   const commonAttrs = node.tag === "a" ? ["href", "target", "title"] :
-    node.tag === "img" ? ["src", "alt", "width", "height"] :
+    node.tag === "img" ? ["src", "alt"] :
     node.tag === "input" ? ["type", "name", "placeholder", "value"] :
     [];
 
@@ -312,12 +312,22 @@ function AttributeEditor({ store, node }: { store: PBStore; node: PBNode }) {
     setNewVal("");
   }, [newKey, newVal, handleSet]);
 
+  const isImage = node.tag === "img";
+
   return (
     <div className="space-y-1.5">
       <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">Attributes</Label>
 
-      {/* Common attributes for this tag */}
-      {commonAttrs.map((attr) => (
+      {/* Image source picker for img elements */}
+      {isImage && (
+        <ImageSourcePicker
+          value={node.attributes.src ?? ""}
+          onChange={(url) => handleSet("src", url)}
+        />
+      )}
+
+      {/* Common attributes for this tag (skip src for img — handled above) */}
+      {commonAttrs.filter((a) => !(isImage && a === "src")).map((attr) => (
         <div key={attr} className="flex gap-1 items-center">
           <span className="text-[10px] text-muted-foreground w-12 shrink-0">{attr}</span>
           <Input
@@ -331,7 +341,7 @@ function AttributeEditor({ store, node }: { store: PBStore; node: PBNode }) {
 
       {/* Custom attributes */}
       {Object.entries(node.attributes)
-        .filter(([k]) => !commonAttrs.includes(k))
+        .filter(([k]) => !commonAttrs.includes(k) && !(isImage && k === "src"))
         .map(([key, val]) => (
           <div key={key} className="flex gap-1 items-center group">
             <span className="text-[10px] text-muted-foreground w-12 shrink-0 truncate">{key}</span>
@@ -369,6 +379,231 @@ function AttributeEditor({ store, node }: { store: PBStore; node: PBNode }) {
           +
         </Button>
       </div>
+    </div>
+  );
+}
+
+// --- Image source picker ---
+
+interface AssetItem {
+  name: string;
+  url: string;
+  size: number;
+  commitSha: string;
+}
+
+async function uploadFile(file: File): Promise<string | null> {
+  const formData = new FormData();
+  formData.append("file", file);
+  try {
+    const res = await fetch("/api/assets/upload", {
+      method: "POST",
+      body: formData,
+    });
+    if (!res.ok) return null;
+    const { url, commitSha } = await res.json();
+    return commitSha ? `${url}?ref=${commitSha}` : url;
+  } catch {
+    return null;
+  }
+}
+
+function ImageSourcePicker({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (url: string) => void;
+}) {
+  const [mode, setMode] = useState<"current" | "browse" | "upload" | "url">("current");
+  const [assets, setAssets] = useState<AssetItem[]>([]);
+  const [loadingAssets, setLoadingAssets] = useState(false);
+  const [urlInput, setUrlInput] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const loadAssets = useCallback(() => {
+    setLoadingAssets(true);
+    fetch("/api/assets")
+      .then((r) => r.json())
+      .then((data) => {
+        setAssets(data.assets ?? []);
+        setLoadingAssets(false);
+      })
+      .catch(() => setLoadingAssets(false));
+  }, []);
+
+  const imageExtensions = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg"]);
+  const isImage = (name: string) => {
+    const ext = name.split(".").pop()?.toLowerCase() ?? "";
+    return imageExtensions.has(ext);
+  };
+
+  const handleFileChange = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      setUploading(true);
+      const url = await uploadFile(file);
+      if (url) {
+        onChange(url);
+        setMode("current");
+      }
+      setUploading(false);
+      e.target.value = "";
+    },
+    [onChange]
+  );
+
+  // Preview of current src
+  const hasValue = value && !value.startsWith("data:image/svg+xml");
+
+  return (
+    <div className="space-y-1.5">
+      <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">Image Source</Label>
+
+      {/* Hidden file input */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        onChange={handleFileChange}
+        className="hidden"
+      />
+
+      {/* Current value preview */}
+      {hasValue && mode === "current" && (
+        <div className="border border-border rounded overflow-hidden">
+          <img
+            src={value}
+            alt="current"
+            className="w-full h-20 object-cover bg-muted"
+            onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+          />
+          <div className="px-1.5 py-1">
+            <p className="text-[9px] text-muted-foreground truncate">{value}</p>
+          </div>
+        </div>
+      )}
+
+      {/* Action buttons */}
+      {mode === "current" && (
+        <div className="flex gap-1">
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-6 text-[10px] px-2 flex-1"
+            onClick={() => { setMode("browse"); loadAssets(); }}
+          >
+            Browse
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-6 text-[10px] px-2 flex-1"
+            onClick={() => fileInputRef.current?.click()}
+          >
+            Upload
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-6 text-[10px] px-2 flex-1"
+            onClick={() => { setUrlInput(value); setMode("url"); }}
+          >
+            URL
+          </Button>
+        </div>
+      )}
+
+      {/* Browse assets */}
+      {mode === "browse" && (
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-medium">Assets</span>
+            <button type="button" onClick={() => setMode("current")} className="text-[10px] text-muted-foreground hover:text-foreground">
+              Cancel
+            </button>
+          </div>
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            className="w-full px-2 py-1.5 border border-dashed border-border rounded text-[10px] text-muted-foreground hover:border-primary hover:text-primary transition-colors"
+          >
+            + Upload new file
+          </button>
+          {loadingAssets ? (
+            <p className="text-[10px] text-muted-foreground text-center py-3">Loading...</p>
+          ) : assets.filter((a) => isImage(a.name)).length === 0 ? (
+            <p className="text-[10px] text-muted-foreground text-center py-3">No image assets found.</p>
+          ) : (
+            <ScrollArea className="h-40">
+              <div className="grid grid-cols-3 gap-1">
+                {assets.filter((a) => isImage(a.name)).map((asset) => (
+                  <button
+                    key={asset.name}
+                    type="button"
+                    onClick={() => {
+                      const url = asset.commitSha ? `${asset.url}?ref=${asset.commitSha}` : asset.url;
+                      onChange(url);
+                      setMode("current");
+                    }}
+                    className="group border border-border rounded overflow-hidden hover:border-primary transition-colors text-left"
+                  >
+                    <img
+                      src={asset.url}
+                      alt={asset.name}
+                      className="w-full h-14 object-cover"
+                    />
+                    <p className="text-[8px] text-muted-foreground truncate px-1 py-0.5">
+                      {asset.name}
+                    </p>
+                  </button>
+                ))}
+              </div>
+            </ScrollArea>
+          )}
+        </div>
+      )}
+
+      {/* URL input */}
+      {mode === "url" && (
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-medium">Image URL</span>
+            <button type="button" onClick={() => setMode("current")} className="text-[10px] text-muted-foreground hover:text-foreground">
+              Cancel
+            </button>
+          </div>
+          <div className="flex gap-1">
+            <Input
+              value={urlInput}
+              onChange={(e) => setUrlInput(e.target.value)}
+              placeholder="https://..."
+              className="h-6 text-[11px] flex-1"
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && urlInput.trim()) {
+                  onChange(urlInput.trim());
+                  setMode("current");
+                }
+              }}
+            />
+            <Button
+              size="sm"
+              variant="default"
+              className="h-6 text-[10px] px-2"
+              disabled={!urlInput.trim()}
+              onClick={() => { onChange(urlInput.trim()); setMode("current"); }}
+            >
+              Set
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {uploading && (
+        <p className="text-[10px] text-primary animate-pulse">Uploading...</p>
+      )}
     </div>
   );
 }

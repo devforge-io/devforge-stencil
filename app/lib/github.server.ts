@@ -774,10 +774,8 @@ export async function uploadAsset(
     return data.commit.sha ?? "";
   };
 
-  const [commitSha] = await Promise.all([
-    uploadToBranch(config.branch),
-    uploadToBranch(config.publishBranch),
-  ]);
+  // Only upload to draft branch — assets get published with content via publishContent
+  const commitSha = await uploadToBranch(config.branch);
 
   return { url: `/api/assets/${filename}`, commitSha };
 }
@@ -820,6 +818,11 @@ export async function getAssetContent(
       return null;
     }
 
+    // GitHub API returns empty content for files >1MB — use the Blob API instead
+    if (!data.content && data.sha) {
+      return getAssetViaBlob(data.sha);
+    }
+
     const content = Buffer.from(data.content, "base64");
     return { content, sha: data.sha };
   } catch (error: unknown) {
@@ -828,6 +831,67 @@ export async function getAssetContent(
     }
     throw error;
   }
+}
+
+async function getAssetViaBlob(
+  blobSha: string
+): Promise<{ content: Buffer; sha: string } | null> {
+  const config = getConfig();
+  const octokit = getOctokit(config.token);
+
+  try {
+    const { data } = await octokit.rest.git.getBlob({
+      owner: config.owner,
+      repo: config.repo,
+      file_sha: blobSha,
+    });
+
+    const content = Buffer.from(data.content, "base64");
+    return { content, sha: data.sha };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Copy an asset from draft branch to publish branch.
+ */
+export async function publishAsset(filename: string): Promise<void> {
+  const config = getConfig();
+  const octokit = getOctokit(config.token);
+  const filePath = `${config.contentPath}/assets/${filename}`;
+
+  // Read from draft
+  const asset = await getAssetContent(filename, config.branch);
+  if (!asset) return;
+
+  const base64 = asset.content.toString("base64");
+
+  // Check if it already exists on publish branch
+  let existingSha: string | undefined;
+  try {
+    const { data } = await octokit.rest.repos.getContent({
+      owner: config.owner,
+      repo: config.repo,
+      path: filePath,
+      ref: config.publishBranch,
+    });
+    if (!Array.isArray(data) && data.type === "file") {
+      existingSha = data.sha;
+    }
+  } catch {
+    // doesn't exist yet
+  }
+
+  await octokit.rest.repos.createOrUpdateFileContents({
+    owner: config.owner,
+    repo: config.repo,
+    path: filePath,
+    message: `Publish asset ${filename}`,
+    content: base64,
+    branch: config.publishBranch,
+    ...(existingSha ? { sha: existingSha } : {}),
+  });
 }
 
 export async function validateToken(token: string): Promise<string | null> {
