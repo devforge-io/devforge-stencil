@@ -662,6 +662,20 @@ function EditPopover({
   const [localRefName, setLocalRefName] = useState(refName);
   const popoverRef = useRef<HTMLDivElement>(null);
 
+  // Clamp position so popover stays within its offset parent
+  useEffect(() => {
+    const el = popoverRef.current;
+    if (!el) return;
+    const parent = el.offsetParent as HTMLElement | null;
+    if (!parent) return;
+    const parentW = parent.clientWidth;
+    const elW = el.offsetWidth;
+    const currentLeft = el.offsetLeft;
+    if (currentLeft + elW > parentW) {
+      el.style.left = `${Math.max(8, parentW - elW - 8)}px`;
+    }
+  });
+
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
