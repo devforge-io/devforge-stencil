@@ -32,7 +32,7 @@ export async function loader({ params }: Route.LoaderArgs) {
 export async function action({ request, params }: Route.ActionArgs) {
   const formData = await request.formData();
   const intent = formData.get("intent");
-  const contentType = (formData.get("contentType") as "markdown" | "page") ?? "markdown";
+  const contentType = (formData.get("contentType") as "markdown" | "page" | "wikipedia") ?? "markdown";
 
   if (intent === "publish") {
     await publishContent(params.slug, contentType);
@@ -142,6 +142,15 @@ export default function ContentView({ loaderData }: Route.ComponentProps) {
             className="w-full min-h-[500px] border-0"
             title={content.frontmatter.title}
           />
+        </Card>
+      ) : content.contentType === "wikipedia" ? (
+        <Card>
+          <CardContent className="p-8">
+            <article
+              className="prose max-w-none wiki-content"
+              dangerouslySetInnerHTML={{ __html: content.html }}
+            />
+          </CardContent>
         </Card>
       ) : (
         <Card>

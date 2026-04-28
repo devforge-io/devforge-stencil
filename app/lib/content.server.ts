@@ -26,6 +26,7 @@ import {
   type ParsedContent,
 } from "./markdown.server";
 import { parsePage, type ParsedPage } from "./page.server";
+import { parseWikipedia, type ParsedWikipedia } from "./wikipedia.server";
 import { contentCache } from "./cache.server";
 
 export type { ContentType } from "./github.server";
@@ -51,7 +52,13 @@ export interface PageItem extends ParsedPage {
   contentType: "page";
 }
 
-export type AnyContentItem = ContentItem | PageItem;
+export interface WikipediaItem extends ParsedWikipedia {
+  slug: string;
+  sha: string;
+  contentType: "wikipedia";
+}
+
+export type AnyContentItem = ContentItem | PageItem | WikipediaItem;
 
 // --- Draft branch (admin UI) ---
 
@@ -118,6 +125,12 @@ export async function getContent(slug: string): Promise<AnyContentItem | null> {
     const parsed = parsePage(file.content);
     contentCache.setFull(slug, file.sha, parsed);
     return { ...parsed, slug, sha: file.sha, contentType: "page" };
+  }
+
+  if (type === "wikipedia") {
+    const parsed = await parseWikipedia(file.content);
+    contentCache.setFull(slug, file.sha, parsed);
+    return { ...parsed, slug, sha: file.sha, contentType: "wikipedia" };
   }
 
   const parsed = await parseMarkdown(file.content);
@@ -209,6 +222,9 @@ export async function getContentAtVersion(
   if (!raw) return null;
   if (type === "page") {
     return parsePage(raw);
+  }
+  if (type === "wikipedia") {
+    return parseWikipedia(raw);
   }
   return parseMarkdown(raw);
 }
@@ -324,6 +340,12 @@ export async function getPublishedContent(
     const parsed = parsePage(file.content);
     contentCache.setFull(cacheKey, file.sha, parsed);
     return { ...parsed, slug, sha: file.sha, contentType: "page" };
+  }
+
+  if (type === "wikipedia") {
+    const parsed = await parseWikipedia(file.content);
+    contentCache.setFull(cacheKey, file.sha, parsed);
+    return { ...parsed, slug, sha: file.sha, contentType: "wikipedia" };
   }
 
   const parsed = await parseMarkdown(file.content);

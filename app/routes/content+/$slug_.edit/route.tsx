@@ -4,6 +4,7 @@ import { getContent, saveContent, type ContentType } from "~/lib/content.server"
 import { listWhiteboardsForPage } from "~/lib/whiteboard.server";
 import { buildPageRaw } from "~/lib/page.server";
 import { MarkdownEditor } from "~/components/markdown-editor";
+import { WikipediaEditor } from "~/components/wikipedia-editor";
 import { PageEditor } from "~/components/page-editor-v2";
 import type { Route } from "./+types/route";
 
@@ -153,12 +154,13 @@ export default function EditContent({
   }, [pageProjectData, pageHtml, pageCss, pageTitle, pageDescription, pageTags, pageDraft]);
 
   const isPage = loaderData.contentType === "page";
+  const isWikipedia = loaderData.contentType === "wikipedia";
 
   return (
     <div>
 
       {/* Whiteboards panel — only for markdown articles */}
-      {!isPage && (
+      {!isPage && !isWikipedia && (
         <div className="mb-6 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg p-4">
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-sm font-semibold">Whiteboards</h2>
@@ -262,10 +264,10 @@ export default function EditContent({
           />
         </>
       ) : (
-        /* Markdown editor form */
+        /* Markdown / Wikipedia editor form */
         <Form method="post" className="space-y-4">
           <input type="hidden" name="sha" value={loaderData.sha} />
-          <input type="hidden" name="contentType" value="markdown" />
+          <input type="hidden" name="contentType" value={loaderData.contentType} />
           <input
             type="hidden"
             name="publishedAt"
@@ -337,14 +339,23 @@ export default function EditContent({
 
           <div>
             <label className="block text-sm font-medium mb-1.5">
-              Content (Markdown)
+              Content ({isWikipedia ? "Wikitext" : "Markdown"})
             </label>
-            <MarkdownEditor
-              value={body}
-              onChange={setBody}
-              name="body"
-              initialHtml={loaderData.bodyHtml}
-            />
+            {isWikipedia ? (
+              <WikipediaEditor
+                value={body}
+                onChange={setBody}
+                name="body"
+                initialHtml={loaderData.bodyHtml}
+              />
+            ) : (
+              <MarkdownEditor
+                value={body}
+                onChange={setBody}
+                name="body"
+                initialHtml={loaderData.bodyHtml}
+              />
+            )}
           </div>
 
           {actionData?.error && (

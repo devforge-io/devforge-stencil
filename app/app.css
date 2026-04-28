@@ -44,6 +44,60 @@ body {
 .prose td { @apply border border-gray-300 dark:border-gray-700 px-3 py-2; }
 .prose hr { @apply my-8 border-gray-300 dark:border-gray-700; }
 
+/* Wikipedia content styles */
+.wiki-content .wiki-table { @apply w-full border-collapse mb-4; }
+.wiki-content .wiki-table th { @apply border border-gray-300 dark:border-gray-700 px-3 py-2 bg-gray-100 dark:bg-gray-800 text-left font-semibold; }
+.wiki-content .wiki-table td { @apply border border-gray-300 dark:border-gray-700 px-3 py-2; }
+.wiki-content .wiki-link { @apply text-blue-600 dark:text-blue-400 underline; }
+.wiki-content .wiki-link:hover { @apply text-blue-800 dark:text-blue-300; }
+.wiki-content .wiki-ref { @apply text-xs text-blue-600 dark:text-blue-400 cursor-help; }
+.wiki-content .wiki-template { @apply text-xs bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-200 px-1 py-0.5 rounded font-mono; }
+.wiki-content .wiki-figure { @apply my-4; }
+.wiki-content .wiki-figure.float-right { @apply float-right ml-4 mb-2 max-w-xs; }
+.wiki-content .wiki-figure.float-left { @apply float-left mr-4 mb-2 max-w-xs; }
+.wiki-content .wiki-figure figcaption { @apply text-sm text-gray-500 dark:text-gray-400 mt-1 italic; }
+.wiki-content .wiki-image.wiki-thumb { @apply rounded border border-gray-200 dark:border-gray-700; }
+.wiki-content dl { @apply mb-4; }
+.wiki-content dt { @apply font-semibold; }
+.wiki-content dd { @apply ml-6 mb-2; }
+.wiki-content .wiki-short-description { @apply text-sm text-gray-500 dark:text-gray-400 italic mb-4; }
+.wiki-content .wiki-cite a { @apply text-blue-600 dark:text-blue-400 no-underline text-xs; }
+.wiki-content .wiki-cite a:hover { @apply underline; }
+.wiki-content .wiki-references { @apply mt-8 pt-4 border-t border-gray-200 dark:border-gray-700; }
+.wiki-content .wiki-references h2 { @apply text-lg font-semibold mb-3; }
+.wiki-content .wiki-reflist { @apply text-sm text-gray-600 dark:text-gray-400 pl-6 space-y-1; }
+.wiki-content .wiki-reflist li { @apply mb-1; }
+.wiki-content .wiki-refback a { @apply text-blue-600 dark:text-blue-400 no-underline mr-1; }
+
+/* Wikipedia Infobox — floating right panel */
+.wiki-infobox {
+  @apply float-right ml-6 mb-4 w-72 border border-gray-200 dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-900 text-sm overflow-hidden;
+  clear: right;
+}
+.wiki-infobox table { @apply w-full border-collapse; }
+.wiki-infobox caption {
+  @apply text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 px-3 py-1.5 font-semibold text-left;
+}
+.wiki-infobox .wiki-infobox-title {
+  @apply text-base font-bold text-center py-2 px-3 bg-blue-50 dark:bg-blue-900/20 text-blue-900 dark:text-blue-200;
+}
+.wiki-infobox .wiki-infobox-image {
+  @apply text-center py-2 px-3;
+}
+.wiki-infobox .wiki-infobox-image img {
+  @apply max-w-full max-h-48 mx-auto rounded;
+}
+.wiki-infobox .wiki-infobox-image .wiki-figure {
+  @apply float-none m-0;
+}
+.wiki-infobox .wiki-infobox-label {
+  @apply px-3 py-1.5 text-right text-gray-500 dark:text-gray-400 font-medium border-t border-gray-200 dark:border-gray-700 w-1/3 align-top whitespace-nowrap;
+}
+.wiki-infobox .wiki-infobox-value {
+  @apply px-3 py-1.5 border-t border-gray-200 dark:border-gray-700;
+}
+.wiki-infobox .wiki-infobox-value a { @apply text-blue-600 dark:text-blue-400 underline; }
+
 /* Page Builder Container — wraps the iframe with visible margin */
 .pb-container {
   padding: 10px;

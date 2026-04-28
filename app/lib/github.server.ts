@@ -56,11 +56,12 @@ function getConfig(): GitHubConfig {
   return { token, owner, repo, branch, publishBranch, contentPath };
 }
 
-export type ContentType = "markdown" | "page";
+export type ContentType = "markdown" | "page" | "wikipedia";
 
 const CONTENT_EXTENSIONS: Record<ContentType, string> = {
   markdown: ".md",
   page: ".page",
+  wikipedia: ".wikipedia",
 };
 
 const ALL_CONTENT_EXTENSIONS = Object.values(CONTENT_EXTENSIONS);
@@ -79,6 +80,7 @@ export function isContentFile(filename: string): boolean {
 
 export function typeFromFilename(filename: string): ContentType {
   if (filename.endsWith(".page")) return "page";
+  if (filename.endsWith(".wikipedia")) return "wikipedia";
   return "markdown";
 }
 

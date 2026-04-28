@@ -2,6 +2,7 @@ import { Form, redirect, useNavigation } from "react-router";
 import { useState } from "react";
 import { saveContent, type ContentType } from "~/lib/content.server";
 import { MarkdownEditor } from "~/components/markdown-editor";
+import { WikipediaEditor } from "~/components/wikipedia-editor";
 import { buildPageRaw } from "~/lib/page.server";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
@@ -83,6 +84,7 @@ export default function NewContent({ actionData }: Route.ComponentProps) {
             [
               ["markdown", "Article (Markdown)"],
               ["page", "Page (Visual Builder)"],
+              ["wikipedia", "Wiki (Wikipedia)"],
             ] as const
           ).map(([type, label]) => (
             <Button
@@ -135,6 +137,13 @@ export default function NewContent({ actionData }: Route.ComponentProps) {
           <div className="space-y-2">
             <Label>Content (Markdown)</Label>
             <MarkdownEditor value={body} onChange={setBody} name="body" />
+          </div>
+        )}
+
+        {contentType === "wikipedia" && (
+          <div className="space-y-2">
+            <Label>Content (Wikitext)</Label>
+            <WikipediaEditor value={body} onChange={setBody} name="body" />
           </div>
         )}
 
