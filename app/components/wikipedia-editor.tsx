@@ -394,12 +394,12 @@ export function WikipediaEditor({
 
   const addCitation = useCallback(() => {
     const sel = window.getSelection();
-    const citation = window.prompt("Citation text:");
-    if (!citation) return;
 
+    // Insert a sup element with an empty Cite web template
+    const emptyCite = "{{cite web |url= |title= |website= |access-date=}}";
     const sup = document.createElement("sup");
     sup.className = "wiki-cite";
-    sup.setAttribute("data-ref-text", citation);
+    sup.setAttribute("data-ref-text", emptyCite);
     sup.innerHTML = `<a>[*]</a>`;
 
     if (sel && !sel.isCollapsed) {
@@ -411,8 +411,25 @@ export function WikipediaEditor({
       range.insertNode(sup);
     }
     setToolbarPos(null);
-    handlePreviewInput();
-  }, [handlePreviewInput]);
+
+    // Open the popover immediately for editing
+    const containerRect = previewRef.current?.parentElement?.getBoundingClientRect();
+    if (containerRect) {
+      const rect = sup.getBoundingClientRect();
+      setEditPopover({
+        type: "citation",
+        el: sup,
+        x: rect.left - containerRect.left,
+        y: rect.bottom - containerRect.top + 4,
+        href: "",
+        text: "",
+        isWiki: false,
+        refText: emptyCite,
+        refName: "",
+        isSelfClose: false,
+      });
+    }
+  }, []);
 
   const toggleBold = useCallback(() => {
     document.execCommand("bold", false);
@@ -952,9 +969,10 @@ function parseCiteTemplate(raw: string): CiteFields | null {
 function buildCiteTemplate(cite: CiteFields): string {
   const params = cite.fields
     .filter((f) => f.value.trim())
-    .map((f) => ` |${f.key} = ${f.value}`)
-    .join("\n");
-  return `{{${cite.type}\n${params}\n}}`;
+    .map((f) => `|${f.key}=${f.value}`)
+    .join(" ");
+  const name = cite.type.charAt(0).toLowerCase() + cite.type.slice(1);
+  return `{{${name} ${params}}}`;
 }
 
 function CiteFieldsEditor({ fields: initialFields, onChange }: {

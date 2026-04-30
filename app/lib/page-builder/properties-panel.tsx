@@ -25,8 +25,16 @@ function detectIconLibrary(node: PBNode): IconLibrary {
   return null;
 }
 
+function isButtonNode(node: PBNode): boolean {
+  return (
+    node.name === "Button" ||
+    (node.tag === "a" && node.classes.some((c) => c.startsWith("bg-") || c === "inline-flex"))
+  );
+}
+
 export function PropertiesPanel({ store, node }: PropertiesPanelProps) {
   const iconLib = detectIconLibrary(node);
+  const isButton = isButtonNode(node);
 
   return (
     <div className="space-y-3">
@@ -38,6 +46,14 @@ export function PropertiesPanel({ store, node }: PropertiesPanelProps) {
       </div>
 
       <Separator />
+
+      {/* Button style picker */}
+      {isButton && (
+        <>
+          <ButtonStylePicker store={store} node={node} />
+          <Separator />
+        </>
+      )}
 
       {/* Icon picker for icon elements */}
       {iconLib && (
@@ -67,6 +83,242 @@ export function PropertiesPanel({ store, node }: PropertiesPanelProps) {
 
       {/* Inline styles */}
       <StyleEditor store={store} node={node} />
+    </div>
+  );
+}
+
+// --- Button styles ---
+
+interface ButtonStyle {
+  id: string;
+  label: string;
+  classes: string[];
+  preview: string; // tailwind classes for the preview swatch
+}
+
+const BUTTON_STYLES: ButtonStyle[] = [
+  {
+    id: "primary",
+    label: "Primary",
+    classes: ["bg-indigo-500", "hover:bg-indigo-600", "text-white"],
+    preview: "bg-indigo-500 text-white",
+  },
+  {
+    id: "secondary",
+    label: "Secondary",
+    classes: ["bg-gray-200", "hover:bg-gray-300", "text-gray-900", "dark:bg-gray-700", "dark:hover:bg-gray-600", "dark:text-white"],
+    preview: "bg-gray-200 text-gray-900",
+  },
+  {
+    id: "success",
+    label: "Success",
+    classes: ["bg-green-500", "hover:bg-green-600", "text-white"],
+    preview: "bg-green-500 text-white",
+  },
+  {
+    id: "danger",
+    label: "Danger",
+    classes: ["bg-red-500", "hover:bg-red-600", "text-white"],
+    preview: "bg-red-500 text-white",
+  },
+  {
+    id: "warning",
+    label: "Warning",
+    classes: ["bg-yellow-500", "hover:bg-yellow-600", "text-white"],
+    preview: "bg-yellow-500 text-white",
+  },
+  {
+    id: "ghost",
+    label: "Ghost",
+    classes: ["bg-transparent", "hover:bg-gray-100", "text-gray-700", "dark:hover:bg-gray-800", "dark:text-gray-300"],
+    preview: "bg-transparent text-gray-700 border border-gray-300",
+  },
+  {
+    id: "outline",
+    label: "Outline",
+    classes: ["bg-transparent", "border", "border-indigo-500", "text-indigo-500", "hover:bg-indigo-50", "dark:hover:bg-indigo-950"],
+    preview: "bg-transparent border border-indigo-500 text-indigo-500",
+  },
+  {
+    id: "outline-white",
+    label: "Outline White",
+    classes: ["bg-transparent", "border", "border-white", "text-white", "hover:bg-white/10"],
+    preview: "bg-gray-800 border border-white text-white",
+  },
+  {
+    id: "dark",
+    label: "Dark",
+    classes: ["bg-gray-900", "hover:bg-gray-800", "text-white", "dark:bg-white", "dark:hover:bg-gray-100", "dark:text-gray-900"],
+    preview: "bg-gray-900 text-white",
+  },
+  {
+    id: "gradient",
+    label: "Gradient",
+    classes: ["bg-gradient-to-r", "from-indigo-500", "to-purple-500", "hover:from-indigo-600", "hover:to-purple-600", "text-white"],
+    preview: "bg-gradient-to-r from-indigo-500 to-purple-500 text-white",
+  },
+];
+
+const BUTTON_SIZES: { id: string; label: string; classes: string[] }[] = [
+  { id: "xs", label: "XS", classes: ["px-3", "py-1", "text-xs"] },
+  { id: "sm", label: "SM", classes: ["px-4", "py-1.5", "text-sm"] },
+  { id: "md", label: "MD", classes: ["px-6", "py-3", "text-base", "font-medium"] },
+  { id: "lg", label: "LG", classes: ["px-8", "py-4", "text-lg", "font-medium"] },
+];
+
+const BUTTON_ROUNDNESS: { id: string; label: string; cls: string }[] = [
+  { id: "none", label: "Square", cls: "rounded-none" },
+  { id: "sm", label: "Slight", cls: "rounded" },
+  { id: "md", label: "Medium", cls: "rounded-lg" },
+  { id: "lg", label: "Large", cls: "rounded-xl" },
+  { id: "full", label: "Pill", cls: "rounded-full" },
+];
+
+// Classes that belong to button style/size/roundness and should be stripped when changing
+const BUTTON_STYLE_CLASSES = new Set(
+  BUTTON_STYLES.flatMap((s) => s.classes)
+    .concat(BUTTON_SIZES.flatMap((s) => s.classes))
+    .concat(BUTTON_ROUNDNESS.map((r) => r.cls))
+);
+
+function detectCurrentStyle(node: PBNode): string {
+  for (const style of BUTTON_STYLES) {
+    // Check if at least the bg class matches
+    const bgClass = style.classes.find((c) => c.startsWith("bg-") && !c.startsWith("bg-transparent") && !c.startsWith("bg-gradient"));
+    const gradClass = style.classes.find((c) => c.startsWith("from-"));
+    if (bgClass && node.classes.includes(bgClass)) return style.id;
+    if (gradClass && node.classes.includes(gradClass)) return style.id;
+    if (style.id === "ghost" && node.classes.includes("bg-transparent") && !node.classes.some((c) => c === "border")) return style.id;
+    if (style.id === "outline" && node.classes.includes("border-indigo-500")) return style.id;
+    if (style.id === "outline-white" && node.classes.includes("border-white") && node.classes.includes("text-white")) return style.id;
+  }
+  return "primary";
+}
+
+function detectCurrentSize(node: PBNode): string {
+  for (const size of BUTTON_SIZES) {
+    if (size.classes.every((c) => node.classes.includes(c))) return size.id;
+  }
+  return "md";
+}
+
+function detectCurrentRoundness(node: PBNode): string {
+  for (const r of BUTTON_ROUNDNESS) {
+    if (node.classes.includes(r.cls)) return r.id;
+  }
+  return "md";
+}
+
+function ButtonStylePicker({ store, node }: { store: PBStore; node: PBNode }) {
+  const currentStyle = detectCurrentStyle(node);
+  const currentSize = detectCurrentSize(node);
+  const currentRoundness = detectCurrentRoundness(node);
+
+  const applyStyle = useCallback(
+    (styleId: string) => {
+      const style = BUTTON_STYLES.find((s) => s.id === styleId);
+      if (!style) return;
+      const kept = node.classes.filter((c) => !BUTTON_STYLE_CLASSES.has(c));
+      // Re-add size and roundness
+      const size = BUTTON_SIZES.find((s) => s.id === currentSize) ?? BUTTON_SIZES[2];
+      const round = BUTTON_ROUNDNESS.find((r) => r.id === currentRoundness) ?? BUTTON_ROUNDNESS[2];
+      store.updateNode(node.id, { classes: [...kept, ...style.classes, ...size.classes, round.cls] });
+    },
+    [store, node, currentSize, currentRoundness]
+  );
+
+  const applySize = useCallback(
+    (sizeId: string) => {
+      const size = BUTTON_SIZES.find((s) => s.id === sizeId);
+      if (!size) return;
+      const style = BUTTON_STYLES.find((s) => s.id === currentStyle) ?? BUTTON_STYLES[0];
+      const round = BUTTON_ROUNDNESS.find((r) => r.id === currentRoundness) ?? BUTTON_ROUNDNESS[2];
+      const kept = node.classes.filter((c) => !BUTTON_STYLE_CLASSES.has(c));
+      store.updateNode(node.id, { classes: [...kept, ...style.classes, ...size.classes, round.cls] });
+    },
+    [store, node, currentStyle, currentRoundness]
+  );
+
+  const applyRoundness = useCallback(
+    (roundId: string) => {
+      const round = BUTTON_ROUNDNESS.find((r) => r.id === roundId);
+      if (!round) return;
+      const style = BUTTON_STYLES.find((s) => s.id === currentStyle) ?? BUTTON_STYLES[0];
+      const size = BUTTON_SIZES.find((s) => s.id === currentSize) ?? BUTTON_SIZES[2];
+      const kept = node.classes.filter((c) => !BUTTON_STYLE_CLASSES.has(c));
+      store.updateNode(node.id, { classes: [...kept, ...style.classes, ...size.classes, round.cls] });
+    },
+    [store, node, currentStyle, currentSize]
+  );
+
+  return (
+    <div className="space-y-3">
+      {/* Style */}
+      <div>
+        <Label className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1.5 block">Button Style</Label>
+        <div className="grid grid-cols-5 gap-1">
+          {BUTTON_STYLES.map((style) => (
+            <button
+              key={style.id}
+              type="button"
+              onClick={() => applyStyle(style.id)}
+              title={style.label}
+              className={cn(
+                "h-7 rounded text-[9px] font-medium transition-all",
+                style.preview,
+                currentStyle === style.id ? "ring-2 ring-primary ring-offset-1" : "opacity-80 hover:opacity-100"
+              )}
+            >
+              {style.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Size */}
+      <div>
+        <Label className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1.5 block">Size</Label>
+        <div className="flex gap-1">
+          {BUTTON_SIZES.map((size) => (
+            <button
+              key={size.id}
+              type="button"
+              onClick={() => applySize(size.id)}
+              className={cn(
+                "flex-1 h-7 rounded text-[10px] font-medium border transition-colors",
+                currentSize === size.id
+                  ? "bg-primary text-primary-foreground border-primary"
+                  : "bg-muted text-muted-foreground border-transparent hover:text-foreground"
+              )}
+            >
+              {size.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Roundness */}
+      <div>
+        <Label className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1.5 block">Corners</Label>
+        <div className="flex gap-1">
+          {BUTTON_ROUNDNESS.map((r) => (
+            <button
+              key={r.id}
+              type="button"
+              onClick={() => applyRoundness(r.id)}
+              className={cn(
+                "flex-1 h-7 text-[10px] font-medium border transition-colors",
+                r.cls,
+                currentRoundness === r.id
+                  ? "bg-primary text-primary-foreground border-primary"
+                  : "bg-muted text-muted-foreground border-transparent hover:text-foreground"
+              )}
+            >
+              {r.label}
+            </button>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
