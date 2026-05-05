@@ -1,4 +1,5 @@
-import { Link, Form, useNavigation } from "react-router";
+import { Link, Form, useNavigation, redirect } from "react-router";
+import { useState } from "react";
 import { formatDate } from "~/lib/format";
 import {
   getContent,
@@ -6,6 +7,7 @@ import {
   getPageCompiledCss,
   publishContent,
   unpublishContent,
+  removeContent,
 } from "~/lib/content.server";
 import { Button } from "~/components/ui/button";
 import { Badge } from "~/components/ui/badge";
@@ -38,6 +40,10 @@ export async function action({ request, params }: Route.ActionArgs) {
     await publishContent(params.slug, contentType);
   } else if (intent === "unpublish") {
     await unpublishContent(params.slug, contentType);
+  } else if (intent === "delete") {
+    const sha = formData.get("sha") as string;
+    await removeContent(params.slug, sha, contentType);
+    return redirect("/content");
   }
 
   return { ok: true };
@@ -52,6 +58,10 @@ export default function ContentView({ loaderData }: Route.ComponentProps) {
   const isUnpublishing =
     navigation.state === "submitting" &&
     navigation.formData?.get("intent") === "unpublish";
+  const isDeleting =
+    navigation.state === "submitting" &&
+    navigation.formData?.get("intent") === "delete";
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   return (
     <div>
@@ -119,8 +129,46 @@ export default function ContentView({ loaderData }: Route.ComponentProps) {
           <Button size="sm" render={<Link to={`/content/${content.slug}/edit`} />}>
             Edit
           </Button>
+          <Button variant="destructive" size="sm" onClick={() => setShowDeleteConfirm(true)}>
+            Delete
+          </Button>
         </div>
       </div>
+
+      {/* Delete confirmation */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <Card className="max-w-sm w-full mx-4">
+            <CardContent className="pt-6 space-y-4">
+              <h2 className="text-lg font-semibold">Delete "{content.frontmatter.title}"?</h2>
+              <p className="text-sm text-muted-foreground">
+                This will permanently remove this content from the draft branch.
+                {publishStatus.published && " The published version will also be removed."}
+                {" "}This action cannot be undone.
+              </p>
+              <div className="flex gap-2 justify-end">
+                <Button variant="outline" size="sm" onClick={() => setShowDeleteConfirm(false)}>
+                  Cancel
+                </Button>
+                <Form method="post">
+                  <input type="hidden" name="contentType" value={content.contentType} />
+                  <input type="hidden" name="sha" value={content.sha} />
+                  <Button
+                    type="submit"
+                    name="intent"
+                    value="delete"
+                    variant="destructive"
+                    size="sm"
+                    disabled={isDeleting}
+                  >
+                    {isDeleting ? "Deleting..." : "Delete"}
+                  </Button>
+                </Form>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       <div className="flex gap-2 mb-4">
         {content.frontmatter.tags?.map((tag) => (
