@@ -11,8 +11,8 @@ import {
 
 const MAX_HISTORY = 50;
 
-export function createStore(initialRoot?: PBNode) {
-  const root = initialRoot ?? createRootNode();
+export function createStore(initialRoot?: PBNode, defaultBodyClasses?: string[]) {
+  const root = initialRoot ?? createRootNode(defaultBodyClasses);
   let state: PBState = {
     root,
     selection: { nodeId: null, hoverNodeId: null },

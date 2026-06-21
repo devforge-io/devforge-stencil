@@ -10,7 +10,7 @@ export function renderToHtml(node: PBNode): string {
   if (node.type === "text") {
     const tag = node.tag || "span";
     const attrs: string[] = [];
-    if (node.classes.length > 0) attrs.push(`class="${node.classes.join(" ")}"`);
+    if (node.classes.length > 0) attrs.push(classAttr(node.classes));
     const styleStr = Object.entries(node.styles).map(([k, v]) => `${k}:${v}`).join(";");
     if (styleStr) attrs.push(`style="${styleStr}"`);
     for (const [k, v] of Object.entries(node.attributes)) {
@@ -24,7 +24,7 @@ export function renderToHtml(node: PBNode): string {
   const attrs: string[] = [];
 
   if (node.classes.length > 0) {
-    attrs.push(`class="${node.classes.join(" ")}"`);
+    attrs.push(classAttr(node.classes));
   }
 
   const styleStr = Object.entries(node.styles)
@@ -88,7 +88,9 @@ function domToNode(domNode: Node): PBNode | null {
   const el = domNode as HTMLElement;
   const tag = el.tagName.toLowerCase();
 
-  const classes = Array.from(el.classList);
+  // Read classes from raw attribute to preserve encoded special chars in Tailwind arbitrary selectors
+  const rawClassAttr = el.getAttribute("class") ?? "";
+  const classes = rawClassAttr ? rawClassAttr.split(/\s+/).filter(Boolean).map(decodeClass) : [];
   const styles: Record<string, string> = {};
   for (let i = 0; i < el.style.length; i++) {
     const prop = el.style[i];
@@ -193,4 +195,18 @@ function escapeHtml(str: string): string {
 
 function escapeAttr(str: string): string {
   return str.replace(/"/g, "&quot;");
+}
+
+// Encode special chars in Tailwind arbitrary selector classes for safe HTML output
+function encodeClass(cls: string): string {
+  return cls.replace(/"/g, "&quot;").replace(/>/g, "&gt;").replace(/</g, "&lt;");
+}
+
+function decodeClass(cls: string): string {
+  return cls.replace(/&quot;/g, '"').replace(/&gt;/g, ">").replace(/&lt;/g, "<");
+}
+
+function classAttr(classes: string[]): string {
+  const encoded = classes.map(encodeClass).join(" ");
+  return `class="${encoded}"`;
 }

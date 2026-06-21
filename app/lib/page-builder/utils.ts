@@ -41,12 +41,12 @@ export function createTextNode(text: string): PBNode {
   };
 }
 
-export function createRootNode(): PBNode {
+export function createRootNode(defaultClasses?: string[]): PBNode {
   return createNode("div", {
     id: "pb-root",
     name: "Body",
     draggable: false,
-    classes: ["min-h-screen"],
+    classes: defaultClasses ?? ["min-h-screen", "bg-white", "dark:bg-gray-950", "text-gray-900", "dark:text-gray-100", "antialiased"],
   });
 }
 

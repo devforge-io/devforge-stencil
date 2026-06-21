@@ -1,11 +1,17 @@
 import { Form, Link, redirect, useNavigation, useFetcher } from "react-router";
 import { useState, useCallback, useRef, useEffect } from "react";
-import { getContent, saveContent, type ContentType } from "~/lib/content.server";
+import {
+  getContent,
+  saveContent,
+  type ContentType,
+} from "~/lib/content.server";
 import { listWhiteboardsForPage } from "~/lib/whiteboard.server";
 import { buildPageRaw } from "~/lib/page.server";
 import { MarkdownEditor } from "~/components/markdown-editor";
 import { WikipediaEditor } from "~/components/wikipedia-editor";
 import { PageEditor } from "~/components/page-editor-v2";
+import { getSettings } from "~/lib/settings.server";
+import { syncComponentsFromPageProject } from "~/lib/component.server";
 import type { Route } from "./+types/route";
 
 export async function loader({ params }: Route.LoaderArgs) {
@@ -21,6 +27,7 @@ export async function loader({ params }: Route.LoaderArgs) {
   const body = fmMatch ? raw.slice(fmMatch[0].length).trimStart() : raw;
 
   const whiteboards = await listWhiteboardsForPage(params.slug);
+  const { settings } = await getSettings();
 
   return {
     slug: content.slug,
@@ -43,13 +50,16 @@ export async function loader({ params }: Route.LoaderArgs) {
         ? (content.css as string)
         : undefined,
     whiteboards,
+    defaultBodyClasses: [...settings.bodyClasses, ...settings.darkBodyClasses],
+    editorDarkMode: settings.editorDarkMode ?? false,
   };
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
   const formData = await request.formData();
   const sha = formData.get("sha") as string;
-  const contentType = (formData.get("contentType") as ContentType) ?? "markdown";
+  const contentType =
+    (formData.get("contentType") as ContentType) ?? "markdown";
   const title = (formData.get("title") as string)?.trim();
   const description = (formData.get("description") as string)?.trim();
   const tags = (formData.get("tags") as string)?.trim();
@@ -82,7 +92,10 @@ export async function action({ request, params }: Route.ActionArgs) {
       `title: "${title}"`,
       description ? `description: "${description}"` : null,
       tags
-        ? `tags: [${tags.split(",").map((t) => `"${t.trim()}"`).join(", ")}]`
+        ? `tags: [${tags
+            .split(",")
+            .map((t) => `"${t.trim()}"`)
+            .join(", ")}]`
         : null,
       publishedAt ? `publishedAt: "${publishedAt}"` : null,
       `updatedAt: "${new Date().toISOString()}"`,
@@ -96,11 +109,30 @@ export async function action({ request, params }: Route.ActionArgs) {
   }
 
   // For page type, always save the CSS file
-  const compiledCss = contentType === "page"
-    ? (formData.get("pageCss") as string) ?? ""
-    : undefined;
+  const compiledCss =
+    contentType === "page"
+      ? ((formData.get("pageCss") as string) ?? "")
+      : undefined;
 
-  await saveContent(params.slug, raw, sha || undefined, contentType, compiledCss);
+  await saveContent(
+    params.slug,
+    raw,
+    sha || undefined,
+    contentType,
+    compiledCss,
+  );
+
+  if (contentType === "page") {
+    const projectData = formData.get("projectData") as string;
+    try {
+      await syncComponentsFromPageProject(params.slug, projectData);
+    } catch (err) {
+      console.error(
+        `[page] Failed to sync components from "${params.slug}":`,
+        err,
+      );
+    }
+  }
 
   return redirect(`/content/${params.slug}`);
 }
@@ -114,11 +146,15 @@ export default function EditContent({
   const [body, setBody] = useState(loaderData.body);
 
   // Page editor state
-  const [pageProjectData, setPageProjectData] = useState(loaderData.projectData ?? "{}");
+  const [pageProjectData, setPageProjectData] = useState(
+    loaderData.projectData ?? "{}",
+  );
   const [pageHtml, setPageHtml] = useState(loaderData.bodyHtml ?? "");
   const [pageCss, setPageCss] = useState(loaderData.css ?? "");
   const [pageTitle, setPageTitle] = useState(loaderData.title);
-  const [pageDescription, setPageDescription] = useState(loaderData.description);
+  const [pageDescription, setPageDescription] = useState(
+    loaderData.description,
+  );
   const [pageTags, setPageTags] = useState(loaderData.tags);
   const [pageDraft, setPageDraft] = useState(loaderData.draft);
 
@@ -130,7 +166,17 @@ export default function EditContent({
   const pendingPageSave = useRef(false);
 
   const handlePageSave = useCallback(
-    (projectData: string, html: string, css: string, meta?: { title: string; description: string; tags: string; draft: boolean }) => {
+    (
+      projectData: string,
+      html: string,
+      css: string,
+      meta?: {
+        title: string;
+        description: string;
+        tags: string;
+        draft: boolean;
+      },
+    ) => {
       pendingPageSave.current = true;
       setPageProjectData(projectData);
       setPageHtml(html);
@@ -142,7 +188,7 @@ export default function EditContent({
         setPageDraft(meta.draft);
       }
     },
-    []
+    [],
   );
 
   // Submit form after state has flushed to DOM
@@ -151,14 +197,21 @@ export default function EditContent({
     pendingPageSave.current = false;
     const form = document.getElementById("edit-form") as HTMLFormElement;
     if (form) form.requestSubmit();
-  }, [pageProjectData, pageHtml, pageCss, pageTitle, pageDescription, pageTags, pageDraft]);
+  }, [
+    pageProjectData,
+    pageHtml,
+    pageCss,
+    pageTitle,
+    pageDescription,
+    pageTags,
+    pageDraft,
+  ]);
 
   const isPage = loaderData.contentType === "page";
   const isWikipedia = loaderData.contentType === "wikipedia";
 
   return (
     <div>
-
       {/* Whiteboards panel — only for markdown articles */}
       {!isPage && !isWikipedia && (
         <div className="mb-6 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg p-4">
@@ -234,7 +287,11 @@ export default function EditContent({
           <Form method="post" id="edit-form">
             <input type="hidden" name="sha" value={loaderData.sha} />
             <input type="hidden" name="contentType" value="page" />
-            <input type="hidden" name="publishedAt" value={loaderData.publishedAt} />
+            <input
+              type="hidden"
+              name="publishedAt"
+              value={loaderData.publishedAt}
+            />
             <input type="hidden" name="projectData" value={pageProjectData} />
             <input type="hidden" name="pageHtml" value={pageHtml} />
             <input type="hidden" name="pageCss" value={pageCss} />
@@ -250,6 +307,8 @@ export default function EditContent({
 
           <PageEditor
             projectData={loaderData.projectData}
+            defaultBodyClasses={loaderData.defaultBodyClasses}
+            initialDarkMode={loaderData.editorDarkMode}
             meta={{
               title: loaderData.title,
               description: loaderData.description,
@@ -267,7 +326,11 @@ export default function EditContent({
         /* Markdown / Wikipedia editor form */
         <Form method="post" className="space-y-4">
           <input type="hidden" name="sha" value={loaderData.sha} />
-          <input type="hidden" name="contentType" value={loaderData.contentType} />
+          <input
+            type="hidden"
+            name="contentType"
+            value={loaderData.contentType}
+          />
           <input
             type="hidden"
             name="publishedAt"

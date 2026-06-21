@@ -179,38 +179,54 @@ export interface ContentHistoryItem extends GitHubCommit {
   isPublished: boolean;
 }
 
+export interface ContentHistoryPage {
+  items: ContentHistoryItem[];
+  page: number;
+  perPage: number;
+  hasMore: boolean;
+}
+
 export async function getContentHistory(
   slug: string,
-  type: ContentType = "markdown"
-): Promise<ContentHistoryItem[]> {
+  type: ContentType = "markdown",
+  page: number = 1,
+  perPage: number = 20
+): Promise<ContentHistoryPage> {
   const [commits, publishedBlobSha] = await Promise.all([
-    getFileHistory(slug, undefined, type),
+    getFileHistory(slug, undefined, type, page, perPage),
     getPublishedFileSha(slug, type),
   ]);
 
   if (!publishedBlobSha) {
-    return commits.map((c) => ({ ...c, isPublished: false }));
+    return {
+      items: commits.map((c) => ({ ...c, isPublished: false })),
+      page,
+      perPage,
+      hasMore: commits.length === perPage,
+    };
   }
+
+  // Parallel blob SHA lookup for the current page
+  const blobShas = await Promise.all(
+    commits.map((c) => getFileBlobShaAtCommit(slug, c.sha, type))
+  );
 
   let foundPublished = false;
-  const results: ContentHistoryItem[] = [];
-
-  for (const commit of commits) {
-    if (foundPublished) {
-      results.push({ ...commit, isPublished: false });
-      continue;
-    }
-
-    const blobSha = await getFileBlobShaAtCommit(slug, commit.sha, type);
-    if (blobSha === publishedBlobSha) {
-      results.push({ ...commit, isPublished: true });
+  const items: ContentHistoryItem[] = commits.map((commit, i) => {
+    if (foundPublished) return { ...commit, isPublished: false };
+    if (blobShas[i] === publishedBlobSha) {
       foundPublished = true;
-    } else {
-      results.push({ ...commit, isPublished: false });
+      return { ...commit, isPublished: true };
     }
-  }
+    return { ...commit, isPublished: false };
+  });
 
-  return results;
+  return {
+    items,
+    page,
+    perPage,
+    hasMore: commits.length === perPage,
+  };
 }
 
 export async function getContentAtVersion(

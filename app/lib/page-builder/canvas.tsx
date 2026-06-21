@@ -31,6 +31,7 @@ function canDropAt(
 interface CanvasProps {
   store: PBStore;
   externalStyles?: string[];
+  initialDarkMode?: boolean;
 }
 
 type DropPosition = "before" | "after" | "inside";
@@ -40,7 +41,7 @@ interface DropTarget {
   position: DropPosition;
 }
 
-export const Canvas = memo(function Canvas({ store, externalStyles = [] }: CanvasProps) {
+export const Canvas = memo(function Canvas({ store, externalStyles = [], initialDarkMode = false }: CanvasProps) {
   const wrapperRef = useRef<HTMLDivElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const storeRef = useRef(store);
@@ -221,10 +222,18 @@ export const Canvas = memo(function Canvas({ store, externalStyles = [] }: Canva
   useEffect(() => {
     const iframe = iframeRef.current;
     if (!iframe) return;
-    const handleLoad = () => setTimeout(render, 300);
+    const handleLoad = () => {
+      // Apply persisted dark mode preference before first render
+      const doc = iframe.contentDocument;
+      if (doc && initialDarkMode) {
+        doc.documentElement.classList.add("dark");
+        doc.documentElement.dataset.pbDarkManual = "true";
+      }
+      setTimeout(render, 300);
+    };
     iframe.addEventListener("load", handleLoad);
     return () => iframe.removeEventListener("load", handleLoad);
-  }, [render, srcdoc]);
+  }, [render, srcdoc, initialDarkMode]);
 
   // Re-render on store changes
   useEffect(() => {
@@ -374,8 +383,9 @@ export const Canvas = memo(function Canvas({ store, externalStyles = [] }: Canva
           return;
         }
         const rect = el.getBoundingClientRect();
+        const toolbarWidth = toolbar.offsetWidth || 150;
         toolbar.style.top = `${rect.top + doc.documentElement.scrollTop - 30}px`;
-        toolbar.style.left = `${rect.left}px`;
+        toolbar.style.left = `${Math.max(0, rect.right - toolbarWidth)}px`;
         toolbar.style.right = "auto";
         toolbar.classList.add("visible");
 
@@ -811,12 +821,12 @@ export const Canvas = memo(function Canvas({ store, externalStyles = [] }: Canva
 });
 
 function renderNode(node: PBNode, selectedId: string | null): string {
-  const name = node.name ?? node.tag;
+  const componentSlug = node.attributes?.["data-pb-component"];
+  const name = componentSlug ?? node.name ?? node.tag;
 
   if (node.type === "text") {
     const tag = node.tag || "span";
-    const classes = node.classes.join(" ");
-    const classAttr = classes ? ` class="${classes}"` : "";
+    const classAttr = node.classes.length > 0 ? ` class="${encodeClasses(node.classes)}"` : "";
     const sel = node.id === selectedId ? ' data-pb-selected="true"' : "";
     return `<${tag} data-pb-id="${node.id}" data-pb-name="${name}"${classAttr}${sel}>${escapeHtml(node.text ?? "")}</${tag}>`;
   }
@@ -834,10 +844,10 @@ function renderNode(node: PBNode, selectedId: string | null): string {
     const layoutRe = /^(w-|h-|block|inline|shrink|grow|m[xytblr]?-|p[xytblr]?-|self-|flex-)/;
     const wrapClasses = node.classes.filter((c) => layoutRe.test(c));
     const svgClasses = node.classes.filter((c) => !layoutRe.test(c));
-    if (wrapClasses.length > 0) wrapAttrs.push(`class="${wrapClasses.join(" ")}"`);
+    if (wrapClasses.length > 0) wrapAttrs.push(`class="${encodeClasses(wrapClasses)}"`);
 
     const svgAttrs: string[] = [];
-    if (svgClasses.length > 0) svgAttrs.push(`class="${svgClasses.join(" ")}"`);
+    if (svgClasses.length > 0) svgAttrs.push(`class="${encodeClasses(svgClasses)}"`);
     // SVG needs w-full h-full to fill the wrapper
     else svgAttrs.push('class="w-full h-full"');
 
@@ -854,7 +864,9 @@ function renderNode(node: PBNode, selectedId: string | null): string {
   const attrs: string[] = [`data-pb-id="${node.id}"`, `data-pb-name="${name}"`];
   if (node.children.length > 0) attrs.push('data-pb-container="true"');
   if (node.id === selectedId) attrs.push('data-pb-selected="true"');
-  if (node.classes.length > 0) attrs.push(`class="${node.classes.join(" ")}"`);
+  if (node.classes.length > 0) {
+    attrs.push(`class="${encodeClasses(node.classes)}"`);
+  }
 
   const styleStr = Object.entries(node.styles).map(([k, v]) => `${k}:${v}`).join(";");
   if (styleStr) attrs.push(`style="${styleStr}"`);
@@ -867,6 +879,10 @@ function renderNode(node: PBNode, selectedId: string | null): string {
 
   const childrenHtml = node.children.map((c) => renderNode(c, selectedId)).join("");
   return `<${tag} ${attrs.join(" ")}>${childrenHtml}</${tag}>`;
+}
+
+function encodeClasses(classes: string[]): string {
+  return classes.map((c) => c.replace(/"/g, "&quot;").replace(/>/g, "&gt;").replace(/</g, "&lt;")).join(" ");
 }
 
 function escapeHtml(str: string): string {

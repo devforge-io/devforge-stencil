@@ -61,7 +61,7 @@ export function buildPageRaw(
   css: string
 ): string {
   const fm = Object.entries(frontmatter)
-    .filter(([, v]) => v !== undefined && v !== null && v !== "")
+    .filter(([k, v]) => v !== undefined && v !== null && v !== "" && k !== "contentType")
     .map(([k, v]) => {
       if (Array.isArray(v)) {
         return `${k}: [${v.map((i) => `"${i}"`).join(", ")}]`;

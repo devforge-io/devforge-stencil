@@ -880,11 +880,30 @@ function ClassEditor({ store, node }: { store: PBStore; node: PBNode }) {
     [store, node.id, node.classes]
   );
 
+  const [copied, setCopied] = useState(false);
+  const copyClasses = useCallback(() => {
+    navigator.clipboard.writeText(node.classes.join(" "));
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  }, [node.classes]);
+
   return (
     <div className="space-y-1.5">
-      <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">
-        Classes ({node.classes.length})
-      </Label>
+      <div className="flex items-center justify-between">
+        <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">
+          Classes ({node.classes.length})
+        </Label>
+        {node.classes.length > 0 && (
+          <button
+            type="button"
+            onClick={copyClasses}
+            className="text-[9px] text-muted-foreground hover:text-foreground transition-colors"
+            title="Copy all classes"
+          >
+            {copied ? "Copied!" : "Copy"}
+          </button>
+        )}
+      </div>
 
       {node.classes.length > 0 && (
         <div className="flex flex-wrap gap-1">

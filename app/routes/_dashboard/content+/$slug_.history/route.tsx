@@ -1,6 +1,7 @@
-import { Link } from "react-router";
+import { Link, Form, useNavigation } from "react-router";
 import { useState, useCallback } from "react";
-import { getContent, getContentHistory } from "~/lib/content.server";
+import { getContent, getContentHistory, saveContent } from "~/lib/content.server";
+import { getFileAtCommit } from "~/lib/github.server";
 import { formatDateTime } from "~/lib/format";
 import type { Route } from "./+types/route";
 
@@ -16,17 +17,50 @@ interface VersionData {
   diff?: DiffLine[];
 }
 
-export async function loader({ params }: Route.LoaderArgs) {
+export async function loader({ params, request }: Route.LoaderArgs) {
   const content = await getContent(params.slug);
   if (!content) {
     throw new Response("Not Found", { status: 404 });
   }
-  const commits = await getContentHistory(params.slug, content.contentType);
-  return { slug: params.slug, commits };
+  const url = new URL(request.url);
+  const page = Math.max(1, Number(url.searchParams.get("page") ?? "1") || 1);
+  const perPage = 20;
+  const history = await getContentHistory(params.slug, content.contentType, page, perPage);
+  return {
+    slug: params.slug,
+    sha: content.sha,
+    contentType: content.contentType,
+    commits: history.items,
+    page: history.page,
+    hasMore: history.hasMore,
+  };
 }
 
-export default function ContentHistory({ loaderData }: Route.ComponentProps) {
-  const { slug, commits } = loaderData;
+export async function action({ request, params }: Route.ActionArgs) {
+  const formData = await request.formData();
+  const intent = formData.get("intent");
+
+  if (intent === "restore") {
+    const restoreSha = formData.get("restoreSha") as string;
+    const currentSha = formData.get("currentSha") as string;
+    const contentType = (formData.get("contentType") as string) || "markdown";
+
+    const raw = await getFileAtCommit(params.slug, restoreSha, contentType as "markdown" | "page" | "wikipedia");
+    if (!raw) {
+      return { error: "Could not load version" };
+    }
+
+    await saveContent(params.slug, raw, currentSha, contentType as "markdown" | "page" | "wikipedia");
+    return { restored: true, sha: restoreSha };
+  }
+
+  return { error: "Unknown action" };
+}
+
+export default function ContentHistory({ loaderData, actionData }: Route.ComponentProps) {
+  const { slug, sha: currentSha, contentType, commits, page, hasMore } = loaderData;
+  const navigation = useNavigation();
+  const isRestoring = navigation.state === "submitting" && navigation.formData?.get("intent") === "restore";
 
   const [mode, setMode] = useState<"list" | "view" | "diff">("list");
   const [selectedSha, setSelectedSha] = useState<string | null>(null);
@@ -229,9 +263,56 @@ export default function ContentHistory({ loaderData }: Route.ComponentProps) {
                   </div>
                 ))}
               </div>
+
+              {/* Pagination */}
+              {(page > 1 || hasMore) && (
+                <div className="mt-4 flex items-center justify-between">
+                  <span className="text-xs text-gray-500 dark:text-gray-400">
+                    Page {page}
+                  </span>
+                  <div className="flex gap-2">
+                    {page > 1 ? (
+                      <Link
+                        to={`/content/${slug}/history?page=${page - 1}`}
+                        prefetch="intent"
+                        className="px-3 py-1.5 border border-gray-300 dark:border-gray-700 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-sm"
+                      >
+                        ← Newer
+                      </Link>
+                    ) : (
+                      <span className="px-3 py-1.5 border border-gray-200 dark:border-gray-800 rounded-lg text-sm text-gray-400 dark:text-gray-600 cursor-not-allowed">
+                        ← Newer
+                      </span>
+                    )}
+                    {hasMore ? (
+                      <Link
+                        to={`/content/${slug}/history?page=${page + 1}`}
+                        prefetch="intent"
+                        className="px-3 py-1.5 border border-gray-300 dark:border-gray-700 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-sm"
+                      >
+                        Older →
+                      </Link>
+                    ) : (
+                      <span className="px-3 py-1.5 border border-gray-200 dark:border-gray-800 rounded-lg text-sm text-gray-400 dark:text-gray-600 cursor-not-allowed">
+                        Older →
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
             </>
           )}
         </>
+      )}
+
+      {/* Restore success message */}
+      {actionData && "restored" in actionData && actionData.restored && (
+        <div className="mb-4 px-4 py-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
+          <p className="text-sm text-green-700 dark:text-green-400">
+            Successfully restored to version {(actionData as { sha?: string }).sha?.slice(0, 7)}.{" "}
+            <Link to={`/content/${slug}`} className="underline font-medium">View content</Link>
+          </p>
+        </div>
       )}
 
       {/* View single version */}
@@ -250,7 +331,20 @@ export default function ContentHistory({ loaderData }: Route.ComponentProps) {
                     </code>
                   </p>
                 </div>
-                <div className="flex gap-1">
+                <div className="flex gap-2">
+                  <Form method="post">
+                    <input type="hidden" name="intent" value="restore" />
+                    <input type="hidden" name="restoreSha" value={selectedCommit.sha} />
+                    <input type="hidden" name="currentSha" value={currentSha} />
+                    <input type="hidden" name="contentType" value={contentType} />
+                    <button
+                      type="submit"
+                      disabled={isRestoring || selectedCommit.sha === commits[0]?.sha}
+                      className="px-3 py-1 rounded text-xs font-medium bg-yellow-500 hover:bg-yellow-600 text-white transition-colors disabled:opacity-40"
+                    >
+                      {isRestoring ? "Restoring..." : "Restore"}
+                    </button>
+                  </Form>
                   <button
                     onClick={() => setViewTab("rendered")}
                     className={`px-3 py-1 rounded text-xs font-medium transition-colors ${

@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "build": "react-router build",
-    "dev": "react-router dev",
+    "dev": "react-router dev --port 5174",
     "start": "react-router-serve ./build/server/index.js",
     "typecheck": "react-router typegen && tsc"
   },
@@ -26,6 +26,7 @@
     "@tiptap/pm": "^3.22.3",
     "@tiptap/react": "^3.22.3",
     "@tiptap/starter-kit": "^3.22.3",
+    "@types/jsdom": "^28.0.1",
     "@types/turndown": "^5.0.6",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -35,6 +36,7 @@
     "grapesjs-blocks-basic": "^1.0.2",
     "gray-matter": "^4.0.3",
     "isbot": "^5.1.36",
+    "jsdom": "^29.1.1",
     "lowlight": "^3.3.0",
     "lru-cache": "^11.3.3",
     "lucide-react": "^1.8.0",

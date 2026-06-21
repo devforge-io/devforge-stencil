@@ -9,6 +9,8 @@ import {
   unpublishContent,
   removeContent,
 } from "~/lib/content.server";
+import { getSettings } from "~/lib/settings.server";
+import { removePageFromAllComponentIndices } from "~/lib/component.server";
 import { Button } from "~/components/ui/button";
 import { Badge } from "~/components/ui/badge";
 import { Card, CardContent } from "~/components/ui/card";
@@ -28,7 +30,11 @@ export async function loader({ params }: Route.LoaderArgs) {
     compiledCss = await getPageCompiledCss(params.slug, getGitHubConfig().branch);
   }
 
-  return { content, publishStatus, compiledCss };
+  const { settings } = await getSettings();
+  const bodyClasses = [...settings.bodyClasses, ...settings.darkBodyClasses].join(" ");
+  const editorDarkMode = settings.editorDarkMode ?? false;
+
+  return { content, publishStatus, compiledCss, bodyClasses, editorDarkMode };
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
@@ -43,6 +49,9 @@ export async function action({ request, params }: Route.ActionArgs) {
   } else if (intent === "delete") {
     const sha = formData.get("sha") as string;
     await removeContent(params.slug, sha, contentType);
+    if (contentType === "page") {
+      await removePageFromAllComponentIndices(params.slug);
+    }
     return redirect("/content");
   }
 
@@ -50,7 +59,8 @@ export async function action({ request, params }: Route.ActionArgs) {
 }
 
 export default function ContentView({ loaderData }: Route.ComponentProps) {
-  const { content, publishStatus, compiledCss } = loaderData;
+  const { content, publishStatus, compiledCss, bodyClasses, editorDarkMode } = loaderData;
+  const htmlClass = editorDarkMode ? "dark" : "";
   const navigation = useNavigation();
   const isPublishing =
     navigation.state === "submitting" &&
@@ -186,25 +196,25 @@ export default function ContentView({ loaderData }: Route.ComponentProps) {
       {content.contentType === "page" && "css" in content ? (
         <Card className="overflow-hidden">
           <iframe
-            srcDoc={`<!DOCTYPE html><html><head><script src="https://cdn.tailwindcss.com"><\/script><style>${compiledCss || (content as { css: string }).css}</style></head><body>${content.html}</body></html>`}
+            srcDoc={`<!DOCTYPE html><html class="${htmlClass}"><head><script src="https://cdn.tailwindcss.com"><\/script><script>tailwind.config={darkMode:'class'}<\/script><style>${compiledCss || (content as { css: string }).css}</style></head><body class="${bodyClasses}">${content.html}</body></html>`}
             className="w-full min-h-[500px] border-0"
             title={content.frontmatter.title}
           />
         </Card>
       ) : content.contentType === "wikipedia" ? (
-        <Card>
+        <Card className={htmlClass}>
           <CardContent className="p-8">
             <article
-              className="prose max-w-none wiki-content"
+              className={`prose max-w-none wiki-content ${bodyClasses}`}
               dangerouslySetInnerHTML={{ __html: content.html }}
             />
           </CardContent>
         </Card>
       ) : (
-        <Card>
+        <Card className={htmlClass}>
           <CardContent className="p-8">
             <article
-              className="prose max-w-none"
+              className={`prose max-w-none ${bodyClasses}`}
               dangerouslySetInnerHTML={{ __html: content.html }}
             />
           </CardContent>

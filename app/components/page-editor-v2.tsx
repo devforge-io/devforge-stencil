@@ -9,6 +9,7 @@ import {
   renderToHtml,
   parseHtml,
   findNode,
+  buildCompiledCss,
   type PBStore,
   type PBBlock,
   type PBProject,
@@ -33,6 +34,8 @@ interface PageMeta {
 
 interface PageEditorProps {
   projectData?: string;
+  defaultBodyClasses?: string[];
+  initialDarkMode?: boolean;
   meta?: PageMeta;
   onSave: (projectData: string, html: string, css: string, meta?: PageMeta) => void;
   saving?: boolean;
@@ -40,7 +43,7 @@ interface PageEditorProps {
 
 type SidebarTab = "blocks" | "layers" | "properties" | "classes" | "page" | "icons" | "resources";
 
-export function PageEditor({ projectData, meta, onSave, saving = false }: PageEditorProps) {
+export function PageEditor({ projectData, defaultBodyClasses, initialDarkMode = false, meta, onSave, saving = false }: PageEditorProps) {
   const [mounted, setMounted] = useState(false);
   const [activeTab, setActiveTab] = useState<SidebarTab>("blocks");
   const [pageMeta, setPageMeta] = useState<PageMeta>(meta ?? { title: "", description: "", tags: "", draft: false, slug: "", sha: "", publishedAt: "" });
@@ -52,7 +55,7 @@ export function PageEditor({ projectData, meta, onSave, saving = false }: PageEd
 
   // Create store once
   const store = useMemo(() => {
-    const s = createStore();
+    const s = createStore(undefined, defaultBodyClasses);
     if (projectData) {
       try {
         const data = JSON.parse(projectData);
@@ -60,6 +63,9 @@ export function PageEditor({ projectData, meta, onSave, saving = false }: PageEd
         if (data.root) {
           // New PBProject format
           s.loadProject(data as PBProject);
+          const loaded = s.getRoot();
+          loaded.classes = defaultBodyClasses ?? loaded.classes;
+          s.setRoot(loaded);
           if (data.canvasStyles) {
             setExternalStyles(data.canvasStyles);
           }
@@ -67,6 +73,7 @@ export function PageEditor({ projectData, meta, onSave, saving = false }: PageEd
           // Legacy GrapesJS format — parse HTML into PBNode tree
           if (typeof window !== "undefined") {
             const root = parseHtml(data.html);
+            root.classes = defaultBodyClasses ?? root.classes;
             s.setRoot(root);
           }
           if (data._externalStyles) {
@@ -97,6 +104,42 @@ export function PageEditor({ projectData, meta, onSave, saving = false }: PageEd
       setActiveTab("page");
     }
   }, [selectedNode?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Load custom components from API
+  const [customComponents, setCustomComponents] = useState<import("~/lib/page-builder").PBBlock[]>([]);
+  useEffect(() => {
+    fetch("/api/components")
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.components) {
+          // Load full HTML for each component
+          Promise.all(
+            data.components.map((c: { slug: string; name: string; category: string; icon?: string }) =>
+              fetch(`/api/components/${c.slug}`)
+                .then((r) => r.json())
+                .then((d) => {
+                  // Inject data-pb-component attribute on root element for tracking
+                  let html = d.component?.html ?? "";
+                  if (html) {
+                    html = html.replace(/^(<\w+)/, `$1 data-pb-component="${c.slug}"`);
+                  }
+                  return {
+                    id: `custom-${c.slug}`,
+                    label: c.name,
+                    category: c.category || "Custom",
+                    icon: c.icon || `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M9 12h6M12 9v6"/></svg>`,
+                    content: html,
+                  };
+                })
+                .catch(() => null)
+            )
+          ).then((blocks) => {
+            setCustomComponents(blocks.filter(Boolean) as import("~/lib/page-builder").PBBlock[]);
+          });
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   // Build blocks list with dynamic icon blocks based on loaded libraries
   const allBlocks = useMemo(() => {
@@ -132,12 +175,12 @@ export function PageEditor({ projectData, meta, onSave, saving = false }: PageEd
       });
     }
 
-    return [...DEFAULT_BLOCKS, ...iconBlocks];
-  }, [externalStyles]);
+    return [...DEFAULT_BLOCKS, ...iconBlocks, ...customComponents];
+  }, [externalStyles, customComponents]);
 
   // Save handler
   const [savingCss, setSavingCss] = useState(false);
-  const [darkPreview, setDarkPreview] = useState(false);
+  const [darkPreview, setDarkPreview] = useState(initialDarkMode);
 
   const handleSave = useCallback(() => {
     const project = store.getProject();
@@ -145,37 +188,8 @@ export function PageEditor({ projectData, meta, onSave, saving = false }: PageEd
     const projectJson = JSON.stringify(project);
     const html = renderToHtml(state.root);
 
-    // Compile Tailwind CSS by rendering the HTML in a hidden iframe with Tailwind CDN
     setSavingCss(true);
-    compileTailwindCss(html, externalStyles).then((tailwindCss) => {
-      const parts: string[] = [];
-
-      // Font and resource imports
-      for (const url of externalStyles) {
-        parts.push(`@import url('${url}');`);
-      }
-
-      // Generate font-family classes for loaded Google Fonts
-      const fontRules = generateFontCssRules(externalStyles);
-      if (fontRules) {
-        parts.push("/* Font family classes */");
-        parts.push(fontRules);
-      }
-
-      // Compiled Tailwind utilities
-      if (tailwindCss) {
-        parts.push("/* Compiled Tailwind CSS */");
-        parts.push(tailwindCss);
-      }
-
-      // Inline styles from nodes
-      const inlineStyles = collectInlineStyles(state.root);
-      if (inlineStyles) {
-        parts.push("/* Component styles */");
-        parts.push(inlineStyles);
-      }
-
-      const css = parts.join("\n");
+    buildCompiledCss(html, state.root, externalStyles).then((css) => {
       setSavingCss(false);
       onSave(projectJson, html, css, pageMeta);
     });
@@ -304,6 +318,11 @@ export function PageEditor({ projectData, meta, onSave, saving = false }: PageEd
               const isDark = html.classList.contains("dark");
               html.dataset.pbDarkManual = isDark ? "true" : "";
               setDarkPreview(isDark);
+              fetch("/api/settings", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ patch: { editorDarkMode: isDark } }),
+              }).catch((err) => console.error("Failed to persist editorDarkMode:", err));
             }}
             className="h-7 w-7 rounded-md border border-border flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
             title={darkPreview ? "Switch to light preview" : "Switch to dark preview"}
@@ -407,7 +426,7 @@ export function PageEditor({ projectData, meta, onSave, saving = false }: PageEd
 
         {/* Canvas */}
         <div className="flex-1 bg-white dark:bg-gray-950 overflow-auto">
-          <Canvas store={store} externalStyles={externalStyles} />
+          <Canvas store={store} externalStyles={externalStyles} initialDarkMode={initialDarkMode} />
         </div>
       </div>
     </div>
@@ -585,110 +604,6 @@ function ResourcesPanel({
 
 import { twMerge } from "tailwind-merge";
 import type { PBNode } from "~/lib/page-builder";
-
-/**
- * Compile Tailwind CSS by rendering HTML in a hidden iframe with Tailwind CDN.
- * Waits for the CDN to generate styles, then extracts the compiled CSS.
- */
-function compileTailwindCss(html: string, styleUrls: string[]): Promise<string> {
-  return new Promise((resolve) => {
-    const iframe = document.createElement("iframe");
-    iframe.style.cssText = "position:fixed;left:-9999px;top:-9999px;width:1px;height:1px;";
-    document.body.appendChild(iframe);
-
-    const styleTags = styleUrls.map((u) => `<link rel="stylesheet" href="${u}" />`).join("\n");
-
-    const doc = iframe.contentDocument;
-    if (!doc) {
-      iframe.remove();
-      resolve("");
-      return;
-    }
-
-    doc.open();
-    doc.write(`<!DOCTYPE html>
-<html>
-<head>
-  ${styleTags}
-  <script src="https://cdn.tailwindcss.com"><\/script>
-</head>
-<body>${html}</body>
-</html>`);
-    doc.close();
-
-    // Wait for Tailwind CDN to compile, then extract styles
-    const extract = () => {
-      let css = "";
-      try {
-        for (const style of Array.from(doc.querySelectorAll("style"))) {
-          const text = style.textContent ?? "";
-          // Tailwind CDN generates styles with --tw- custom properties
-          if (text.includes("--tw-") || text.length > 1000) {
-            css = text;
-            break;
-          }
-        }
-      } catch {
-        // cross-origin or other error
-      }
-      iframe.remove();
-      resolve(css);
-    };
-
-    // Tailwind CDN needs time to process — poll until styles appear
-    let attempts = 0;
-    const poll = () => {
-      attempts++;
-      try {
-        const styles = doc.querySelectorAll("style");
-        for (const style of Array.from(styles)) {
-          const text = style.textContent ?? "";
-          if (text.includes("--tw-") || text.length > 1000) {
-            extract();
-            return;
-          }
-        }
-      } catch {
-        // not ready yet
-      }
-      if (attempts < 30) {
-        setTimeout(poll, 200);
-      } else {
-        extract(); // timeout — return whatever we have
-      }
-    };
-    setTimeout(poll, 500);
-  });
-}
-
-/**
- * Generate CSS rules for font-{name} classes from loaded Google Font URLs.
- * These are self-contained — no Tailwind config needed in the consuming app.
- */
-function generateFontCssRules(styleUrls: string[]): string {
-  const rules: string[] = [];
-  for (const url of styleUrls) {
-    const match = url.match(/family=([^&:]+)/);
-    if (!match) continue;
-    const family = match[1].replace(/\+/g, " ");
-    const key = family.toLowerCase().replace(/\s+/g, "-");
-    rules.push(`.font-${key} { font-family: '${family}', sans-serif; }`);
-  }
-  return rules.join("\n");
-}
-
-function collectInlineStyles(node: PBNode): string {
-  let css = "";
-  const entries = Object.entries(node.styles);
-  if (entries.length > 0) {
-    const props = entries.map(([k, v]) => `  ${k}: ${v};`).join("\n");
-    css += `[data-pb-id="${node.id}"] {\n${props}\n}\n`;
-  }
-  for (const child of node.children) {
-    css += collectInlineStyles(child);
-  }
-  return css;
-}
 
 const TW_GROUPS: { label: string; classes: { label: string; value: string }[] }[] = [
   { label: "Align Items", classes: [{ label: "start", value: "items-start" }, { label: "end", value: "items-end" }, { label: "center", value: "items-center" }, { label: "baseline", value: "items-baseline" }, { label: "stretch", value: "items-stretch" }] },

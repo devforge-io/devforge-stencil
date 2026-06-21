@@ -11,6 +11,15 @@ export { PropertiesPanel } from "./properties-panel";
 
 export { renderToHtml, parseHtml } from "./serializer";
 
+export {
+  compileTailwindCss,
+  generateFontCssRules,
+  collectInlineStyles,
+  collectClassesFromTree,
+  buildCompiledCss,
+} from "./css-compile";
+export type { CompileOptions } from "./css-compile";
+
 export { DEFAULT_BLOCKS } from "./blocks";
 
 export {

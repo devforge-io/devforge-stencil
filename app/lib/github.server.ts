@@ -7,6 +7,7 @@ export interface GitHubConfig {
   branch: string;
   publishBranch: string;
   contentPath: string;
+  componentPath: string;
 }
 
 export interface GitHubFile {
@@ -46,6 +47,7 @@ function getConfig(): GitHubConfig {
   const branch = process.env.GITHUB_BRANCH || "draft";
   const publishBranch = process.env.GITHUB_PUBLISH_BRANCH || "main";
   const contentPath = process.env.GITHUB_CONTENT_PATH || "content";
+  const componentPath = process.env.GITHUB_COMPONENT_PATH || "components";
 
   if (!token || !owner || !repo) {
     throw new Error(
@@ -53,7 +55,7 @@ function getConfig(): GitHubConfig {
     );
   }
 
-  return { token, owner, repo, branch, publishBranch, contentPath };
+  return { token, owner, repo, branch, publishBranch, contentPath, componentPath };
 }
 
 export type ContentType = "markdown" | "page" | "wikipedia";
@@ -538,7 +540,9 @@ export async function getPublishedFileSha(
 export async function getFileHistory(
   slug: string,
   branch?: string,
-  type: ContentType = "markdown"
+  type: ContentType = "markdown",
+  page: number = 1,
+  perPage: number = 20
 ): Promise<GitHubCommit[]> {
   const config = getConfig();
   const octokit = getOctokit(config.token);
@@ -549,7 +553,8 @@ export async function getFileHistory(
     repo: config.repo,
     path: filePath,
     sha: branch ?? config.branch,
-    per_page: 50,
+    per_page: perPage,
+    page,
   });
 
   return data.map((commit) => ({
