@@ -62,6 +62,9 @@
     "unified": "^11.0.5",
     "unist-util-visit": "^5.1.0"
   },
+  "overrides": {
+    "@radix-ui/react-tabs": "1.1.15"
+  },
   "devDependencies": {
     "@react-router/dev": "7.14.0",
     "@tailwindcss/vite": "^4.2.2",
