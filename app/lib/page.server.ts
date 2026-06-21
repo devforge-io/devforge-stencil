@@ -38,6 +38,7 @@ export function parsePage(raw: string): ParsedPage {
       title: data.title ?? "Untitled",
       description: data.description,
       tags: data.tags,
+      headerImage: data.headerImage,
       publishedAt: data.publishedAt,
       updatedAt: data.updatedAt,
       draft: data.draft ?? false,
@@ -78,4 +79,15 @@ export function buildPageRaw(
   );
 
   return `---\n${fm}\ncontentType: page\n---\n\n${body}`;
+}
+
+/**
+ * Render the optional page header image as a full-width banner that can be
+ * prepended to the page body. Uses inline styles so it renders the same
+ * whether or not a CSS framework is loaded. Returns "" when no image is set.
+ */
+export function renderHeaderImage(headerImage: unknown): string {
+  if (typeof headerImage !== "string" || !headerImage.trim()) return "";
+  const src = headerImage.trim().replace(/"/g, "&quot;");
+  return `<img src="${src}" alt="" data-pb-header-image="true" style="display:block;width:100%;height:auto;object-fit:cover;">`;
 }

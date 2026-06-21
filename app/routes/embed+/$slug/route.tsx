@@ -1,4 +1,5 @@
 import { getPublishedContent, getPageCompiledCss } from "~/lib/content.server";
+import { renderHeaderImage } from "~/lib/page.server";
 import { requireApiToken } from "~/lib/auth.server";
 import type { Route } from "./+types/route";
 
@@ -58,7 +59,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
   <style>${content.contentType === "page" ? pageCss : EMBED_STYLES}</style>
 </head>
 <body class="stencil-embed">
-  ${content.contentType === "page" ? content.html : `<article>${content.html}</article>`}
+  ${content.contentType === "page" ? `${renderHeaderImage(content.frontmatter.headerImage)}${content.html}` : `<article>${content.html}</article>`}
   <script>
     // Auto-resize for iframe embedding
     function notifySize() {

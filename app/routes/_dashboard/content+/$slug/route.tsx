@@ -61,6 +61,11 @@ export async function action({ request, params }: Route.ActionArgs) {
 export default function ContentView({ loaderData }: Route.ComponentProps) {
   const { content, publishStatus, compiledCss, bodyClasses, editorDarkMode } = loaderData;
   const htmlClass = editorDarkMode ? "dark" : "";
+  const headerImage = content.frontmatter.headerImage;
+  const headerImageHtml =
+    typeof headerImage === "string" && headerImage.trim()
+      ? `<img src="${headerImage.trim().replace(/"/g, "&quot;")}" alt="" style="display:block;width:100%;height:auto;object-fit:cover;">`
+      : "";
   const navigation = useNavigation();
   const isPublishing =
     navigation.state === "submitting" &&
@@ -196,7 +201,7 @@ export default function ContentView({ loaderData }: Route.ComponentProps) {
       {content.contentType === "page" && "css" in content ? (
         <Card className="overflow-hidden">
           <iframe
-            srcDoc={`<!DOCTYPE html><html class="${htmlClass}"><head><script src="https://cdn.tailwindcss.com"><\/script><script>tailwind.config={darkMode:'class'}<\/script><style>${compiledCss || (content as { css: string }).css}</style></head><body class="${bodyClasses}">${content.html}</body></html>`}
+            srcDoc={`<!DOCTYPE html><html class="${htmlClass}"><head><script src="https://cdn.tailwindcss.com"><\/script><script>tailwind.config={darkMode:'class'}<\/script><style>${compiledCss || (content as { css: string }).css}</style></head><body class="${bodyClasses}">${headerImageHtml}${content.html}</body></html>`}
             className="w-full min-h-[500px] border-0"
             title={content.frontmatter.title}
           />

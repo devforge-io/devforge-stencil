@@ -119,6 +119,7 @@ export interface ContentFrontmatter {
   title: string;
   description?: string;
   tags?: string[];
+  headerImage?: string;
   publishedAt?: string;
   updatedAt?: string;
   draft?: boolean;

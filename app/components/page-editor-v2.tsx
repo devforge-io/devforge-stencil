@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback, useReducer, createElement } from "react";
+import { useState, useEffect, useMemo, useCallback, useReducer, createElement, type ChangeEvent } from "react";
 import {
   createStore,
   Canvas,
@@ -26,6 +26,7 @@ interface PageMeta {
   title: string;
   description: string;
   tags: string;
+  headerImage: string;
   draft: boolean;
   slug: string;
   sha: string;
@@ -46,7 +47,7 @@ type SidebarTab = "blocks" | "layers" | "properties" | "classes" | "page" | "ico
 export function PageEditor({ projectData, defaultBodyClasses, initialDarkMode = false, meta, onSave, saving = false }: PageEditorProps) {
   const [mounted, setMounted] = useState(false);
   const [activeTab, setActiveTab] = useState<SidebarTab>("blocks");
-  const [pageMeta, setPageMeta] = useState<PageMeta>(meta ?? { title: "", description: "", tags: "", draft: false, slug: "", sha: "", publishedAt: "" });
+  const [pageMeta, setPageMeta] = useState<PageMeta>(meta ?? { title: "", description: "", tags: "", headerImage: "", draft: false, slug: "", sha: "", publishedAt: "" });
   const [externalStyles, setExternalStyles] = useState<string[]>([]);
   const [newResourceUrl, setNewResourceUrl] = useState("");
 
@@ -89,7 +90,12 @@ export function PageEditor({ projectData, defaultBodyClasses, initialDarkMode = 
 
   // Subscribe to store state via useReducer force-update
   const [, forceUpdate] = useReducer((x: number) => x + 1, 0);
-  useEffect(() => store.subscribe(forceUpdate), [store]);
+  useEffect(() => {
+    const unsubscribe = store.subscribe(forceUpdate);
+    return () => {
+      unsubscribe();
+    };
+  }, [store]);
   const state = store.getState();
 
   const selectedNode = state.selection.nodeId
@@ -1014,7 +1020,32 @@ function PageSettingsPanel({
   onMetaChange: (meta: PageMeta) => void;
 }) {
   const [classInput, setClassInput] = useState("");
+  const [uploadingHeader, setUploadingHeader] = useState(false);
   const classes = root.classes;
+
+  const handleHeaderUpload = useCallback(
+    async (e: ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      e.target.value = "";
+      if (!file) return;
+      setUploadingHeader(true);
+      try {
+        const formData = new FormData();
+        formData.append("file", file);
+        const res = await fetch("/api/assets/upload", { method: "POST", body: formData });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          console.error("Header image upload failed:", err.error);
+          return;
+        }
+        const { url, commitSha } = await res.json();
+        onMetaChange({ ...pageMeta, headerImage: commitSha ? `${url}?ref=${commitSha}` : url });
+      } finally {
+        setUploadingHeader(false);
+      }
+    },
+    [pageMeta, onMetaChange]
+  );
 
   const handleAddClass = useCallback(() => {
     const newClasses = classInput.trim().split(/\s+/).filter(Boolean);
@@ -1074,6 +1105,41 @@ function PageSettingsPanel({
             onChange={(e) => onMetaChange({ ...pageMeta, tags: e.target.value })}
             className="h-7 text-xs"
             placeholder="docs, tutorial"
+          />
+        </div>
+        <div className="space-y-1">
+          <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">Header Image</Label>
+          {pageMeta.headerImage && (
+            <div className="relative group">
+              <img
+                src={pageMeta.headerImage}
+                alt="Header"
+                className="w-full h-20 object-cover rounded border border-border"
+              />
+              <button
+                type="button"
+                onClick={() => onMetaChange({ ...pageMeta, headerImage: "" })}
+                className="absolute top-1 right-1 bg-black/60 text-white rounded px-1.5 py-0.5 text-[10px] opacity-0 group-hover:opacity-100 transition-opacity"
+              >
+                Remove
+              </button>
+            </div>
+          )}
+          <label className="flex items-center justify-center h-7 border border-dashed border-border rounded cursor-pointer text-[10px] text-muted-foreground hover:bg-muted/50 transition-colors">
+            {uploadingHeader ? "Uploading..." : pageMeta.headerImage ? "Replace image" : "Upload image"}
+            <input
+              type="file"
+              accept="image/*"
+              className="hidden"
+              disabled={uploadingHeader}
+              onChange={handleHeaderUpload}
+            />
+          </label>
+          <Input
+            value={pageMeta.headerImage}
+            onChange={(e) => onMetaChange({ ...pageMeta, headerImage: e.target.value })}
+            className="h-7 text-xs"
+            placeholder="or paste image URL"
           />
         </div>
         <div className="flex items-center gap-2">

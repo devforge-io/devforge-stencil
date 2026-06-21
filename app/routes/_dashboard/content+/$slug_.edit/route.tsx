@@ -36,6 +36,7 @@ export async function loader({ params }: Route.LoaderArgs) {
     title: frontmatter.title,
     description: frontmatter.description ?? "",
     tags: frontmatter.tags?.join(", ") ?? "",
+    headerImage: frontmatter.headerImage ?? "",
     publishedAt: frontmatter.publishedAt ?? "",
     draft: frontmatter.draft ?? false,
     body,
@@ -63,6 +64,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   const title = (formData.get("title") as string)?.trim();
   const description = (formData.get("description") as string)?.trim();
   const tags = (formData.get("tags") as string)?.trim();
+  const headerImage = (formData.get("headerImage") as string)?.trim();
   const publishedAt = (formData.get("publishedAt") as string)?.trim();
   const draft = formData.get("draft") === "on";
 
@@ -80,6 +82,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     const fm: Record<string, unknown> = { title };
     if (description) fm.description = description;
     if (tags) fm.tags = tags.split(",").map((t) => t.trim());
+    if (headerImage) fm.headerImage = headerImage;
     if (publishedAt) fm.publishedAt = publishedAt;
     fm.updatedAt = new Date().toISOString();
     if (draft) fm.draft = true;
@@ -156,6 +159,7 @@ export default function EditContent({
     loaderData.description,
   );
   const [pageTags, setPageTags] = useState(loaderData.tags);
+  const [pageHeaderImage, setPageHeaderImage] = useState(loaderData.headerImage);
   const [pageDraft, setPageDraft] = useState(loaderData.draft);
 
   const insertWhiteboard = (wbSlug: string, imageUrl: string) => {
@@ -174,6 +178,7 @@ export default function EditContent({
         title: string;
         description: string;
         tags: string;
+        headerImage: string;
         draft: boolean;
       },
     ) => {
@@ -185,6 +190,7 @@ export default function EditContent({
         setPageTitle(meta.title);
         setPageDescription(meta.description);
         setPageTags(meta.tags);
+        setPageHeaderImage(meta.headerImage);
         setPageDraft(meta.draft);
       }
     },
@@ -204,6 +210,7 @@ export default function EditContent({
     pageTitle,
     pageDescription,
     pageTags,
+    pageHeaderImage,
     pageDraft,
   ]);
 
@@ -298,6 +305,7 @@ export default function EditContent({
             <input type="hidden" name="title" value={pageTitle} />
             <input type="hidden" name="description" value={pageDescription} />
             <input type="hidden" name="tags" value={pageTags} />
+            <input type="hidden" name="headerImage" value={pageHeaderImage} />
             <input type="hidden" name="draft" value={pageDraft ? "on" : ""} />
           </Form>
 
@@ -313,6 +321,7 @@ export default function EditContent({
               title: loaderData.title,
               description: loaderData.description,
               tags: loaderData.tags,
+              headerImage: loaderData.headerImage,
               draft: loaderData.draft,
               slug: loaderData.slug,
               sha: loaderData.sha,

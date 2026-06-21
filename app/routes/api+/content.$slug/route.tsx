@@ -1,4 +1,5 @@
 import { getPublishedContent, getPageCompiledCss } from "~/lib/content.server";
+import { renderHeaderImage } from "~/lib/page.server";
 import { requireApiToken } from "~/lib/auth.server";
 import type { Route } from "./+types/route";
 
@@ -39,7 +40,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
 
   if (format === "html") {
     const fullHtml = isPage
-      ? `<!DOCTYPE html><html><head><script src="https://cdn.tailwindcss.com"><\/script><style>${css}</style></head><body>${content.html}</body></html>`
+      ? `<!DOCTYPE html><html><head><script src="https://cdn.tailwindcss.com"><\/script><style>${css}</style></head><body>${renderHeaderImage(content.frontmatter.headerImage)}${content.html}</body></html>`
       : content.html;
     return new Response(fullHtml, {
       headers: {
@@ -58,6 +59,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
         title: content.frontmatter.title,
         description: content.frontmatter.description,
         tags: content.frontmatter.tags,
+        headerImage: content.frontmatter.headerImage,
         publishedAt: content.frontmatter.publishedAt,
         updatedAt: content.frontmatter.updatedAt,
       },
