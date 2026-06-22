@@ -368,3 +368,33 @@ export async function getPublishedContent(
   contentCache.setFull(cacheKey, file.sha, parsed);
   return { ...parsed, slug, sha: file.sha, contentType: "markdown" };
 }
+
+/**
+ * Normalize a user-supplied URL path to a canonical form for matching:
+ * ensure a single leading slash, strip trailing slashes, lowercase.
+ * Returns null for empty/invalid input.
+ */
+export function normalizeUrlPath(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  let s = value.trim();
+  if (!s) return null;
+  s = "/" + s.replace(/^\/+/, "").replace(/\/+$/, "");
+  return s.toLowerCase();
+}
+
+/**
+ * Resolve a public URL path to its published content by matching the
+ * `path` frontmatter field. Returns null when no published page claims it.
+ */
+export async function getPublishedContentByPath(
+  path: string
+): Promise<AnyContentItem | null> {
+  const target = normalizeUrlPath(path);
+  if (!target) return null;
+
+  const items = await listPublishedContent();
+  const match = items.find((it) => normalizeUrlPath(it.meta.path) === target);
+  if (!match) return null;
+
+  return getPublishedContent(match.slug);
+}

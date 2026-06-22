@@ -39,6 +39,7 @@ export function parsePage(raw: string): ParsedPage {
       description: data.description,
       tags: data.tags,
       headerImage: data.headerImage,
+      path: data.path,
       publishedAt: data.publishedAt,
       updatedAt: data.updatedAt,
       draft: data.draft ?? false,

@@ -238,6 +238,20 @@ export default function ContentView({ loaderData }: Route.ComponentProps) {
           </code>
         </p>
       )}
+
+      {publishStatus.published && typeof content.frontmatter.path === "string" && content.frontmatter.path && (
+        <p className="mt-1 text-xs text-muted-foreground">
+          Live at:{" "}
+          <a
+            href={content.frontmatter.path}
+            target="_blank"
+            rel="noreferrer"
+            className="text-brand-600 dark:text-brand-400 hover:underline font-mono"
+          >
+            {content.frontmatter.path}
+          </a>
+        </p>
+      )}
     </div>
   );
 }

@@ -27,6 +27,7 @@ interface PageMeta {
   description: string;
   tags: string;
   headerImage: string;
+  path: string;
   draft: boolean;
   slug: string;
   sha: string;
@@ -47,7 +48,7 @@ type SidebarTab = "blocks" | "layers" | "properties" | "classes" | "page" | "ico
 export function PageEditor({ projectData, defaultBodyClasses, initialDarkMode = false, meta, onSave, saving = false }: PageEditorProps) {
   const [mounted, setMounted] = useState(false);
   const [activeTab, setActiveTab] = useState<SidebarTab>("blocks");
-  const [pageMeta, setPageMeta] = useState<PageMeta>(meta ?? { title: "", description: "", tags: "", headerImage: "", draft: false, slug: "", sha: "", publishedAt: "" });
+  const [pageMeta, setPageMeta] = useState<PageMeta>(meta ?? { title: "", description: "", tags: "", headerImage: "", path: "", draft: false, slug: "", sha: "", publishedAt: "" });
   const [externalStyles, setExternalStyles] = useState<string[]>([]);
   const [newResourceUrl, setNewResourceUrl] = useState("");
 
@@ -358,7 +359,7 @@ export function PageEditor({ projectData, defaultBodyClasses, initialDarkMode = 
         {/* Sidebar */}
         <div className="w-64 shrink-0 border-r flex flex-col bg-muted/20 overflow-hidden">
           {/* Tabs */}
-          <div className="flex overflow-x-auto border-b scrollbar-none">
+          <div className="flex overflow-x-auto border-b scrollbar-y-auto">
             {sidebarTabs.map((tab) => (
               <button
                 key={tab.id}
@@ -1141,6 +1142,18 @@ function PageSettingsPanel({
             className="h-7 text-xs"
             placeholder="or paste image URL"
           />
+        </div>
+        <div className="space-y-1">
+          <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">URL Path</Label>
+          <Input
+            value={pageMeta.path}
+            onChange={(e) => onMetaChange({ ...pageMeta, path: e.target.value })}
+            className="h-7 text-xs"
+            placeholder="/about"
+          />
+          <p className="text-[10px] text-muted-foreground">
+            Serves this page publicly at this path once published.
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <input
