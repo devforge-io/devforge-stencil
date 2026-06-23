@@ -1,7 +1,22 @@
 import { Link } from "react-router";
 import { isAuthenticated } from "~/lib/auth.server";
+import { getPublishedContentByPath } from "~/lib/content.server";
+import { renderPublicPageResponse } from "~/lib/public-page.server";
 import { Button } from "~/components/ui/button";
 import type { Route } from "./+types/route";
+
+// If a published page is assigned the root path "/", serve it here and
+// short-circuit the default home below. Guarded to document requests for "/"
+// so client-side data requests (".data") fall through untouched.
+export const middleware: Route.MiddlewareFunction[] = [
+  async ({ request }, next) => {
+    if (new URL(request.url).pathname === "/") {
+      const page = await getPublishedContentByPath("/");
+      if (page) return renderPublicPageResponse(page);
+    }
+    return next();
+  },
+];
 
 export async function loader({ request }: Route.LoaderArgs) {
   const loggedIn = await isAuthenticated(request);
