@@ -200,7 +200,7 @@ export function PageEditor({ projectData, defaultBodyClasses, initialDarkMode = 
       setSavingCss(false);
       onSave(projectJson, html, css, pageMeta);
     });
-  }, [store, state.root, externalStyles, onSave]);
+  }, [store, state.root, externalStyles, onSave, pageMeta]);
 
   // Resource management
   const addResource = useCallback((url: string) => {
