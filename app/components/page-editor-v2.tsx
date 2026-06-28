@@ -121,13 +121,16 @@ export function PageEditor({ projectData, defaultBodyClasses, initialDarkMode = 
         if (data.components) {
           // Load full HTML for each component
           Promise.all(
-            data.components.map((c: { slug: string; name: string; category: string; icon?: string }) =>
+            data.components.map((c: { slug: string; name: string; category: string; icon?: string; type?: string }) =>
               fetch(`/api/components/${c.slug}`)
                 .then((r) => r.json())
                 .then((d) => {
-                  // Inject data-pb-component attribute on root element for tracking
+                  // Conditional components already carry data-pb-conditional and
+                  // are resolved server-side; they bypass the data-pb-component
+                  // propagation/sync machinery. Static components get the
+                  // data-pb-component marker injected on their root element.
                   let html = d.component?.html ?? "";
-                  if (html) {
+                  if (html && c.type !== "conditional") {
                     html = html.replace(/^(<\w+)/, `$1 data-pb-component="${c.slug}"`);
                   }
                   return {

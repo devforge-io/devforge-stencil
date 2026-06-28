@@ -1,6 +1,13 @@
-import { Form, Link, redirect, useNavigation } from "react-router";
-import { useState, useMemo, useCallback, useReducer, useEffect } from "react";
-import { getComponent, saveComponent, deleteComponent } from "~/lib/component.server";
+import { Form, Link, redirect, useNavigate, useNavigation } from "react-router";
+import { useState, useMemo, useCallback, useReducer, useEffect, lazy, Suspense } from "react";
+import { getComponent, listComponents, saveComponent, deleteComponent } from "~/lib/component.server";
+import { emptySpec, type ConditionalSpec } from "~/lib/conditional/types";
+import {
+  specToBranches,
+  branchesToSpec,
+  type ComponentChoice,
+  type EditBranch,
+} from "~/lib/page-builder/conditional-model";
 import {
   createStore,
   Canvas,
@@ -28,13 +35,25 @@ import type { PBNode } from "~/lib/page-builder/types";
 import type { PBStore } from "~/lib/page-builder/store";
 import type { Route } from "./+types/route";
 
+// React Flow is client-only — load the flow canvas on demand so it never enters
+// the server bundle's import graph.
+const ConditionalFlowModal = lazy(() => import("~/lib/page-builder/conditional-flow"));
+
 export async function loader({ params }: Route.LoaderArgs) {
   const component = await getComponent(params.slug);
   if (!component) throw new Response("Not Found", { status: 404 });
   const { settings } = await getSettings();
   const defaultBodyClasses = [...settings.bodyClasses, ...settings.darkBodyClasses];
   const editorDarkMode = settings.editorDarkMode ?? false;
-  return { component, defaultBodyClasses, editorDarkMode };
+  // Conditional components compose other components — provide the pickable list
+  // (excluding self to avoid an obvious cycle). Static components don't need it.
+  const components: ComponentChoice[] =
+    component.type === "conditional"
+      ? (await listComponents())
+          .filter((c) => c.slug !== params.slug)
+          .map((c) => ({ slug: c.slug, name: c.name, type: c.type }))
+      : [];
+  return { component, defaultBodyClasses, editorDarkMode, components };
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
@@ -62,7 +81,101 @@ export async function action({ request, params }: Route.ActionArgs) {
 
 type SidebarTab = "blocks" | "layers" | "properties" | "body";
 
+/**
+ * A conditional component has no markup of its own — it just chooses which other
+ * component to render. So it opens straight into the flow editor rather than the
+ * visual page-builder canvas. Static components get the canvas (below).
+ */
 export default function ComponentEditorRoute({ loaderData }: Route.ComponentProps) {
+  if (loaderData.component.type === "conditional") {
+    return (
+      <ConditionalComponentEditor
+        slug={loaderData.component.slug}
+        spec={loaderData.component.spec}
+        components={loaderData.components}
+      />
+    );
+  }
+  return <StaticComponentEditor loaderData={loaderData} />;
+}
+
+function ConditionalComponentEditor({
+  slug,
+  spec,
+  components,
+}: {
+  slug: string;
+  spec: ConditionalSpec | undefined;
+  components: ComponentChoice[];
+}) {
+  const navigate = useNavigate();
+  const [mounted, setMounted] = useState(false);
+  const initialBranches = useMemo(() => specToBranches(spec ?? emptySpec()), [spec]);
+  const [branches, setBranches] = useState<EditBranch[]>(initialBranches);
+  const [fallback, setFallback] = useState<"none" | "empty">(spec?.fallback ?? "none");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => { setMounted(true); }, []);
+
+  const save = useCallback(
+    async (b: EditBranch[], fb: "none" | "empty") => {
+      setSaving(true);
+      setError(null);
+      try {
+        // Re-read for a fresh sha to avoid clobbering concurrent edits.
+        const { component: comp } = await fetch(`/api/components/${slug}`).then((r) => r.json());
+        if (!comp) throw new Error("Component not found");
+        const res = await fetch(`/api/components/${slug}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: comp.name,
+            category: comp.category,
+            icon: comp.icon,
+            description: comp.description,
+            type: "conditional",
+            spec: branchesToSpec(b, fb),
+            sha: comp.sha,
+          }),
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.error || "Save failed");
+        }
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Save failed");
+      } finally {
+        setSaving(false);
+      }
+    },
+    [slug]
+  );
+
+  if (!mounted) return null;
+
+  return (
+    <Suspense fallback={<div className="p-6 text-sm text-muted-foreground">Loading flow editor…</div>}>
+      <ConditionalFlowModal
+        slug={slug}
+        branches={branches}
+        fallback={fallback}
+        components={components}
+        dirty={false}
+        saving={saving}
+        error={error}
+        onChange={(b, fb) => {
+          setBranches(b);
+          setFallback(fb);
+        }}
+        onSave={(b, fb) => save(b, fb)}
+        onClose={() => navigate("/components")}
+      />
+    </Suspense>
+  );
+}
+
+function StaticComponentEditor({ loaderData }: { loaderData: Route.ComponentProps["loaderData"] }) {
   const { component, defaultBodyClasses, editorDarkMode } = loaderData;
   const navigation = useNavigation();
   const isSubmitting = navigation.state === "submitting";

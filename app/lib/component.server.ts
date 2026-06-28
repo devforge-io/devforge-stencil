@@ -1,5 +1,9 @@
 import { getGitHubConfig } from "./github.server";
 import { Octokit } from "octokit";
+import type { ConditionalSpec } from "./conditional/types";
+
+/** Static components are fixed markup; conditional components store a rule set. */
+export type ComponentType = "static" | "conditional";
 
 export interface ComponentMeta {
   slug: string;
@@ -7,6 +11,8 @@ export interface ComponentMeta {
   category: string;
   icon?: string;
   description?: string;
+  /** Defaults to "static" when absent (legacy components). */
+  type?: ComponentType;
 }
 
 export interface ComponentData extends ComponentMeta {
@@ -14,6 +20,8 @@ export interface ComponentData extends ComponentMeta {
   css: string;
   projectData?: string;
   pages?: string[];
+  /** Present on conditional components — the branch rule set. */
+  spec?: ConditionalSpec;
   sha: string;
 }
 
@@ -28,6 +36,20 @@ interface ComponentFile {
    * `[]` = definitively no pages reference it.
    */
   pages?: string[];
+  /** Present on conditional components — the branch rule set. */
+  spec?: ConditionalSpec;
+}
+
+/**
+ * The canonical placeholder markup for a conditional component. The page only
+ * ever stores this lightweight node; the chosen branch's real markup is resolved
+ * server-side at render time (see `conditional/resolve.server.ts`), so hidden
+ * branches never reach the client. The dashed box makes it visible/selectable in
+ * the editor — it is always replaced before serving.
+ */
+export function conditionalPlaceholderHtml(slug: string, name: string): string {
+  const safeName = name.replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return `<div data-pb-name="${safeName}" data-pb-conditional="${slug}" class="pb-conditional min-h-[40px] flex items-center justify-center gap-2 p-3 border-2 border-dashed border-indigo-400 rounded text-xs font-medium text-indigo-500"><span>&#10547; Conditional: ${safeName}</span></div>`;
 }
 
 function getOctokit(token: string) {
@@ -116,6 +138,7 @@ export async function getComponent(slug: string): Promise<ComponentData | null> 
       css: parsed.css,
       projectData: parsed.projectData,
       pages: parsed.pages,
+      spec: parsed.spec,
       sha: data.sha,
     };
   } catch {
@@ -182,13 +205,32 @@ async function writeComponentFile(
  */
 export async function saveComponent(
   slug: string,
-  data: { name: string; category: string; icon?: string; description?: string; html: string; css: string; projectData?: string },
+  data: {
+    name: string;
+    category: string;
+    icon?: string;
+    description?: string;
+    html: string;
+    css: string;
+    projectData?: string;
+    type?: ComponentType;
+    spec?: ConditionalSpec;
+  },
   sha?: string,
   options?: { excludePageSlug?: string }
 ): Promise<{ sha: string }> {
-  // Preserve the existing pages index when rewriting the file.
+  // Preserve the existing pages index (and type/spec, which callers like the
+  // visual editor don't resend) when rewriting the file.
   const existing = sha ? await readComponentFile(slug) : null;
   const existingSha = sha ?? existing?.sha;
+
+  const type: ComponentType = data.type ?? existing?.file.meta.type ?? "static";
+  const isConditional = type === "conditional";
+  const spec = data.spec ?? existing?.file.spec;
+
+  // A conditional component's body is always the canonical placeholder — its
+  // logic lives in `spec`, not in markup.
+  const html = isConditional ? conditionalPlaceholderHtml(slug, data.name) : data.html;
 
   const file: ComponentFile = {
     meta: {
@@ -197,11 +239,13 @@ export async function saveComponent(
       category: data.category,
       icon: data.icon,
       description: data.description,
+      type,
     },
-    html: data.html,
+    html,
     css: data.css,
     projectData: data.projectData,
     pages: existing?.file.pages,
+    ...(isConditional ? { spec } : {}),
   };
 
   const result = await writeComponentFile(
@@ -216,10 +260,12 @@ export async function saveComponent(
   // is a no-op.
   await deleteLegacyComponentCss(slug).catch(() => {});
 
-  // Update all pages that use this component
-  if (existingSha) {
+  // Update all pages that use this component. Conditional placeholders are
+  // fixed, so they never need propagating — only spec changes, which are read
+  // at render time.
+  if (existingSha && !isConditional) {
     try {
-      await propagateComponentUpdate(slug, data.html, options?.excludePageSlug);
+      await propagateComponentUpdate(slug, html, options?.excludePageSlug);
     } catch (err) {
       console.error(`[component] Failed to propagate update for ${slug}:`, err);
     }

@@ -1,6 +1,7 @@
-import { useState, useCallback, useEffect, useMemo, useRef } from "react";
+import { useState, useCallback, useEffect, useMemo, useRef, lazy, Suspense } from "react";
 import type { PBNode } from "./types";
 import type { PBStore } from "./store";
+import { generateId } from "./utils";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import { Button } from "~/components/ui/button";
@@ -9,6 +10,22 @@ import { Separator } from "~/components/ui/separator";
 import { ScrollArea } from "~/components/ui/scroll-area";
 import { twMerge } from "tailwind-merge";
 import { cn } from "~/lib/utils";
+import type { ConditionalSpec } from "~/lib/conditional/types";
+import {
+  SELECT_CLS,
+  emptyTarget,
+  type ComponentChoice,
+  type EditBranch,
+  type Group,
+  branchesToSpec,
+  specToBranches,
+} from "./conditional-model";
+import { ConditionGroupEditor } from "./condition-group-editor";
+import { TargetEditor } from "./target-editor";
+
+// Flow canvas is React Flow-based and client-only — load it on demand so it
+// never enters the server bundle's import graph.
+const ConditionalFlowModal = lazy(() => import("./conditional-flow"));
 
 interface PropertiesPanelProps {
   store: PBStore;
@@ -35,6 +52,7 @@ function isButtonNode(node: PBNode): boolean {
 export function PropertiesPanel({ store, node }: PropertiesPanelProps) {
   const iconLib = detectIconLibrary(node);
   const isButton = isButtonNode(node);
+  const conditionalSlug = node.attributes?.["data-pb-conditional"];
 
   return (
     <div className="space-y-3">
@@ -46,6 +64,14 @@ export function PropertiesPanel({ store, node }: PropertiesPanelProps) {
       </div>
 
       <Separator />
+
+      {/* Conditional branch editor — for conditional-component placeholders */}
+      {conditionalSlug && (
+        <>
+          <ConditionalEditor slug={conditionalSlug} />
+          <Separator />
+        </>
+      )}
 
       {/* Button style picker */}
       {isButton && (
@@ -982,6 +1008,250 @@ function StyleEditor({ store, node }: { store: PBStore; node: PBNode }) {
           </button>
         </div>
       ))}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Conditional component editor
+//
+// Edits the rule set (ConditionalSpec) of a conditional component directly via
+// the components API. The simple list editor below and the flow canvas
+// (Phase 2) read/write the exact same `EditBranch[]` model, so switching views
+// never loses data.
+// ---------------------------------------------------------------------------
+
+function ConditionalEditor({ slug }: { slug: string }) {
+  const [branches, setBranches] = useState<EditBranch[]>([]);
+  const [fallback, setFallback] = useState<"none" | "empty">("none");
+  const [components, setComponents] = useState<ComponentChoice[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [dirty, setDirty] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [showFlow, setShowFlow] = useState(false);
+
+  // Load this conditional's spec + the list of components it can compose.
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    Promise.all([
+      fetch(`/api/components/${slug}`).then((r) => r.json()),
+      fetch(`/api/components`).then((r) => r.json()),
+    ])
+      .then(([one, all]) => {
+        if (cancelled) return;
+        const spec: ConditionalSpec = one.component?.spec ?? { branches: [], fallback: "none" };
+        setBranches(specToBranches(spec));
+        setFallback(spec.fallback ?? "none");
+        // Other conditionals are allowed as targets (nested conditionals); only
+        // self is excluded to avoid an obvious cycle.
+        const choices: ComponentChoice[] = (all.components ?? []).filter(
+          (c: ComponentChoice) => c.slug !== slug
+        );
+        setComponents(choices);
+        setDirty(false);
+      })
+      .catch(() => !cancelled && setError("Failed to load"))
+      .finally(() => !cancelled && setLoading(false));
+    return () => {
+      cancelled = true;
+    };
+  }, [slug]);
+
+  const mutate = useCallback((next: EditBranch[]) => {
+    setBranches(next);
+    setDirty(true);
+  }, []);
+
+  const addBranch = useCallback(
+    (isElse: boolean) =>
+      mutate([
+        ...branches,
+        { id: generateId(), isElse, group: { mode: "all", leaves: [] }, target: emptyTarget() },
+      ]),
+    [branches, mutate]
+  );
+
+  const removeBranch = useCallback(
+    (id: string) => mutate(branches.filter((b) => b.id !== id)),
+    [branches, mutate]
+  );
+
+  const moveBranch = useCallback(
+    (index: number, dir: -1 | 1) => {
+      const next = [...branches];
+      const target = index + dir;
+      if (target < 0 || target >= next.length) return;
+      [next[index], next[target]] = [next[target], next[index]];
+      mutate(next);
+    },
+    [branches, mutate]
+  );
+
+  const patchBranch = useCallback(
+    (id: string, patch: Partial<EditBranch>) =>
+      mutate(branches.map((b) => (b.id === id ? { ...b, ...patch } : b))),
+    [branches, mutate]
+  );
+
+  const patchGroup = useCallback(
+    (id: string, group: Group) => patchBranch(id, { group }),
+    [patchBranch]
+  );
+
+  const save = useCallback(async (b: EditBranch[] = branches, fb: "none" | "empty" = fallback) => {
+    setSaving(true);
+    setError(null);
+    try {
+      // Re-read for a fresh sha to avoid clobbering concurrent edits.
+      const current = await fetch(`/api/components/${slug}`).then((r) => r.json());
+      const comp = current.component;
+      if (!comp) throw new Error("Component not found");
+      const spec = branchesToSpec(b, fb);
+      const res = await fetch(`/api/components/${slug}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: comp.name,
+          category: comp.category,
+          icon: comp.icon,
+          description: comp.description,
+          type: "conditional",
+          spec,
+          sha: comp.sha,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Save failed");
+      }
+      setDirty(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Save failed");
+    } finally {
+      setSaving(false);
+    }
+  }, [slug, branches, fallback]);
+
+  const hasElse = branches.some((b) => b.isElse);
+
+  if (loading) {
+    return <p className="text-[11px] text-muted-foreground py-2">Loading branches…</p>;
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">
+          Conditional
+        </Label>
+        {dirty && <span className="text-[9px] text-amber-500">unsaved</span>}
+      </div>
+      <p className="text-[10px] text-muted-foreground">
+        First matching branch is shown. Logic is shared by every page using this component.
+      </p>
+
+      <Button
+        size="sm"
+        variant="outline"
+        className="h-7 w-full text-[10px]"
+        onClick={() => setShowFlow(true)}
+      >
+        ⤢ Open flow editor
+      </Button>
+
+      {branches.map((branch, i) => (
+        <div key={branch.id} className="rounded-md border border-border p-2 space-y-2 bg-muted/20">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-semibold text-foreground">
+              {branch.isElse ? "Otherwise" : i === 0 ? "If" : "Else if"}
+            </span>
+            <div className="flex items-center gap-0.5">
+              <button type="button" title="Move up" disabled={i === 0}
+                onClick={() => moveBranch(i, -1)}
+                className="px-1 text-muted-foreground hover:text-foreground disabled:opacity-30">↑</button>
+              <button type="button" title="Move down" disabled={i === branches.length - 1}
+                onClick={() => moveBranch(i, 1)}
+                className="px-1 text-muted-foreground hover:text-foreground disabled:opacity-30">↓</button>
+              <button type="button" title="Remove branch"
+                onClick={() => removeBranch(branch.id)}
+                className="px-1 text-muted-foreground hover:text-destructive">×</button>
+            </div>
+          </div>
+
+          {!branch.isElse && (
+            <ConditionGroupEditor group={branch.group} onChange={(g) => patchGroup(branch.id, g)} />
+          )}
+
+          <div className="space-y-1">
+            <Label className="text-[9px] text-muted-foreground">Show</Label>
+            <TargetEditor
+              target={branch.target}
+              components={components}
+              onChange={(t) => patchBranch(branch.id, { target: t })}
+            />
+          </div>
+        </div>
+      ))}
+
+      <div className="flex gap-1">
+        <Button size="sm" variant="outline" className="h-7 flex-1 text-[10px]" onClick={() => addBranch(false)}>
+          + Condition
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-7 flex-1 text-[10px]"
+          disabled={hasElse}
+          onClick={() => addBranch(true)}
+        >
+          + Otherwise
+        </Button>
+      </div>
+
+      <div className="space-y-1">
+        <Label className="text-[9px] text-muted-foreground">If nothing matches</Label>
+        <select
+          className={SELECT_CLS}
+          value={fallback}
+          onChange={(e) => {
+            setFallback(e.target.value as "none" | "empty");
+            setDirty(true);
+          }}
+        >
+          <option value="none">Render nothing</option>
+          <option value="empty">Render an empty box</option>
+        </select>
+      </div>
+
+      {error && <p className="text-[10px] text-destructive">{error}</p>}
+
+      <Button size="sm" className="h-7 w-full text-[11px]" onClick={() => save()} disabled={saving || !dirty}>
+        {saving ? "Saving…" : dirty ? "Save branches" : "Saved"}
+      </Button>
+
+      {showFlow && (
+        <Suspense fallback={null}>
+          <ConditionalFlowModal
+            slug={slug}
+            branches={branches}
+            fallback={fallback}
+            components={components}
+            dirty={dirty}
+            saving={saving}
+            error={error}
+            onChange={(next, fb) => {
+              setBranches(next);
+              setFallback(fb);
+              setDirty(true);
+            }}
+            onSave={(b, fb) => save(b, fb)}
+            onClose={() => setShowFlow(false)}
+          />
+        </Suspense>
+      )}
     </div>
   );
 }

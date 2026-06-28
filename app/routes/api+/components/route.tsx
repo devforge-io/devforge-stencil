@@ -14,7 +14,7 @@ export async function action({ request }: Route.ActionArgs) {
   await requireAuth(request);
   const data = await request.json();
 
-  const { slug, name, category, icon, description, html, css } = data;
+  const { slug, name, category, icon, description, html, css, projectData, type, spec } = data;
 
   if (!slug || !name) {
     return Response.json({ error: "slug and name are required" }, { status: 400 });
@@ -31,6 +31,9 @@ export async function action({ request }: Route.ActionArgs) {
     description,
     html: html || "",
     css: css || "",
+    projectData,
+    type: type === "conditional" ? "conditional" : undefined,
+    spec,
   });
 
   return Response.json({ ok: true, sha: result.sha });

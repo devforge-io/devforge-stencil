@@ -19,7 +19,7 @@ const RESERVED_PREFIXES = [
  * This is a resource route (no component) — the loader returns the full HTML
  * document directly, so the page renders standalone at its custom URL.
  */
-export async function loader({ params }: Route.LoaderArgs) {
+export async function loader({ params, request }: Route.LoaderArgs) {
   const path = "/" + (params["*"] ?? "").replace(/^\/+/, "");
 
   if (RESERVED_PREFIXES.some((p) => path === p || path.startsWith(p + "/"))) {
@@ -31,5 +31,5 @@ export async function loader({ params }: Route.LoaderArgs) {
     throw new Response("Not Found", { status: 404 });
   }
 
-  return renderPublicPageResponse(content);
+  return renderPublicPageResponse(content, request);
 }

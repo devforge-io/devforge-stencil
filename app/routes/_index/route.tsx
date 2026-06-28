@@ -12,7 +12,7 @@ export const middleware: Route.MiddlewareFunction[] = [
   async ({ request }, next) => {
     if (new URL(request.url).pathname === "/") {
       const page = await getPublishedContentByPath("/");
-      if (page) return renderPublicPageResponse(page);
+      if (page) return renderPublicPageResponse(page, request);
     }
     return next();
   },

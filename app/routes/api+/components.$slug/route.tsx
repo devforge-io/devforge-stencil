@@ -28,7 +28,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 
   // PUT — update
   const data = await request.json();
-  const { name, category, icon, description, html, css, sha } = data;
+  const { name, category, icon, description, html, css, projectData, sha, type, spec } = data;
 
   if (!name) {
     return Response.json({ error: "name is required" }, { status: 400 });
@@ -41,6 +41,9 @@ export async function action({ request, params }: Route.ActionArgs) {
     description,
     html: html || "",
     css: css || "",
+    projectData,
+    type: type === "conditional" ? "conditional" : undefined,
+    spec,
   }, sha);
 
   return Response.json({ ok: true, sha: result.sha });
