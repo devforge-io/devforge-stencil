@@ -27,15 +27,22 @@ interface EditingComponent {
  *
  * Shared by the properties-panel list editor and the flow-canvas target nodes.
  * `nodrag`/`nowheel` stop React Flow hijacking interaction inside a node.
+ *
+ * When `onEdit` is supplied (the flow canvas), the "edit component" / "open
+ * designer" buttons delegate to it — the parent opens the builder *docked* in
+ * place instead of this component's own full-screen modal. Without it (the
+ * properties panel), editing uses the modal below.
  */
 export function TargetEditor({
   target,
   components,
   onChange,
+  onEdit,
 }: {
   target: TargetDraft;
   components: ComponentChoice[];
   onChange: (t: TargetDraft) => void;
+  onEdit?: (t: TargetDraft) => void;
 }) {
   const isInline = target.kind === "inline";
   const [showDesigner, setShowDesigner] = useState(false);
@@ -145,7 +152,7 @@ export function TargetEditor({
             <>
               <button
                 type="button"
-                onClick={openEditSelected}
+                onClick={() => (onEdit ? onEdit(target) : openEditSelected())}
                 disabled={loadingEdit}
                 className="w-full rounded-md border border-primary/40 bg-primary/5 px-2 py-1 text-[10px] font-medium text-primary hover:bg-primary/10 disabled:opacity-50"
               >
@@ -164,7 +171,7 @@ export function TargetEditor({
           </p>
           <button
             type="button"
-            onClick={() => setShowDesigner(true)}
+            onClick={() => (onEdit ? onEdit(target) : setShowDesigner(true))}
             className="w-full rounded-md border border-primary/40 bg-primary/5 px-2 py-1.5 text-[11px] font-medium text-primary hover:bg-primary/10"
           >
             ✏️ Open visual designer

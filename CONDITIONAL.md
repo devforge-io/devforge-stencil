@@ -197,6 +197,25 @@ Goal: the drag-drop node graph. Pure editor upgrade over the **same** `spec`.
       canvas — drop height sets precedence — and an outcome that can be **designed
       visually** in an embedded page-builder (`component-designer.tsx`), not just
       picked, with a one-click "Save as reusable component".
+- [x] **WYSIWYG outcome nodes**: each outcome node renders the *actual* chosen
+      component (its compiled HTML+CSS) in a sandboxed iframe, so the graph shows
+      what every branch produces, not just its slug (`TargetPreview` +
+      `loadComponentPreview` in `conditional-flow.tsx`). Inline targets preview
+      their own subtree; conditional targets show a "nested" badge. Because the
+      iframe is a real viewport, the preview is **interactive and resizable for
+      responsive testing** — device-width presets (Mobile / Tablet / Laptop /
+      Desktop) plus a zoom-aware drag grip (`ResizeGrip`) set the node's
+      width × height, and the component's media queries / `sm:`/`md:`/`lg:`
+      utilities reflow live at the chosen size. Selecting a
+      node (its "✏️ edit" button) hands the **whole surface to the full
+      page-builder docked in place** — blocks · canvas · properties — with the flow
+      graph hidden until "← Back to flow" (`DockedTargetEditor` reusing the
+      extracted `ComponentDesignerSurface`/`serializeStore`). For a component
+      target it loads the shared component's saved `projectData` (full fidelity)
+      and writes back on Save (re-reading a fresh sha; warns it edits everywhere);
+      for an inline target it "Apply"s the compiled markup to the branch or
+      promotes it to a reusable component. The simple list editor keeps the modal
+      designer via `TargetEditor`'s `onEdit` opt-out.
 
 ### Phase 3 — Richer signals (optional / as needed)
 
@@ -244,8 +263,10 @@ Goal: the drag-drop node graph. Pure editor upgrade over the **same** `spec`.
 
 **Phases 1, 2 & 3 complete.** Engine, server-side render pass (incl. nested
 conditionals), caching, the simple branch editor, the React Flow drag-drop flow
-canvas with live preview, the visitor auth track, richer signals
-(`auth.*`/`time.*`/`geo.*`/`ab.*`/`auth.attributes.*`), and inline branch
-targets are all implemented and unit/integration tested (`npm test`). Every
-addition layered on top of the same `ConditionalSpec` data model — the rule
-format never changed, only resolvers and editors.
+canvas with live preview, WYSIWYG outcome nodes (each renders the real component)
+with the full page-builder docked in place for editing, the visitor auth track,
+richer signals (`auth.*`/`time.*`/`geo.*`/`ab.*`/`auth.attributes.*`), and inline
+branch targets are all implemented and unit/integration tested (`npm test`) and
+build clean (`npm run build`). Every addition layered on top of the same
+`ConditionalSpec` data model — the rule format never changed, only resolvers and
+editors.
