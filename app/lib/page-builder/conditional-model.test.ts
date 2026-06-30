@@ -116,3 +116,17 @@ test("sampleToContext parses query, data JSON, roles, geo and ab", () => {
   assert.deepEqual(bad.data, {});
   assert.equal(bad.auth.username, null);
 });
+
+test("branchesToSpec includes layout when provided and omits it when empty", () => {
+  const branches: EditBranch[] = [leafBranch("a", "auth.loggedIn", true, "pro")];
+  const layout = { a: { x: 90, y: 110 }, "tgt:a": { x: 470, y: 110 }, start: { x: 90, y: 0 } };
+
+  const withLayout = branchesToSpec(branches, "none", layout);
+  assert.deepEqual(withLayout.layout, layout);
+
+  const noLayout = branchesToSpec(branches, "none");
+  assert.equal(noLayout.layout, undefined);
+
+  const emptyLayout = branchesToSpec(branches, "none", {});
+  assert.equal(emptyLayout.layout, undefined);
+});

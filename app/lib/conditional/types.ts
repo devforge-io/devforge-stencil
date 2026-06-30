@@ -45,6 +45,11 @@ export interface ConditionalSpec {
   branches: Branch[];
   /** What to render when nothing matches and there is no `else`. */
   fallback?: "none" | "empty";
+  /**
+   * Flow-editor canvas layout: node id → {x, y}. Authoring-only (the render pass
+   * ignores it) — lets the drag-drop canvas restore where you placed each node.
+   */
+  layout?: Record<string, { x: number; y: number }>;
 }
 
 /**

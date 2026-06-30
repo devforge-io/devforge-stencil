@@ -1030,6 +1030,8 @@ function ConditionalEditor({ slug }: { slug: string }) {
   const [dirty, setDirty] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showFlow, setShowFlow] = useState(false);
+  // Canvas layout from the spec — restored by the flow modal, preserved on save.
+  const [savedLayout, setSavedLayout] = useState<Record<string, { x: number; y: number }> | undefined>(undefined);
 
   // Load this conditional's spec + the list of components it can compose.
   useEffect(() => {
@@ -1045,6 +1047,7 @@ function ConditionalEditor({ slug }: { slug: string }) {
         const spec: ConditionalSpec = one.component?.spec ?? { branches: [], fallback: "none" };
         setBranches(specToBranches(spec));
         setFallback(spec.fallback ?? "none");
+        setSavedLayout(spec.layout);
         // Other conditionals are allowed as targets (nested conditionals); only
         // self is excluded to avoid an obvious cycle.
         const choices: ComponentChoice[] = (all.components ?? []).filter(
@@ -1101,7 +1104,11 @@ function ConditionalEditor({ slug }: { slug: string }) {
     [patchBranch]
   );
 
-  const save = useCallback(async (b: EditBranch[] = branches, fb: "none" | "empty" = fallback) => {
+  const save = useCallback(async (
+    b: EditBranch[] = branches,
+    fb: "none" | "empty" = fallback,
+    layout?: Record<string, { x: number; y: number }>
+  ) => {
     setSaving(true);
     setError(null);
     try {
@@ -1109,7 +1116,10 @@ function ConditionalEditor({ slug }: { slug: string }) {
       const current = await fetch(`/api/components/${slug}`).then((r) => r.json());
       const comp = current.component;
       if (!comp) throw new Error("Component not found");
-      const spec = branchesToSpec(b, fb);
+      // Preserve the saved canvas layout when this list editor saves (it has no
+      // canvas); the flow modal passes a fresh layout to override it.
+      const spec = branchesToSpec(b, fb, layout ?? comp.spec?.layout);
+      if (spec.layout) setSavedLayout(spec.layout);
       const res = await fetch(`/api/components/${slug}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -1242,12 +1252,13 @@ function ConditionalEditor({ slug }: { slug: string }) {
             dirty={dirty}
             saving={saving}
             error={error}
+            layout={savedLayout}
             onChange={(next, fb) => {
               setBranches(next);
               setFallback(fb);
               setDirty(true);
             }}
-            onSave={(b, fb) => save(b, fb)}
+            onSave={(b, fb, layout) => save(b, fb, layout)}
             onClose={() => setShowFlow(false)}
           />
         </Suspense>

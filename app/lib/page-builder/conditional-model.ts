@@ -141,11 +141,12 @@ export function specToBranches(spec: ConditionalSpec): EditBranch[] {
 
 export function branchesToSpec(
   branches: EditBranch[],
-  fallback: "none" | "empty"
+  fallback: "none" | "empty",
+  layout?: Record<string, { x: number; y: number }>
 ): ConditionalSpec {
   // The `else` branch is always evaluated last regardless of editor ordering.
   const ordered = [...branches.filter((b) => !b.isElse), ...branches.filter((b) => b.isElse)];
-  return {
+  const spec: ConditionalSpec = {
     branches: ordered.map((b) =>
       b.isElse
         ? { id: b.id, else: true, show: targetToShow(b.target) }
@@ -153,6 +154,8 @@ export function branchesToSpec(
     ),
     fallback,
   };
+  if (layout && Object.keys(layout).length > 0) spec.layout = layout;
+  return spec;
 }
 
 // --- Value coercion (string input -> typed value) --------------------------

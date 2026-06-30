@@ -52,8 +52,14 @@ export interface ConditionalFlowModalProps {
   dirty: boolean;
   saving: boolean;
   error: string | null;
+  /** Saved canvas layout (node id → {x, y}) to restore node positions. */
+  layout?: Record<string, { x: number; y: number }>;
   onChange: (branches: EditBranch[], fallback: "none" | "empty") => void;
-  onSave: (branches: EditBranch[], fallback: "none" | "empty") => void;
+  onSave: (
+    branches: EditBranch[],
+    fallback: "none" | "empty",
+    layout: Record<string, { x: number; y: number }>
+  ) => void;
   onClose: () => void;
 }
 
@@ -450,6 +456,7 @@ export default function ConditionalFlowModal({
   components,
   saving,
   error,
+  layout: initialLayout,
   onChange,
   onSave,
   onClose,
@@ -648,7 +655,9 @@ export default function ConditionalFlowModal({
         if (existing) {
           return { ...existing, type: base.type, data: base.data, ...(base.style ? { style: base.style } : {}) };
         }
-        const pos = pendingPosRef.current[base.id] ?? base.defaultPos;
+        // Position priority for a node RF hasn't seen yet: just-dropped position,
+        // then the saved layout from the spec, then the default stacked layout.
+        const pos = pendingPosRef.current[base.id] ?? initialLayout?.[base.id] ?? base.defaultPos;
         delete pendingPosRef.current[base.id];
         return {
           id: base.id,
@@ -659,7 +668,14 @@ export default function ConditionalFlowModal({
         } as Node;
       });
     });
-  }, [nodeBases, setRfNodes]);
+  }, [nodeBases, setRfNodes, initialLayout]);
+
+  // Snapshot current node positions for saving (node id → {x, y}).
+  const collectLayout = useCallback((): Record<string, { x: number; y: number }> => {
+    const out: Record<string, { x: number; y: number }> = {};
+    for (const n of rfNodes) out[n.id] = { x: Math.round(n.position.x), y: Math.round(n.position.y) };
+    return out;
+  }, [rfNodes]);
 
   // The hook seeds nodes after mount, so the initial `fitView` runs on an empty
   // graph — fit once the nodes first appear (and are measured).
@@ -751,7 +767,7 @@ export default function ConditionalFlowModal({
             + Otherwise
           </Button>
           {error && <span className="text-[11px] text-destructive">{error}</span>}
-          <Button size="sm" className="h-7 text-[11px]" disabled={saving} onClick={() => onSave(branches, fallback)}>
+          <Button size="sm" className="h-7 text-[11px]" disabled={saving} onClick={() => onSave(branches, fallback, collectLayout())}>
             {saving ? "Saving…" : "Save"}
           </Button>
           <Button size="sm" variant="ghost" className="h-7 text-[11px]" onClick={onClose}>

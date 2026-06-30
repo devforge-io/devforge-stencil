@@ -119,7 +119,7 @@ function ConditionalComponentEditor({
   useEffect(() => { setMounted(true); }, []);
 
   const save = useCallback(
-    async (b: EditBranch[], fb: "none" | "empty") => {
+    async (b: EditBranch[], fb: "none" | "empty", layout?: Record<string, { x: number; y: number }>) => {
       setSaving(true);
       setError(null);
       try {
@@ -135,7 +135,7 @@ function ConditionalComponentEditor({
             icon: comp.icon,
             description: comp.description,
             type: "conditional",
-            spec: branchesToSpec(b, fb),
+            spec: branchesToSpec(b, fb, layout),
             sha: comp.sha,
           }),
         });
@@ -164,11 +164,12 @@ function ConditionalComponentEditor({
         dirty={false}
         saving={saving}
         error={error}
+        layout={spec?.layout}
         onChange={(b, fb) => {
           setBranches(b);
           setFallback(fb);
         }}
-        onSave={(b, fb) => save(b, fb)}
+        onSave={(b, fb, layout) => save(b, fb, layout)}
         onClose={() => navigate("/components")}
       />
     </Suspense>
