@@ -70,11 +70,11 @@ interface ConditionData {
   group: Group;
   onGroupChange: (g: Group) => void;
   onRemove: () => void;
-  active: boolean;
+  selected: boolean;
 }
 interface ElseData {
   onRemove: () => void;
-  active: boolean;
+  selected: boolean;
 }
 interface TargetNodeData {
   target: TargetDraft;
@@ -82,14 +82,18 @@ interface TargetNodeData {
   onPick: (t: TargetDraft) => void;
   onEdit: () => void;
   previewRefresh: number;
-  active: boolean;
+  selected: boolean;
   width: number;
   height: number;
   onPreset: (w: number, h: number) => void;
   onResizeBy: (dx: number, dy: number) => void;
 }
 
-const RING = "ring-2 ring-green-500";
+// A green ring marks the branch you've selected (and its flow lights up green too).
+// Nothing else is highlighted on the canvas — the test-signals panel reports the
+// branch that would win as text, rather than colouring it.
+const RING_SELECTED = "ring-2 ring-green-500";
+const ringClass = (d: { selected: boolean }) => (d.selected ? RING_SELECTED : undefined);
 
 function StartNode() {
   return (
@@ -103,7 +107,7 @@ function StartNode() {
 function ConditionNode({ data }: NodeProps) {
   const d = data as unknown as ConditionData;
   return (
-    <div className={cn("w-[300px] rounded-md border bg-card text-card-foreground shadow", d.active && RING)}>
+    <div className={cn("w-[300px] rounded-md border bg-card text-card-foreground shadow", ringClass(d))}>
       <Handle type="target" position={Position.Top} id="in" />
       <div className="flex items-center justify-between border-b bg-muted/40 px-2 py-1">
         <span className="text-[10px] font-semibold">{d.label}</span>
@@ -121,7 +125,7 @@ function ConditionNode({ data }: NodeProps) {
 function ElseNode({ data }: NodeProps) {
   const d = data as unknown as ElseData;
   return (
-    <div className={cn("w-[300px] rounded-md border bg-card text-card-foreground shadow", d.active && RING)}>
+    <div className={cn("w-[300px] rounded-md border bg-card text-card-foreground shadow", ringClass(d))}>
       <Handle type="target" position={Position.Top} id="in" />
       <div className="flex items-center justify-between px-2 py-1.5">
         <span className="text-[10px] font-semibold">Otherwise (default)</span>
@@ -160,7 +164,7 @@ function TargetNode({ data }: NodeProps) {
   return (
     // Width fills the React Flow node wrapper, which carries the real width (set on
     // the node's `style` so React Flow knows the size and reflows edges).
-    <div className={cn("w-full rounded-md border bg-card text-card-foreground shadow", d.active && RING)}>
+    <div className={cn("w-full rounded-md border bg-card text-card-foreground shadow", ringClass(d))}>
       <Handle type="target" position={Position.Left} id="in" />
       <div className="flex items-center justify-between border-b bg-muted/40 px-2 py-1">
         <span className="text-[10px] font-semibold">Show</span>
@@ -509,6 +513,18 @@ export default function ConditionalFlowModal({
     [branches, sample]
   );
 
+  // Which node is selected (React Flow tracks `selected`), and the branch it
+  // belongs to — selecting either a condition node or its outcome node selects
+  // the whole branch, so the branch + its flow can be highlighted green.
+  const selectedNodeId = useMemo(() => rfNodes.find((n) => n.selected)?.id ?? null, [rfNodes]);
+  const selectedBranchId = useMemo(() => {
+    if (!selectedNodeId) return null;
+    for (const b of branches) {
+      if (b.id === selectedNodeId || `tgt:${b.id}` === selectedNodeId) return b.id;
+    }
+    return null;
+  }, [selectedNodeId, branches]);
+
   const patchGroup = useCallback(
     (id: string, group: Group) =>
       commit(branches.map((b) => (b.id === id ? { ...b, group } : b)), fallback),
@@ -599,11 +615,12 @@ export default function ConditionalFlowModal({
       { id: "start", type: "start", data: {}, defaultPos: { x: 90, y: 0 } },
     ];
     branches.forEach((b, i) => {
+      const selected = b.id === selectedBranchId;
       if (b.isElse) {
         bases.push({
           id: b.id,
           type: "else",
-          data: { onRemove: () => removeBranch(b.id), active: b.id === active } satisfies ElseData,
+          data: { onRemove: () => removeBranch(b.id), selected } satisfies ElseData,
           defaultPos: { x: 90, y: COND_Y(i) },
         });
       } else {
@@ -615,7 +632,7 @@ export default function ConditionalFlowModal({
             group: b.group,
             onGroupChange: (g: Group) => patchGroup(b.id, g),
             onRemove: () => removeBranch(b.id),
-            active: b.id === active,
+            selected,
           } satisfies ConditionData,
           defaultPos: { x: 90, y: COND_Y(i) },
         });
@@ -631,7 +648,7 @@ export default function ConditionalFlowModal({
           onPick: (t: TargetDraft) => patchTarget(b.id, t),
           onEdit: () => setEditingId(b.id),
           previewRefresh,
-          active: b.id === active,
+          selected,
           width: size.width,
           height: size.height,
           onPreset: (w: number, h: number) => setPreset(b.id, w, h),
@@ -641,7 +658,7 @@ export default function ConditionalFlowModal({
       });
     });
     return bases;
-  }, [branches, sizes, allComponents, active, previewRefresh, removeBranch, patchGroup, patchTarget, setPreset, resizeBy]);
+  }, [branches, sizes, allComponents, selectedBranchId, previewRefresh, removeBranch, patchGroup, patchTarget, setPreset, resizeBy]);
 
   // Sync the derived structure/data into React Flow's owned node state, preserving
   // the fields RF manages (position, measured size, drag/selection state) so nodes
@@ -688,12 +705,33 @@ export default function ConditionalFlowModal({
   }, [rfNodes]);
 
   const edges: Edge[] = useMemo(() => {
+    // The selected branch's two nodes — an edge touching either is part of the
+    // selected component's "flow" and gets highlighted green.
+    const hot = new Set<string>();
+    if (selectedBranchId) {
+      hot.add(selectedBranchId);
+      hot.add(`tgt:${selectedBranchId}`);
+    }
+    const isHot = (source: string, target: string) => hot.has(source) || hot.has(target);
+    const GREEN = "#22c55e";
+    const GRAY = "#9ca3af";
+
     const es: Edge[] = [];
     if (branches.length > 0) {
-      es.push({ id: "e-start", source: "start", sourceHandle: "out", target: branches[0].id, targetHandle: "in" });
+      const h = isHot("start", branches[0].id);
+      es.push({
+        id: "e-start",
+        source: "start",
+        sourceHandle: "out",
+        target: branches[0].id,
+        targetHandle: "in",
+        animated: h,
+        style: h ? { stroke: GREEN, strokeWidth: 2 } : undefined,
+      });
     }
     branches.forEach((b, i) => {
-      const isActive = b.id === active;
+      // "then" edges are always animated; the whole selected flow turns green.
+      const thenHot = isHot(b.id, `tgt:${b.id}`);
       es.push({
         id: `e-then-${b.id}`,
         source: b.id,
@@ -701,10 +739,11 @@ export default function ConditionalFlowModal({
         target: `tgt:${b.id}`,
         targetHandle: "in",
         label: "then",
-        animated: isActive,
-        style: isActive ? { stroke: "#22c55e", strokeWidth: 2 } : undefined,
+        animated: true,
+        style: { stroke: thenHot ? GREEN : GRAY, strokeWidth: thenHot ? 2 : 1.5 },
       });
       if (i < branches.length - 1) {
+        const elseHot = isHot(b.id, branches[i + 1].id);
         es.push({
           id: `e-else-${b.id}`,
           source: b.id,
@@ -712,11 +751,13 @@ export default function ConditionalFlowModal({
           target: branches[i + 1].id,
           targetHandle: "in",
           label: "else",
+          animated: elseHot,
+          style: elseHot ? { stroke: GREEN, strokeWidth: 2 } : undefined,
         });
       }
     });
     return es;
-  }, [branches, active]);
+  }, [branches, selectedBranchId]);
 
   const hasElse = branches.some((b) => b.isElse);
   const activeBranch = branches.find((b) => b.id === active) ?? null;
@@ -841,17 +882,21 @@ function PreviewPanel({
 
   return (
     <div className="space-y-3">
-      <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">Live preview</Label>
+      <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">Test signals</Label>
+      <p className="text-[10px] leading-relaxed text-muted-foreground">
+        Hypothetical values to see which branch would win — these are not your real
+        session.
+      </p>
 
-      {/* Active branch readout */}
+      {/* Winning-branch readout for the test signals below */}
       <div className="rounded-md border bg-muted/30 p-2 text-[11px]">
-        <p className="text-muted-foreground">Under this sample context:</p>
+        <p className="text-muted-foreground">With these signals, this branch wins:</p>
         {active ? (
-          <p className="font-medium text-green-600">
+          <p className="font-medium text-foreground">
             {active.isElse ? "Otherwise" : summarizeGroup(active.group)} → {summarizeTarget(active.target)}
           </p>
         ) : (
-          <p className="font-medium text-amber-600">
+          <p className="font-medium text-rose-600">
             No branch matches → {fallback === "empty" ? "empty box" : "nothing"}
           </p>
         )}
@@ -930,8 +975,9 @@ function PreviewPanel({
       </div>
 
       <p className="text-[10px] leading-relaxed text-muted-foreground">
-        Drag a condition node up or down to change which branch wins first. The green
-        highlight shows the branch active under the sample above.
+        Drag a condition node up or down to change which branch wins first. Selecting a
+        node highlights it and its flow in green; the readout above shows which branch
+        these test signals would pick.
       </p>
     </div>
   );
