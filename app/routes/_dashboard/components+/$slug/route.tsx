@@ -31,7 +31,7 @@ import { Card, CardContent } from "~/components/ui/card";
 import { cn } from "~/lib/utils";
 import { twMerge } from "tailwind-merge";
 import { getSettings } from "~/lib/settings.server";
-import type { PBNode } from "~/lib/page-builder/types";
+import type { PBNode, PBBlock } from "~/lib/page-builder/types";
 import type { PBStore } from "~/lib/page-builder/store";
 import type { Route } from "./+types/route";
 
@@ -177,7 +177,7 @@ function ConditionalComponentEditor({
 }
 
 function StaticComponentEditor({ loaderData }: { loaderData: Route.ComponentProps["loaderData"] }) {
-  const { component, defaultBodyClasses, editorDarkMode } = loaderData;
+  const { component, editorDarkMode } = loaderData;
   const navigation = useNavigation();
   const isSubmitting = navigation.state === "submitting";
   const [showDelete, setShowDelete] = useState(false);
@@ -188,11 +188,12 @@ function StaticComponentEditor({ loaderData }: { loaderData: Route.ComponentProp
   useEffect(() => { setMounted(true); }, []);
 
   const store = useMemo(() => {
-    const s = createStore(undefined, defaultBodyClasses);
+    // A component is a fragment, not a page body — don't apply the site's page
+    // body classes (min-h-screen, bg, text color, …) to its editing root.
+    const s = createStore(undefined, []);
     if (component.html && typeof window !== "undefined") {
       const root = parseHtml(component.html);
-      // Preserve default body classes on the root node
-      root.classes = defaultBodyClasses ?? ["min-h-screen", "bg-white", "dark:bg-gray-950", "text-gray-900", "dark:text-gray-100", "antialiased"];
+      root.classes = [];
       s.setRoot(root);
     }
     return s;
@@ -200,6 +201,44 @@ function StaticComponentEditor({ loaderData }: { loaderData: Route.ComponentProp
 
   const [, forceUpdate] = useReducer((x: number) => x + 1, 0);
   useEffect(() => { const unsub = store.subscribe(forceUpdate); return () => { unsub(); }; }, [store]);
+
+  // Load other components (incl. conditionals) so they're draggable into this one,
+  // matching the page editor's palette. Self is excluded to avoid nesting a
+  // component inside itself. Conditionals keep their data-pb-conditional marker;
+  // static components get data-pb-component injected on their root.
+  const [customComponents, setCustomComponents] = useState<PBBlock[]>([]);
+  useEffect(() => {
+    fetch("/api/components")
+      .then((r) => r.json())
+      .then((data) => {
+        if (!data.components) return;
+        Promise.all(
+          (data.components as { slug: string; name: string; category: string; icon?: string; type?: string }[])
+            .filter((c) => c.slug !== component.slug)
+            .map((c) =>
+              fetch(`/api/components/${c.slug}`)
+                .then((r) => r.json())
+                .then((d) => {
+                  let html: string = d.component?.html ?? "";
+                  if (html && c.type !== "conditional") {
+                    html = html.replace(/^(<\w+)/, `$1 data-pb-component="${c.slug}"`);
+                  }
+                  return {
+                    id: `custom-${c.slug}`,
+                    label: c.name,
+                    category: c.type === "conditional" ? "Conditionals" : (c.category || "Custom"),
+                    icon: c.icon || `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M9 12h6M12 9v6"/></svg>`,
+                    content: html,
+                  } as PBBlock;
+                })
+                .catch(() => null)
+            )
+        ).then((blocks) => setCustomComponents(blocks.filter(Boolean) as PBBlock[]));
+      })
+      .catch(() => {});
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const blocks = useMemo(() => [...DEFAULT_BLOCKS, ...customComponents], [customComponents]);
 
   const state = store.getState();
   const selectedNode = state.selection.nodeId ? findNode(state.root, state.selection.nodeId) : null;
@@ -330,9 +369,9 @@ function StaticComponentEditor({ loaderData }: { loaderData: Route.ComponentProp
             ))}
           </div>
           <ScrollArea className="flex-1 p-2">
-            {activeTab === "blocks" && <BlockPanel blocks={DEFAULT_BLOCKS} />}
+            {activeTab === "blocks" && <BlockPanel blocks={blocks} />}
             {activeTab === "layers" && <Layers store={store} root={state.root} selectedId={state.selection.nodeId} />}
-            {activeTab === "properties" && selectedNode && <PropertiesPanel store={store} node={selectedNode} />}
+            {activeTab === "properties" && selectedNode && <PropertiesPanel store={store} node={selectedNode} slug={component.slug} />}
             {activeTab === "properties" && !selectedNode && <p className="text-xs text-muted-foreground py-4 text-center">Select an element</p>}
             {activeTab === "body" && <BodySettingsPanel store={store} root={state.root} />}
           </ScrollArea>
