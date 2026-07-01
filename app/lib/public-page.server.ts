@@ -14,6 +14,33 @@ function escapeHtml(str: string): string {
 const PUBLIC_CACHE = "public, max-age=60, stale-while-revalidate=300";
 const PRIVATE_CACHE = "private, no-store";
 
+// Tailwind runtime for public pages. `darkMode:'media'` so the site's `dark:`
+// body classes follow the visitor's OS preference (there's no toggle publicly).
+const TAILWIND_HEAD = `<script src="https://cdn.tailwindcss.com"><\/script><script>tailwind.config={darkMode:'media'}<\/script>`;
+
+/**
+ * The page/template root element carries the site's body classes (the editor
+ * bakes them onto it). Body classes belong on `<body>`, so remove ONLY those
+ * tokens from the served root — they're applied to `<body>` instead. Any other
+ * classes on the element (e.g. a component's own `flex …`) are preserved, so this
+ * is safe even when the served root is a component rather than a page body. Also
+ * makes a Settings change take effect on reload (the body class comes from
+ * settings at render, not from the baked root).
+ */
+async function stripBodyClassesFromRoot(html: string, bodyClasses: string[]): Promise<string> {
+  if (!bodyClasses.length || !html.trim()) return html;
+  const { JSDOM } = await import("jsdom");
+  const doc = new JSDOM(`<!DOCTYPE html><body>${html}</body>`).window.document;
+  const root = doc.body.firstElementChild;
+  if (root && root.getAttribute("class")) {
+    const remove = new Set(bodyClasses);
+    const kept = Array.from(root.classList).filter((c) => !remove.has(c));
+    if (kept.length) root.setAttribute("class", kept.join(" "));
+    else root.removeAttribute("class");
+  }
+  return doc.body.innerHTML;
+}
+
 // Page chrome for the DEFAULT (no-template) article layout only — a template page
 // controls its own body/background.
 const ARTICLE_PAGE_CSS = `
@@ -84,6 +111,11 @@ export async function renderPublicPageResponse(
     : "";
   const headerImage = renderHeaderImage(content.frontmatter.headerImage);
 
+  // Site body classes, applied live at render (not baked per page).
+  const { settings } = await getSettings();
+  const bodyClassList = [...settings.bodyClasses, ...settings.darkBodyClasses];
+  const bodyClass = bodyClassList.join(" ");
+
   let head = "";
   let body: string;
   let cacheControl = PUBLIC_CACHE;
@@ -98,7 +130,7 @@ export async function renderPublicPageResponse(
     }
     if (compiled) css = compiled;
 
-    body = `${headerImage}${content.html}`;
+    body = `${headerImage}${await stripBodyClassesFromRoot(content.html, bodyClassList)}`;
 
     // Resolve any conditional-component placeholders server-side.
     if (request && body.includes("data-pb-conditional")) {
@@ -121,10 +153,9 @@ export async function renderPublicPageResponse(
       if (result.private) cacheControl = PRIVATE_CACHE;
     }
 
-    head = `<script src="https://cdn.tailwindcss.com"><\/script><style>${css}</style>`;
+    head = `${TAILWIND_HEAD}<style>${css}</style>`;
   } else if (content.contentType === "article") {
     const articleBody = `<div class="pb-article-body">${headerImage}${content.html}</div>`;
-    const { settings } = await getSettings();
     const tplSlug = typeof settings.articleTemplateSlug === "string" ? settings.articleTemplateSlug : "";
     const template = tplSlug ? await getPublishedContent(tplSlug) : null;
 
@@ -140,7 +171,7 @@ export async function renderPublicPageResponse(
         const { getGitHubConfig } = await import("./github.server");
         css = (await getPageCompiledCss(tplSlug, getGitHubConfig().branch)) || "";
       }
-      let tplBody = await fillArticleSlot(template.html as string, articleBody);
+      let tplBody = await stripBodyClassesFromRoot(await fillArticleSlot(template.html as string, articleBody), bodyClassList);
 
       // Resolve any page-builder placeholders the template contains.
       if (request && tplBody.includes("data-pb-conditional")) {
@@ -158,14 +189,16 @@ export async function renderPublicPageResponse(
         if (r.private) cacheControl = PRIVATE_CACHE;
       }
 
-      head = `<script src="https://cdn.tailwindcss.com"><\/script><style>${css}\n${ARTICLE_BODY_CSS}</style>`;
+      head = `${TAILWIND_HEAD}<style>${css}\n${ARTICLE_BODY_CSS}</style>`;
       body = tplBody;
     } else {
       // Default layout: centered ~800px column, media constrained, dark-mode aware.
-      head = `<style>${ARTICLE_PAGE_CSS}${ARTICLE_BODY_CSS}</style>`;
+      // Body classes (if any) sit on <body> and override the fallback chrome.
+      head = `${TAILWIND_HEAD}<style>${ARTICLE_PAGE_CSS}${ARTICLE_BODY_CSS}</style>`;
       body = `<article class="pb-article-body" style="max-width:800px;margin:0 auto;padding:2rem 1.25rem;">${headerImage}${content.html}</article>`;
     }
   } else {
+    head = TAILWIND_HEAD;
     body = `<article>${headerImage}${content.html}</article>`;
   }
 
@@ -178,7 +211,7 @@ export async function renderPublicPageResponse(
   ${descTag}
   ${head}
 </head>
-<body>
+<body class="${bodyClass}">
   ${body}
 </body>
 </html>`;
