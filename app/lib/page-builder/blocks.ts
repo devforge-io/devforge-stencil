@@ -86,7 +86,7 @@ export const DEFAULT_BLOCKS: PBBlock[] = [
     label: "Link",
     category: "Basic",
     icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>`,
-    content: `<a data-pb-name="Link" href="#" class="text-indigo-500 dark:text-indigo-400 hover:text-indigo-600 dark:hover:text-indigo-300 underline">Link text</a>`,
+    content: `<a data-pb-name="Link" href="#" class="text-indigo-500 dark:text-indigo-400 hover:text-indigo-600 dark:hover:text-indigo-300 underline"><span data-pb-name="Text">Link text</span></a>`,
   },
   {
     id: "image",
