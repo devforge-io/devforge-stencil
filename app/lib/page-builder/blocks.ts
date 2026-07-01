@@ -146,4 +146,43 @@ export const DEFAULT_BLOCKS: PBBlock[] = [
     icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="3" width="16" height="18" rx="2"/><line x1="4" y1="9" x2="20" y2="9"/></svg>`,
     content: `<div data-pb-name="Pricing Card" class="border border-gray-200 dark:border-gray-700 rounded-xl p-8 max-w-xs text-center bg-white dark:bg-gray-800"><h3 data-pb-name="Plan Name" class="text-lg font-semibold mb-1 dark:text-white">Pro Plan</h3><p data-pb-name="Description" class="text-gray-400 text-sm mb-4">For growing teams</p><p data-pb-name="Price" class="text-4xl font-bold mb-6 dark:text-white">$49<span class="text-base font-normal text-gray-400">/mo</span></p><ul data-pb-name="Features" class="text-sm text-gray-600 dark:text-gray-400 space-y-2 mb-8 text-left list-none p-0"><li>Unlimited projects</li><li>Priority support</li><li>Advanced analytics</li></ul><a data-pb-name="Button" href="#" class="flex items-center justify-center gap-2 w-full py-2.5 bg-indigo-500 hover:bg-indigo-600 text-white rounded-lg font-medium no-underline text-center"><span data-pb-name="Label">Get Started</span></a></div>`,
   },
+
+  // Articles — server-rendered from articles.json at page serve time. The dashed
+  // emerald preview is a design-time skeleton; the whole element is replaced when
+  // the published page is served (see app/lib/articles/resolve.server.ts).
+  {
+    id: "article-grid",
+    label: "Article Grid",
+    category: "Articles",
+    icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>`,
+    content: `<div data-pb-name="Article Grid" data-pb-articles="grid" data-pb-layout="grid" data-pb-columns="3" data-pb-count="6" data-pb-drafts="exclude" class="pb-articles grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 p-4 border-2 border-dashed border-emerald-400 rounded"><div class="overflow-hidden rounded-lg border border-gray-200 bg-white"><div class="aspect-[16/9] bg-gradient-to-br from-gray-100 to-gray-200"></div><div class="p-4"><div class="mb-2 h-3 w-14 rounded bg-emerald-100"></div><div class="mb-2 h-4 w-3/4 rounded bg-gray-200"></div><div class="h-3 w-full rounded bg-gray-100"></div></div></div><div class="overflow-hidden rounded-lg border border-gray-200 bg-white"><div class="aspect-[16/9] bg-gradient-to-br from-gray-100 to-gray-200"></div><div class="p-4"><div class="mb-2 h-3 w-14 rounded bg-emerald-100"></div><div class="mb-2 h-4 w-2/3 rounded bg-gray-200"></div><div class="h-3 w-full rounded bg-gray-100"></div></div></div><div class="overflow-hidden rounded-lg border border-gray-200 bg-white"><div class="aspect-[16/9] bg-gradient-to-br from-gray-100 to-gray-200"></div><div class="p-4"><div class="mb-2 h-3 w-14 rounded bg-emerald-100"></div><div class="mb-2 h-4 w-1/2 rounded bg-gray-200"></div><div class="h-3 w-full rounded bg-gray-100"></div></div></div><div class="col-span-full text-center text-[11px] font-medium text-emerald-600">&#8635; Article Grid — rendered from articles.json at serve time</div></div>`,
+  },
+  {
+    id: "article-card",
+    label: "Article Card",
+    category: "Articles",
+    icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="3" width="16" height="18" rx="2"/><line x1="4" y1="11" x2="20" y2="11"/><line x1="8" y1="15" x2="16" y2="15"/></svg>`,
+    content: `<div data-pb-name="Article Card" data-pb-articles="card" data-pb-drafts="exclude" data-pb-slug="" class="pb-articles max-w-sm overflow-hidden rounded-lg border-2 border-dashed border-emerald-400 bg-white p-1"><div class="aspect-[16/9] rounded bg-gradient-to-br from-gray-100 to-gray-200"></div><div class="p-4"><div class="mb-2 h-3 w-14 rounded bg-emerald-100"></div><div class="mb-2 h-4 w-3/4 rounded bg-gray-200"></div><div class="mb-3 h-3 w-full rounded bg-gray-100"></div><div class="text-[11px] font-medium text-emerald-600">&#8635; Article Card (newest, or data-pb-slug)</div></div></div>`,
+  },
+  {
+    id: "article-featured",
+    label: "Featured Article",
+    category: "Articles",
+    icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 15l5-4 4 3 4-4 5 4"/><circle cx="9" cy="9" r="1.5"/></svg>`,
+    content: `<div data-pb-name="Featured Article" data-pb-articles="featured" data-pb-drafts="exclude" data-pb-slug="" class="pb-articles relative min-h-[240px] overflow-hidden rounded-2xl border-2 border-dashed border-emerald-400 bg-gray-900 p-8 text-white flex flex-col justify-end"><div class="mb-3 h-3 w-16 rounded bg-white/20"></div><div class="mb-2 h-7 w-2/3 rounded bg-white/25"></div><div class="h-3 w-1/2 rounded bg-white/15"></div><div class="mt-4 text-[11px] font-medium text-emerald-300">&#8635; Featured / Hero lead</div></div>`,
+  },
+  {
+    id: "article-content-slot",
+    label: "Article Content",
+    category: "Articles",
+    icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="16" rx="2"/><line x1="7" y1="9" x2="17" y2="9"/><line x1="7" y1="12" x2="17" y2="12"/><line x1="7" y1="15" x2="13" y2="15"/></svg>`,
+    content: `<div data-pb-name="Article Content" data-pb-article-slot="true" class="pb-article-slot flex items-center justify-center rounded border-2 border-dashed border-emerald-400 p-10 text-center text-sm font-medium text-emerald-600">&#8681; The article's header image + body render here (this block is the slot; place it inside your template layout)</div>`,
+  },
+  {
+    id: "article-tags",
+    label: "Tag Filter",
+    category: "Articles",
+    icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V4h8l8.59 8.59a2 2 0 010 2.82z"/><circle cx="6.5" cy="7.5" r="1"/></svg>`,
+    content: `<div data-pb-name="Tag Filter" data-pb-articles="tags" data-pb-drafts="exclude" class="pb-articles flex flex-wrap gap-2 p-3 border-2 border-dashed border-emerald-400 rounded"><span class="rounded-full border border-indigo-500 px-3 py-1 text-sm text-indigo-600">All</span><span class="rounded-full border border-gray-200 px-3 py-1 text-sm text-gray-500">Tag A</span><span class="rounded-full border border-gray-200 px-3 py-1 text-sm text-gray-500">Tag B</span><span class="w-full text-[11px] font-medium text-emerald-600">&#8635; Tag Filter — links add ?tag= to this page</span></div>`,
+  },
 ];

@@ -1,6 +1,7 @@
 import { Form, useNavigation } from "react-router";
 import { useState, useCallback } from "react";
 import { getSettings, saveSettings, type StencilSettings } from "~/lib/settings.server";
+import { listContent } from "~/lib/content.server";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
@@ -12,7 +13,10 @@ import type { Route } from "./+types/route";
 
 export async function loader() {
   const { settings, sha } = await getSettings();
-  return { settings, sha };
+  const pages = (await listContent())
+    .filter((c) => c.contentType === "page")
+    .map((c) => ({ slug: c.slug, title: c.meta.title ?? c.slug }));
+  return { settings, sha, pages };
 }
 
 export async function action({ request }: Route.ActionArgs) {
@@ -20,9 +24,18 @@ export async function action({ request }: Route.ActionArgs) {
   const bodyClasses = (formData.get("bodyClasses") as string || "").split(" ").filter(Boolean);
   const darkBodyClasses = (formData.get("darkBodyClasses") as string || "").split(" ").filter(Boolean);
   const fonts = (formData.get("fonts") as string || "").split("\n").map((s) => s.trim()).filter(Boolean);
+  const articleTemplateSlug = (formData.get("articleTemplateSlug") as string || "").trim();
   const sha = (formData.get("sha") as string) || undefined;
 
-  const settings: StencilSettings = { bodyClasses, darkBodyClasses, fonts };
+  // Merge onto existing settings so other fields (e.g. editorDarkMode) survive.
+  const { settings: current } = await getSettings();
+  const settings: StencilSettings = {
+    ...current,
+    bodyClasses,
+    darkBodyClasses,
+    fonts,
+    articleTemplateSlug: articleTemplateSlug || undefined,
+  };
   await saveSettings(settings, sha);
   return { saved: true };
 }
@@ -40,13 +53,14 @@ const PRESET_DARK = [
 ];
 
 export default function SettingsPage({ loaderData, actionData }: Route.ComponentProps) {
-  const { settings: initial, sha } = loaderData;
+  const { settings: initial, sha, pages } = loaderData;
   const navigation = useNavigation();
   const isSaving = navigation.state === "submitting";
 
   const [bodyClasses, setBodyClasses] = useState<string[]>(initial.bodyClasses);
   const [darkBodyClasses, setDarkBodyClasses] = useState<string[]>(initial.darkBodyClasses);
   const [fonts, setFonts] = useState<string[]>(initial.fonts);
+  const [articleTemplateSlug, setArticleTemplateSlug] = useState<string>(initial.articleTemplateSlug ?? "");
   const [newClass, setNewClass] = useState("");
   const [newDarkClass, setNewDarkClass] = useState("");
 
@@ -77,6 +91,7 @@ export default function SettingsPage({ loaderData, actionData }: Route.Component
         <input type="hidden" name="bodyClasses" value={bodyClasses.join(" ")} />
         <input type="hidden" name="darkBodyClasses" value={darkBodyClasses.join(" ")} />
         <input type="hidden" name="fonts" value={fonts.join("\n")} />
+        <input type="hidden" name="articleTemplateSlug" value={articleTemplateSlug} />
 
         {/* Body Classes */}
         <Card>
@@ -186,6 +201,37 @@ export default function SettingsPage({ loaderData, actionData }: Route.Component
               placeholder="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
               className="w-full px-3 py-2 text-sm font-mono border border-border rounded-lg bg-background focus:outline-none focus:ring-2 focus:ring-ring resize-y"
             />
+          </CardContent>
+        </Card>
+
+        {/* Article Template */}
+        <Card>
+          <CardContent className="pt-6 space-y-4">
+            <div>
+              <Label className="text-sm font-semibold">Article Template</Label>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                A published <strong>page</strong> used as the layout for every article. Build it in the
+                page editor, drop the <strong>Article Content</strong> block where the article body should
+                appear, then publish it and select it here. Without one, articles use the default centered layout.
+              </p>
+            </div>
+            <select
+              value={articleTemplateSlug}
+              onChange={(e) => setArticleTemplateSlug(e.target.value)}
+              className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-background focus:outline-none focus:ring-2 focus:ring-ring"
+            >
+              <option value="">— Default layout (no template) —</option>
+              {pages.map((p) => (
+                <option key={p.slug} value={p.slug}>
+                  {p.title} ({p.slug})
+                </option>
+              ))}
+            </select>
+            {articleTemplateSlug && !pages.some((p) => p.slug === articleTemplateSlug) && (
+              <p className="text-xs text-amber-600">
+                Selected template “{articleTemplateSlug}” is no longer a page.
+              </p>
+            )}
           </CardContent>
         </Card>
 

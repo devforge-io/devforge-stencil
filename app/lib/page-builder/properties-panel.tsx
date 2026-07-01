@@ -53,6 +53,7 @@ export function PropertiesPanel({ store, node }: PropertiesPanelProps) {
   const iconLib = detectIconLibrary(node);
   const isButton = isButtonNode(node);
   const conditionalSlug = node.attributes?.["data-pb-conditional"];
+  const articlesVariant = node.attributes?.["data-pb-articles"];
 
   return (
     <div className="space-y-3">
@@ -69,6 +70,14 @@ export function PropertiesPanel({ store, node }: PropertiesPanelProps) {
       {conditionalSlug && (
         <>
           <ConditionalEditor slug={conditionalSlug} />
+          <Separator />
+        </>
+      )}
+
+      {/* Article block config — for article page-builder placeholders */}
+      {articlesVariant && (
+        <>
+          <ArticleBlockEditor key={node.id} store={store} node={node} />
           <Separator />
         </>
       )}
@@ -553,6 +562,133 @@ function TextEditor({ store, node }: { store: PBStore; node: PBNode }) {
         onKeyDown={(e) => e.key === "Enter" && handleBlur()}
         className="h-7 text-xs"
       />
+    </div>
+  );
+}
+
+// Config editor for article page-builder blocks — writes inline `data-*`
+// attributes that the server render pass reads. No async/sha/PUT (unlike the
+// conditional editor); the config travels with the page like any attribute.
+function ArticleBlockEditor({ store, node }: { store: PBStore; node: PBNode }) {
+  const attrs = node.attributes ?? {};
+  const variant = attrs["data-pb-articles"] ?? "grid";
+
+  const setAttr = useCallback(
+    (key: string, value: string | null) => {
+      const next = { ...node.attributes };
+      if (value === null || value === "") delete next[key];
+      else next[key] = value;
+      store.updateNode(node.id, { attributes: next });
+    },
+    [store, node.id, node.attributes]
+  );
+
+  const layout = attrs["data-pb-layout"] === "list" ? "list" : "grid";
+  const columns = attrs["data-pb-columns"] ?? "3";
+  const drafts = attrs["data-pb-drafts"] === "include" ? "include" : "exclude";
+  const label =
+    variant === "card" ? "Article Card" :
+    variant === "featured" ? "Featured Article" :
+    variant === "tags" ? "Tag Filter" : "Article Grid";
+
+  return (
+    <div className="space-y-2">
+      <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</Label>
+
+      {variant === "grid" && (
+        <>
+          <ArticleField label="Layout">
+            <ArticleSeg value={layout} options={[["grid", "Grid"], ["list", "List"]]} onChange={(v) => setAttr("data-pb-layout", v)} />
+          </ArticleField>
+          {layout === "grid" && (
+            <ArticleField label="Columns">
+              <ArticleSeg value={String(columns)} options={[["2", "2"], ["3", "3"], ["4", "4"]]} onChange={(v) => setAttr("data-pb-columns", v)} />
+            </ArticleField>
+          )}
+          <ArticleField label="Count">
+            <Input
+              type="number"
+              min={1}
+              max={50}
+              defaultValue={attrs["data-pb-count"] ?? "6"}
+              onBlur={(e) => setAttr("data-pb-count", String(Math.min(50, Math.max(1, parseInt(e.target.value, 10) || 6))))}
+              className="h-7 text-[11px]"
+            />
+          </ArticleField>
+        </>
+      )}
+
+      {(variant === "grid" || variant === "card" || variant === "featured") && (
+        <ArticleField label="Tag filter (blank = all)">
+          <Input
+            defaultValue={attrs["data-pb-tag"] ?? ""}
+            onBlur={(e) => setAttr("data-pb-tag", e.target.value.trim() || null)}
+            placeholder="e.g. news"
+            className="h-7 text-[11px]"
+          />
+        </ArticleField>
+      )}
+
+      {(variant === "card" || variant === "featured") && (
+        <ArticleField label="Article slug (blank = newest)">
+          <Input
+            defaultValue={attrs["data-pb-slug"] ?? ""}
+            onBlur={(e) => setAttr("data-pb-slug", e.target.value.trim() || null)}
+            placeholder="e.g. my-article"
+            className="h-7 text-[11px]"
+          />
+        </ArticleField>
+      )}
+
+      <ArticleField label="Source">
+        <ArticleSeg
+          value={drafts}
+          options={[["exclude", "Published"], ["include", "+ Drafts"]]}
+          onChange={(v) => setAttr("data-pb-drafts", v)}
+        />
+      </ArticleField>
+
+      <p className="text-[10px] leading-relaxed text-muted-foreground">
+        Rendered from articles.json when the page is served. A Tag Filter block's links add
+        <code className="mx-0.5">?tag=</code>to this page's URL to filter the lists on it.
+      </p>
+    </div>
+  );
+}
+
+function ArticleField({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="space-y-1">
+      <Label className="text-[9px] text-muted-foreground">{label}</Label>
+      {children}
+    </div>
+  );
+}
+
+function ArticleSeg({
+  value,
+  options,
+  onChange,
+}: {
+  value: string;
+  options: [string, string][];
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div className="flex gap-1">
+      {options.map(([val, label]) => (
+        <button
+          key={val}
+          type="button"
+          onClick={() => onChange(val)}
+          className={cn(
+            "flex-1 rounded px-1.5 py-1 text-[10px] transition-colors",
+            value === val ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:text-foreground"
+          )}
+        >
+          {label}
+        </button>
+      ))}
     </div>
   );
 }

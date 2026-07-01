@@ -11,6 +11,7 @@ const RESERVED_PREFIXES = [
   "/logout",
   "/components",
   "/settings",
+  "/articles",
   "/.well-known",
 ];
 

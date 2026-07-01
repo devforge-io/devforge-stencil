@@ -6,6 +6,8 @@ export interface StencilSettings {
   darkBodyClasses: string[];
   fonts: string[];
   editorDarkMode?: boolean;
+  /** Slug of the page used as the layout template for all article pages. */
+  articleTemplateSlug?: string;
   [key: string]: unknown;
 }
 
