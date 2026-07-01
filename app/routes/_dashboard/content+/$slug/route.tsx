@@ -15,6 +15,7 @@ import { Button } from "~/components/ui/button";
 import { Badge } from "~/components/ui/badge";
 import { Card, CardContent } from "~/components/ui/card";
 import { Separator } from "~/components/ui/separator";
+import { cn } from "~/lib/utils";
 import type { Route } from "./+types/route";
 
 export async function loader({ params }: Route.LoaderArgs) {
@@ -62,10 +63,10 @@ export default function ContentView({ loaderData }: Route.ComponentProps) {
   const { content, publishStatus, compiledCss, bodyClasses, editorDarkMode } = loaderData;
   const htmlClass = editorDarkMode ? "dark" : "";
   const headerImage = content.frontmatter.headerImage;
-  const headerImageHtml =
-    typeof headerImage === "string" && headerImage.trim()
-      ? `<img src="${headerImage.trim().replace(/"/g, "&quot;")}" alt="" style="display:block;width:100%;height:auto;object-fit:cover;">`
-      : "";
+  const headerImageUrl = typeof headerImage === "string" ? headerImage.trim() : "";
+  const headerImageHtml = headerImageUrl
+    ? `<img src="${headerImageUrl.replace(/"/g, "&quot;")}" alt="" style="display:block;width:100%;height:auto;object-fit:cover;">`
+    : "";
   const navigation = useNavigation();
   const isPublishing =
     navigation.state === "submitting" &&
@@ -216,10 +217,25 @@ export default function ContentView({ loaderData }: Route.ComponentProps) {
           </CardContent>
         </Card>
       ) : (
-        <Card className={htmlClass}>
+        <Card
+          className={`${htmlClass} ${
+            content.contentType === "article" ? "mx-auto max-w-[800px]" : ""
+          }`}
+        >
+          {/* Direct child of Card so it sits flush at the top with rounded top
+              corners (Card: has-[>img:first-child]:pt-0 + rounded-t-xl). */}
+          {headerImageUrl && (
+            <img src={headerImageUrl} alt="" className="block w-full" />
+          )}
           <CardContent className="p-8">
             <article
-              className={`prose max-w-none ${bodyClasses}`}
+              // Articles drop the body background so the content matches the card;
+              // `cn`/twMerge lets the override beat the bg in `bodyClasses`.
+              className={cn(
+                "prose max-w-none",
+                bodyClasses,
+                content.contentType === "article" && "bg-transparent dark:bg-transparent"
+              )}
               dangerouslySetInnerHTML={{ __html: content.html }}
             />
           </CardContent>

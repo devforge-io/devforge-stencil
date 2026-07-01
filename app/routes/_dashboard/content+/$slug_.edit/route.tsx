@@ -7,8 +7,10 @@ import {
   type ContentType,
 } from "~/lib/content.server";
 import { listWhiteboardsForPage } from "~/lib/whiteboard.server";
+import { upsertArticleIndex } from "~/lib/articles.server";
 import { buildPageRaw } from "~/lib/page.server";
 import { MarkdownEditor } from "~/components/markdown-editor";
+import { ImageUploadField } from "~/components/image-upload-field";
 import { WikipediaEditor } from "~/components/wikipedia-editor";
 import { PageEditor } from "~/components/page-editor-v2";
 import { getSettings } from "~/lib/settings.server";
@@ -75,6 +77,14 @@ export async function action({ request, params }: Route.ActionArgs) {
     return { error: "Title is required" };
   }
 
+  // Articles require a header image.
+  if (contentType === "article" && !headerImage) {
+    return { error: "Articles need a header image" };
+  }
+
+  const tagList = tags ? tags.split(",").map((t) => t.trim()).filter(Boolean) : [];
+  const now = new Date().toISOString();
+
   let raw: string;
 
   if (contentType === "page") {
@@ -98,14 +108,10 @@ export async function action({ request, params }: Route.ActionArgs) {
       "---",
       `title: "${title}"`,
       description ? `description: "${description}"` : null,
-      tags
-        ? `tags: [${tags
-            .split(",")
-            .map((t) => `"${t.trim()}"`)
-            .join(", ")}]`
-        : null,
+      tagList.length ? `tags: [${tagList.map((t) => `"${t}"`).join(", ")}]` : null,
+      headerImage ? `headerImage: "${headerImage}"` : null,
       publishedAt ? `publishedAt: "${publishedAt}"` : null,
-      `updatedAt: "${new Date().toISOString()}"`,
+      `updatedAt: "${now}"`,
       draft ? `draft: true` : null,
       "---",
     ]
@@ -129,6 +135,20 @@ export async function action({ request, params }: Route.ActionArgs) {
     compiledCss,
   );
 
+  // Keep the articles index in sync on edit.
+  if (contentType === "article") {
+    await upsertArticleIndex({
+      slug: params.slug,
+      title,
+      description: description || undefined,
+      tags: tagList.length ? tagList : undefined,
+      headerImage: headerImage || undefined,
+      publishedAt: publishedAt || now,
+      draft: draft || undefined,
+      updatedAt: now,
+    });
+  }
+
   if (contentType === "page") {
     const projectData = formData.get("projectData") as string;
     try {
@@ -151,6 +171,7 @@ export default function EditContent({
   const navigation = useNavigation();
   const isSubmitting = navigation.state === "submitting";
   const [body, setBody] = useState(loaderData.body);
+  const [headerImage, setHeaderImage] = useState(loaderData.headerImage);
 
   // Page editor state
   const [pageProjectData, setPageProjectData] = useState(
@@ -418,6 +439,18 @@ export default function EditContent({
               </div>
             </div>
           </div>
+
+          {loaderData.contentType === "article" ? (
+            <div>
+              <label className="block text-sm font-medium mb-1.5">
+                Header image <span className="text-red-600">*</span>
+              </label>
+              <ImageUploadField name="headerImage" value={headerImage} onChange={setHeaderImage} />
+            </div>
+          ) : (
+            // Preserve any existing header image on non-article content.
+            <input type="hidden" name="headerImage" value={headerImage} />
+          )}
 
           <div>
             <label className="block text-sm font-medium mb-1.5">

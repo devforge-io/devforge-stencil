@@ -133,9 +133,11 @@ export async function getContent(slug: string): Promise<AnyContentItem | null> {
     return { ...parsed, slug, sha: file.sha, contentType: "wikipedia" };
   }
 
+  // markdown + article share the markdown parser; report the real type so
+  // `.article` files keep their identity.
   const parsed = await parseMarkdown(file.content);
   contentCache.setFull(slug, file.sha, parsed);
-  return { ...parsed, slug, sha: file.sha, contentType: "markdown" };
+  return { ...parsed, slug, sha: file.sha, contentType: type };
 }
 
 export async function saveContent(
@@ -285,11 +287,39 @@ export async function publishContent(slug: string, type: ContentType = "markdown
     );
   }
 
+  // Maintain the live articles index on the publish branch so the public site
+  // (article blocks) reads exactly what's published. Marked not-draft — being
+  // published is the signal, regardless of the frontmatter "draft" flag.
+  if (type === "article" && content) {
+    const { upsertArticleIndex } = await import("./articles.server");
+    const fm = content.frontmatter;
+    await upsertArticleIndex(
+      {
+        slug,
+        title: fm.title,
+        description: fm.description,
+        tags: fm.tags,
+        headerImage: fm.headerImage,
+        publishedAt: fm.publishedAt,
+        draft: false,
+        updatedAt: new Date().toISOString(),
+      },
+      config.publishBranch
+    );
+  }
+
   contentCache.invalidate(slug);
 }
 
 export async function unpublishContent(slug: string, type: ContentType = "markdown"): Promise<void> {
   await unpublishFile(slug, type);
+
+  if (type === "article") {
+    const { getGitHubConfig } = await import("./github.server");
+    const { removeFromArticleIndex } = await import("./articles.server");
+    await removeFromArticleIndex(slug, getGitHubConfig().publishBranch);
+  }
+
   contentCache.invalidate(slug);
 }
 
@@ -366,7 +396,7 @@ export async function getPublishedContent(
 
   const parsed = await parseMarkdown(file.content);
   contentCache.setFull(cacheKey, file.sha, parsed);
-  return { ...parsed, slug, sha: file.sha, contentType: "markdown" };
+  return { ...parsed, slug, sha: file.sha, contentType: type };
 }
 
 /**

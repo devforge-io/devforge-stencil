@@ -58,12 +58,13 @@ function getConfig(): GitHubConfig {
   return { token, owner, repo, branch, publishBranch, contentPath, componentPath };
 }
 
-export type ContentType = "markdown" | "page" | "wikipedia";
+export type ContentType = "markdown" | "page" | "wikipedia" | "article";
 
 const CONTENT_EXTENSIONS: Record<ContentType, string> = {
   markdown: ".md",
   page: ".page",
   wikipedia: ".wikipedia",
+  article: ".article",
 };
 
 const ALL_CONTENT_EXTENSIONS = Object.values(CONTENT_EXTENSIONS);
@@ -83,6 +84,7 @@ export function isContentFile(filename: string): boolean {
 export function typeFromFilename(filename: string): ContentType {
   if (filename.endsWith(".page")) return "page";
   if (filename.endsWith(".wikipedia")) return "wikipedia";
+  if (filename.endsWith(".article")) return "article";
   return "markdown";
 }
 
@@ -279,6 +281,63 @@ export async function getCompiledCss(
   } catch {
     return null;
   }
+}
+
+// --- Articles index (articles.json) ---
+
+const ARTICLES_INDEX_FILE = "articles.json";
+
+/** Raw contents of the articles index, or null if it doesn't exist yet. */
+export async function getArticlesIndexRaw(branch?: string): Promise<string | null> {
+  const config = getConfig();
+  const octokit = getOctokit(config.token);
+  const filePath = `${config.contentPath}/${ARTICLES_INDEX_FILE}`;
+
+  try {
+    const { data } = await octokit.rest.repos.getContent({
+      owner: config.owner,
+      repo: config.repo,
+      path: filePath,
+      ref: branch ?? config.branch,
+    });
+    if (Array.isArray(data) || data.type !== "file") return null;
+    return Buffer.from(data.content, "base64").toString("utf-8");
+  } catch {
+    return null;
+  }
+}
+
+/** Write the articles index (creating or updating it in place). */
+export async function saveArticlesIndexRaw(json: string, branch?: string): Promise<void> {
+  const config = getConfig();
+  const octokit = getOctokit(config.token);
+  const filePath = `${config.contentPath}/${ARTICLES_INDEX_FILE}`;
+  const targetBranch = branch ?? config.branch;
+
+  let existingSha: string | undefined;
+  try {
+    const { data } = await octokit.rest.repos.getContent({
+      owner: config.owner,
+      repo: config.repo,
+      path: filePath,
+      ref: targetBranch,
+    });
+    if (!Array.isArray(data) && data.type === "file") {
+      existingSha = data.sha;
+    }
+  } catch {
+    // doesn't exist yet
+  }
+
+  await octokit.rest.repos.createOrUpdateFileContents({
+    owner: config.owner,
+    repo: config.repo,
+    path: filePath,
+    message: "Update articles index",
+    content: Buffer.from(json).toString("base64"),
+    branch: targetBranch,
+    ...(existingSha ? { sha: existingSha } : {}),
+  });
 }
 
 export async function deleteFile(

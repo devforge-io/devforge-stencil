@@ -1,7 +1,9 @@
 import { Form, redirect, useNavigation } from "react-router";
 import { useState } from "react";
 import { saveContent, type ContentType } from "~/lib/content.server";
+import { upsertArticleIndex } from "~/lib/articles.server";
 import { MarkdownEditor } from "~/components/markdown-editor";
+import { ImageUploadField } from "~/components/image-upload-field";
 import { WikipediaEditor } from "~/components/wikipedia-editor";
 import { buildPageRaw } from "~/lib/page.server";
 import { Button } from "~/components/ui/button";
@@ -19,7 +21,9 @@ export async function action({ request }: Route.ActionArgs) {
   const tags = (formData.get("tags") as string)?.trim();
   const contentType = (formData.get("contentType") as ContentType) ?? "markdown";
   const body = (formData.get("body") as string) ?? "";
+  const headerImage = (formData.get("headerImage") as string)?.trim();
   const draft = formData.get("draft") === "on";
+  const now = new Date().toISOString();
 
   if (!slug || !title) {
     return { error: "Slug and title are required" };
@@ -29,13 +33,20 @@ export async function action({ request }: Route.ActionArgs) {
     return { error: "Slug must be lowercase alphanumeric with hyphens" };
   }
 
+  // Articles require a header image.
+  if (contentType === "article" && !headerImage) {
+    return { error: "Articles need a header image" };
+  }
+
+  const tagList = tags ? tags.split(",").map((t) => t.trim()).filter(Boolean) : [];
+
   let raw: string;
 
   if (contentType === "page") {
     const fm: Record<string, unknown> = { title };
     if (description) fm.description = description;
-    if (tags) fm.tags = tags.split(",").map((t) => t.trim());
-    fm.publishedAt = new Date().toISOString();
+    if (tagList.length) fm.tags = tagList;
+    fm.publishedAt = now;
     if (draft) fm.draft = true;
     raw = buildPageRaw(fm, "{}", "", "");
   } else {
@@ -43,10 +54,9 @@ export async function action({ request }: Route.ActionArgs) {
       "---",
       `title: "${title}"`,
       description ? `description: "${description}"` : null,
-      tags
-        ? `tags: [${tags.split(",").map((t) => `"${t.trim()}"`).join(", ")}]`
-        : null,
-      `publishedAt: "${new Date().toISOString()}"`,
+      tagList.length ? `tags: [${tagList.map((t) => `"${t}"`).join(", ")}]` : null,
+      headerImage ? `headerImage: "${headerImage}"` : null,
+      `publishedAt: "${now}"`,
       draft ? `draft: true` : null,
       "---",
     ]
@@ -58,6 +68,20 @@ export async function action({ request }: Route.ActionArgs) {
 
   await saveContent(slug, raw, undefined, contentType);
 
+  // Articles are also tracked in articles.json for quick listing.
+  if (contentType === "article") {
+    await upsertArticleIndex({
+      slug,
+      title,
+      description: description || undefined,
+      tags: tagList.length ? tagList : undefined,
+      headerImage: headerImage || undefined,
+      publishedAt: now,
+      draft: draft || undefined,
+      updatedAt: now,
+    });
+  }
+
   return redirect(`/content/${slug}`);
 }
 
@@ -66,7 +90,8 @@ export default function NewContent({ actionData }: Route.ComponentProps) {
   const isSubmitting = navigation.state === "submitting";
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
-  const [contentType, setContentType] = useState<ContentType>("markdown");
+  const [headerImage, setHeaderImage] = useState("");
+  const [contentType, setContentType] = useState<ContentType>("article");
 
   const slugify = (text: string) =>
     text
@@ -82,7 +107,8 @@ export default function NewContent({ actionData }: Route.ComponentProps) {
         <div className="flex gap-2 mb-2">
           {(
             [
-              ["markdown", "Article (Markdown)"],
+              ["article", "Article"],
+              ["markdown", "Markdown"],
               ["page", "Page (Visual Builder)"],
               ["wikipedia", "Wiki (Wikipedia)"],
             ] as const
@@ -133,7 +159,14 @@ export default function NewContent({ actionData }: Route.ComponentProps) {
           <Input id="tags" name="tags" placeholder="docs, tutorial" />
         </div>
 
-        {contentType === "markdown" && (
+        {contentType === "article" && (
+          <div className="space-y-2">
+            <Label>Header image <span className="text-destructive">*</span></Label>
+            <ImageUploadField name="headerImage" value={headerImage} onChange={setHeaderImage} />
+          </div>
+        )}
+
+        {(contentType === "markdown" || contentType === "article") && (
           <div className="space-y-2">
             <Label>Content (Markdown)</Label>
             <MarkdownEditor value={body} onChange={setBody} name="body" />
