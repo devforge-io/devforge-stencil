@@ -396,7 +396,7 @@ export function PageEditor({ projectData, defaultBodyClasses, initialDarkMode = 
               )}
 
               {activeTab === "properties" && selectedNode && (
-                <PropertiesPanel store={store} node={selectedNode} />
+                <PropertiesPanel store={store} node={selectedNode} slug={pageMeta.slug} />
               )}
 
               {activeTab === "properties" && !selectedNode && (
@@ -1036,6 +1036,7 @@ function PageSettingsPanel({
       try {
         const formData = new FormData();
         formData.append("file", file);
+        if (pageMeta.slug) formData.append("slug", pageMeta.slug);
         const res = await fetch("/api/assets/upload", { method: "POST", body: formData });
         if (!res.ok) {
           const err = await res.json().catch(() => ({}));

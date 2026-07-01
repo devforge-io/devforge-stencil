@@ -77,9 +77,10 @@ function createTurndown() {
   return td;
 }
 
-async function uploadFile(file: File): Promise<string | null> {
+async function uploadFile(file: File, slug?: string): Promise<string | null> {
   const formData = new FormData();
   formData.append("file", file);
+  if (slug) formData.append("slug", slug);
 
   try {
     const res = await fetch("/api/assets/upload", {
@@ -108,11 +109,14 @@ export function MarkdownEditor({
   onChange,
   name,
   initialHtml,
+  slug,
 }: {
   value: string;
   onChange: (val: string) => void;
   name: string;
   initialHtml?: string;
+  /** Upload pasted/dropped images under content/assets/<slug>/. */
+  slug?: string;
 }) {
   const [tab, setTab] = useState<"write" | "raw">("write");
   const [htmlReady, setHtmlReady] = useState(!!initialHtml);
@@ -159,14 +163,14 @@ export function MarkdownEditor({
       setUploading((n) => n + imageFiles.length);
 
       for (const file of imageFiles) {
-        const url = await uploadFile(file);
+        const url = await uploadFile(file, slug);
         if (url) {
           insertImage(editorInstance, url);
         }
         setUploading((n) => n - 1);
       }
     },
-    [insertImage]
+    [insertImage, slug]
   );
 
   const editor = useEditor(

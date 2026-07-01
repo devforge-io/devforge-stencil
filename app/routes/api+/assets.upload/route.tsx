@@ -20,6 +20,15 @@ function sanitizeFilename(name: string): string {
     .replace(/^-|-$/g, "");
 }
 
+// A safe single-segment subdirectory (the article/page slug); never a path.
+function sanitizeDir(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
 export async function action({ request }: Route.ActionArgs) {
   await requireAuth(request);
 
@@ -44,18 +53,23 @@ export async function action({ request }: Route.ActionArgs) {
     );
   }
 
+  // Optional per-content subdirectory named after the article/page slug, so an
+  // item's images are grouped under content/assets/<slug>/.
+  const dir = sanitizeDir((formData.get("slug") as string) || "");
+  const key = (name: string) => (dir ? `${dir}/${name}` : name);
+
   // Keep original name, sanitize for safety
   let filename = sanitizeFilename(file.name);
 
-  // If a file with this name already exists, append a suffix
-  if (await assetExists(filename)) {
+  // If a file with this name already exists (within the subdirectory), suffix it
+  if (await assetExists(key(filename))) {
     const ext = filename.includes(".")
       ? `.${filename.split(".").pop()}`
       : "";
     const base = ext ? filename.slice(0, -ext.length) : filename;
     let counter = 1;
     let candidate = `${base}-${counter}${ext}`;
-    while (await assetExists(candidate)) {
+    while (await assetExists(key(candidate))) {
       counter++;
       candidate = `${base}-${counter}${ext}`;
     }
@@ -65,7 +79,7 @@ export async function action({ request }: Route.ActionArgs) {
   const buffer = await file.arrayBuffer();
   const base64 = Buffer.from(buffer).toString("base64");
 
-  const result = await uploadAsset(filename, base64);
+  const result = await uploadAsset(key(filename), base64);
 
   return Response.json({
     url: result.url,

@@ -30,6 +30,8 @@ const ConditionalFlowModal = lazy(() => import("./conditional-flow"));
 interface PropertiesPanelProps {
   store: PBStore;
   node: PBNode;
+  /** Content slug — image uploads are stored under content/assets/<slug>/. */
+  slug?: string;
 }
 
 type IconLibrary = "fa" | "material" | "bi" | null;
@@ -49,7 +51,7 @@ function isButtonNode(node: PBNode): boolean {
   );
 }
 
-export function PropertiesPanel({ store, node }: PropertiesPanelProps) {
+export function PropertiesPanel({ store, node, slug }: PropertiesPanelProps) {
   const iconLib = detectIconLibrary(node);
   const isButton = isButtonNode(node);
   const conditionalSlug = node.attributes?.["data-pb-conditional"];
@@ -107,7 +109,7 @@ export function PropertiesPanel({ store, node }: PropertiesPanelProps) {
       )}
 
       {/* Attributes */}
-      <AttributeEditor store={store} node={node} />
+      <AttributeEditor store={store} node={node} slug={slug} />
 
       <Separator />
 
@@ -693,7 +695,7 @@ function ArticleSeg({
   );
 }
 
-function AttributeEditor({ store, node }: { store: PBStore; node: PBNode }) {
+function AttributeEditor({ store, node, slug }: { store: PBStore; node: PBNode; slug?: string }) {
   const [newKey, setNewKey] = useState("");
   const [newVal, setNewVal] = useState("");
 
@@ -737,6 +739,7 @@ function AttributeEditor({ store, node }: { store: PBStore; node: PBNode }) {
         <ImageSourcePicker
           value={node.attributes.src ?? ""}
           onChange={(url) => handleSet("src", url)}
+          slug={slug}
         />
       )}
 
@@ -806,9 +809,10 @@ interface AssetItem {
   commitSha: string;
 }
 
-async function uploadFile(file: File): Promise<string | null> {
+async function uploadFile(file: File, slug?: string): Promise<string | null> {
   const formData = new FormData();
   formData.append("file", file);
+  if (slug) formData.append("slug", slug);
   try {
     const res = await fetch("/api/assets/upload", {
       method: "POST",
@@ -825,9 +829,11 @@ async function uploadFile(file: File): Promise<string | null> {
 function ImageSourcePicker({
   value,
   onChange,
+  slug,
 }: {
   value: string;
   onChange: (url: string) => void;
+  slug?: string;
 }) {
   const [mode, setMode] = useState<"current" | "browse" | "upload" | "url">("current");
   const [assets, setAssets] = useState<AssetItem[]>([]);
@@ -858,7 +864,7 @@ function ImageSourcePicker({
       const file = e.target.files?.[0];
       if (!file) return;
       setUploading(true);
-      const url = await uploadFile(file);
+      const url = await uploadFile(file, slug);
       if (url) {
         onChange(url);
         setMode("current");
@@ -866,7 +872,7 @@ function ImageSourcePicker({
       setUploading(false);
       e.target.value = "";
     },
-    [onChange]
+    [onChange, slug]
   );
 
   // Preview of current src

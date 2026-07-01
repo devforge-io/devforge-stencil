@@ -445,7 +445,7 @@ export default function EditContent({
               <label className="block text-sm font-medium mb-1.5">
                 Header image <span className="text-red-600">*</span>
               </label>
-              <ImageUploadField name="headerImage" value={headerImage} onChange={setHeaderImage} />
+              <ImageUploadField name="headerImage" value={headerImage} onChange={setHeaderImage} slug={loaderData.slug} />
             </div>
           ) : (
             // Preserve any existing header image on non-article content.
@@ -462,6 +462,7 @@ export default function EditContent({
                 onChange={setBody}
                 name="body"
                 initialHtml={loaderData.bodyHtml}
+                slug={loaderData.slug}
               />
             ) : (
               <MarkdownEditor
@@ -469,6 +470,7 @@ export default function EditContent({
                 onChange={setBody}
                 name="body"
                 initialHtml={loaderData.bodyHtml}
+                slug={loaderData.slug}
               />
             )}
           </div>

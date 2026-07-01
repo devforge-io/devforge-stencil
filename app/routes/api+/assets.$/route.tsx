@@ -16,17 +16,18 @@ export async function loader({ params, request }: Route.LoaderArgs) {
   const denied = requireApiToken(request);
   if (denied) return denied;
 
-  const { filename } = params;
+  // Splat: may be a flat name ("foo.png") or a subdir path ("<slug>/foo.png").
+  const key = params["*"] ?? "";
 
   const url = new URL(request.url);
   const ref = url.searchParams.get("ref") ?? url.searchParams.get("branch") ?? undefined;
 
   // Try the specified ref, or publish branch first, then fall back to draft branch
-  let asset = await getAssetContent(filename, ref);
+  let asset = await getAssetContent(key, ref);
   if (!asset && !ref) {
     try {
       const config = getGitHubConfig();
-      asset = await getAssetContent(filename, config.branch);
+      asset = await getAssetContent(key, config.branch);
     } catch {
       // config not available
     }
@@ -36,7 +37,7 @@ export async function loader({ params, request }: Route.LoaderArgs) {
     return new Response("Not found", { status: 404 });
   }
 
-  const ext = filename.split(".").pop()?.toLowerCase() ?? "";
+  const ext = key.split(".").pop()?.toLowerCase() ?? "";
   const contentType = MIME_TYPES[ext] ?? "application/octet-stream";
 
   return new Response(asset.content, {

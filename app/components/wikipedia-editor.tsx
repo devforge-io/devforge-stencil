@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 
-async function uploadFile(file: File): Promise<string | null> {
+async function uploadFile(file: File, slug?: string): Promise<string | null> {
   const formData = new FormData();
   formData.append("file", file);
+  if (slug) formData.append("slug", slug);
   try {
     const res = await fetch("/api/assets/upload", { method: "POST", body: formData });
     if (!res.ok) return null;
@@ -146,11 +147,14 @@ export function WikipediaEditor({
   onChange,
   name,
   initialHtml,
+  slug,
 }: {
   value: string;
   onChange: (val: string) => void;
   name: string;
   initialHtml?: string;
+  /** Upload pasted/dropped images under content/assets/<slug>/. */
+  slug?: string;
 }) {
   const [tab, setTab] = useState<"write" | "raw">("write");
   const [previewHtml, setPreviewHtml] = useState(initialHtml ?? "");
@@ -448,7 +452,7 @@ export function WikipediaEditor({
       if (imageFiles.length === 0) return;
       setUploading(true);
       for (const file of imageFiles) {
-        const url = await uploadFile(file);
+        const url = await uploadFile(file, slug);
         if (url) {
           const fname = file.name.replace(/[^a-zA-Z0-9._-]/g, "-");
           handleSourceChange(value + `\n\n[[File:${fname}|thumb|${fname}]]`);
@@ -456,7 +460,7 @@ export function WikipediaEditor({
       }
       setUploading(false);
     },
-    [value, handleSourceChange]
+    [value, handleSourceChange, slug]
   );
 
   const insertSourceSnippet = useCallback(

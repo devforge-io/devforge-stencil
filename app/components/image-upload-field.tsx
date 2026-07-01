@@ -12,11 +12,14 @@ export function ImageUploadField({
   value,
   onChange,
   accept = "image/*",
+  slug,
 }: {
   name: string;
   value: string;
   onChange: (url: string) => void;
   accept?: string;
+  /** Store the upload under content/assets/<slug>/ when provided. */
+  slug?: string;
 }) {
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -28,6 +31,7 @@ export function ImageUploadField({
     try {
       const formData = new FormData();
       formData.append("file", file);
+      if (slug) formData.append("slug", slug);
       const res = await fetch("/api/assets/upload", { method: "POST", body: formData });
       if (!res.ok) {
         const e = await res.json().catch(() => ({}));

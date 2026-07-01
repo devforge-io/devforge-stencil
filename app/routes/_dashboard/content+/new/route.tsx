@@ -92,12 +92,18 @@ export default function NewContent({ actionData }: Route.ComponentProps) {
   const [body, setBody] = useState("");
   const [headerImage, setHeaderImage] = useState("");
   const [contentType, setContentType] = useState<ContentType>("article");
+  const [slug, setSlug] = useState("");
+  const [slugTouched, setSlugTouched] = useState(false);
 
   const slugify = (text: string) =>
     text
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/^-|-$/g, "");
+
+  // Auto-derive the slug from the title until the user edits it. Images uploaded
+  // before save are stored under content/assets/<this slug>/.
+  const effectiveSlug = slugTouched ? slug : slugify(title);
 
   return (
     <div>
@@ -143,8 +149,11 @@ export default function NewContent({ actionData }: Route.ComponentProps) {
               id="slug"
               name="slug"
               required
-              defaultValue={slugify(title)}
-              key={title}
+              value={effectiveSlug}
+              onChange={(e) => {
+                setSlug(e.target.value);
+                setSlugTouched(true);
+              }}
             />
           </div>
         </div>
@@ -162,21 +171,21 @@ export default function NewContent({ actionData }: Route.ComponentProps) {
         {contentType === "article" && (
           <div className="space-y-2">
             <Label>Header image <span className="text-destructive">*</span></Label>
-            <ImageUploadField name="headerImage" value={headerImage} onChange={setHeaderImage} />
+            <ImageUploadField name="headerImage" value={headerImage} onChange={setHeaderImage} slug={effectiveSlug} />
           </div>
         )}
 
         {(contentType === "markdown" || contentType === "article") && (
           <div className="space-y-2">
             <Label>Content (Markdown)</Label>
-            <MarkdownEditor value={body} onChange={setBody} name="body" />
+            <MarkdownEditor value={body} onChange={setBody} name="body" slug={effectiveSlug} />
           </div>
         )}
 
         {contentType === "wikipedia" && (
           <div className="space-y-2">
             <Label>Content (Wikitext)</Label>
-            <WikipediaEditor value={body} onChange={setBody} name="body" />
+            <WikipediaEditor value={body} onChange={setBody} name="body" slug={effectiveSlug} />
           </div>
         )}
 
