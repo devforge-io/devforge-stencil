@@ -1018,6 +1018,41 @@ export async function validateToken(token: string): Promise<string | null> {
   }
 }
 
+/** The authenticated GitHub user for an OAuth access token (login + avatar). */
+export async function getGitHubUserFromToken(
+  accessToken: string
+): Promise<{ login: string; avatarUrl: string } | null> {
+  try {
+    const octokit = getOctokit(accessToken);
+    const { data } = await octokit.rest.users.getAuthenticated();
+    return { login: data.login, avatarUrl: data.avatar_url };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The user's granular role on GITHUB_OWNER/GITHUB_REPO — "admin" | "maintain" |
+ * "write" | "triage" | "read" — or null if they have no access / aren't a
+ * collaborator. Queried with the app token (GITHUB_TOKEN), which has repo access,
+ * so the OAuth token itself needs no repo scope.
+ */
+export async function getUserRepoPermission(username: string): Promise<string | null> {
+  const config = getConfig();
+  const octokit = getOctokit(config.token);
+  try {
+    const { data } = await octokit.rest.repos.getCollaboratorPermissionLevel({
+      owner: config.owner,
+      repo: config.repo,
+      username,
+    });
+    // role_name is the granular role; `permission` collapses maintain→write.
+    return (data as { role_name?: string }).role_name ?? data.permission ?? null;
+  } catch {
+    return null;
+  }
+}
+
 function isNotFoundError(error: unknown): boolean {
   return (
     typeof error === "object" &&

@@ -10,6 +10,7 @@ import {
   removeContent,
 } from "~/lib/content.server";
 import { getSettings } from "~/lib/settings.server";
+import { requireAuth, requireRole, can } from "~/lib/auth.server";
 import { removePageFromAllComponentIndices } from "~/lib/component.server";
 import { Button } from "~/components/ui/button";
 import { Badge } from "~/components/ui/badge";
@@ -18,7 +19,8 @@ import { Separator } from "~/components/ui/separator";
 import { cn } from "~/lib/utils";
 import type { Route } from "./+types/route";
 
-export async function loader({ params }: Route.LoaderArgs) {
+export async function loader({ request, params }: Route.LoaderArgs) {
+  const { role } = await requireAuth(request);
   const content = await getContent(params.slug);
   if (!content) {
     throw new Response("Not Found", { status: 404 });
@@ -41,10 +43,12 @@ export async function loader({ params }: Route.LoaderArgs) {
   const bodyClasses = [...settings.bodyClasses, ...settings.darkBodyClasses].join(" ");
   const editorDarkMode = settings.editorDarkMode ?? false;
 
-  return { content, publishStatus, compiledCss, bodyClasses, editorDarkMode, dates };
+  return { content, publishStatus, compiledCss, bodyClasses, editorDarkMode, dates, canManage: can.publish(role) };
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
+  // Publish/unpublish/delete are moderator+; editors can only edit content.
+  await requireRole(request, "moderator");
   const formData = await request.formData();
   const intent = formData.get("intent");
   const contentType = (formData.get("contentType") as "markdown" | "page" | "wikipedia") ?? "markdown";
@@ -66,7 +70,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 }
 
 export default function ContentView({ loaderData }: Route.ComponentProps) {
-  const { content, publishStatus, compiledCss, bodyClasses, editorDarkMode, dates } = loaderData;
+  const { content, publishStatus, compiledCss, bodyClasses, editorDarkMode, dates, canManage } = loaderData;
   const htmlClass = editorDarkMode ? "dark" : "";
   const headerImage = content.frontmatter.headerImage;
   const headerImageUrl = typeof headerImage === "string" ? headerImage.trim() : "";
@@ -115,45 +119,49 @@ export default function ContentView({ loaderData }: Route.ComponentProps) {
           </code>
         </div>
         <div className="flex gap-2">
-          <Form method="post">
-            <input type="hidden" name="contentType" value={content.contentType} />
-            {publishStatus.published && publishStatus.upToDate ? (
-              <Button
-                type="submit"
-                name="intent"
-                value="unpublish"
-                variant="destructive"
-                size="sm"
-                disabled={isUnpublishing}
-              >
-                {isUnpublishing ? "Unpublishing..." : "Unpublish"}
-              </Button>
-            ) : (
-              <Button
-                type="submit"
-                name="intent"
-                value="publish"
-                size="sm"
-                className="bg-green-600 hover:bg-green-700 text-white"
-                disabled={isPublishing}
-              >
-                {isPublishing
-                  ? "Publishing..."
-                  : publishStatus.published
-                    ? "Publish Changes"
-                    : "Publish"}
-              </Button>
-            )}
-          </Form>
+          {canManage && (
+            <Form method="post">
+              <input type="hidden" name="contentType" value={content.contentType} />
+              {publishStatus.published && publishStatus.upToDate ? (
+                <Button
+                  type="submit"
+                  name="intent"
+                  value="unpublish"
+                  variant="destructive"
+                  size="sm"
+                  disabled={isUnpublishing}
+                >
+                  {isUnpublishing ? "Unpublishing..." : "Unpublish"}
+                </Button>
+              ) : (
+                <Button
+                  type="submit"
+                  name="intent"
+                  value="publish"
+                  size="sm"
+                  className="bg-green-600 hover:bg-green-700 text-white"
+                  disabled={isPublishing}
+                >
+                  {isPublishing
+                    ? "Publishing..."
+                    : publishStatus.published
+                      ? "Publish Changes"
+                      : "Publish"}
+                </Button>
+              )}
+            </Form>
+          )}
           <Button variant="outline" size="sm" render={<Link to={`/content/${content.slug}/history`} />}>
             History
           </Button>
           <Button size="sm" render={<Link to={`/content/${content.slug}/edit`} />}>
             Edit
           </Button>
-          <Button variant="destructive" size="sm" onClick={() => setShowDeleteConfirm(true)}>
-            Delete
-          </Button>
+          {canManage && (
+            <Button variant="destructive" size="sm" onClick={() => setShowDeleteConfirm(true)}>
+              Delete
+            </Button>
+          )}
         </div>
       </div>
 

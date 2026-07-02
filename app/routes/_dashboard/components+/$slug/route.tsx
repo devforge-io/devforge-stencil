@@ -1,6 +1,7 @@
 import { Form, Link, redirect, useNavigate, useNavigation } from "react-router";
 import { useState, useMemo, useCallback, useReducer, useEffect, lazy, Suspense } from "react";
 import { getComponent, listComponents, saveComponent, deleteComponent } from "~/lib/component.server";
+import { requireAuth, requireRole, can } from "~/lib/auth.server";
 import { emptySpec, type ConditionalSpec } from "~/lib/conditional/types";
 import {
   specToBranches,
@@ -39,7 +40,8 @@ import type { Route } from "./+types/route";
 // the server bundle's import graph.
 const ConditionalFlowModal = lazy(() => import("~/lib/page-builder/conditional-flow"));
 
-export async function loader({ params }: Route.LoaderArgs) {
+export async function loader({ request, params }: Route.LoaderArgs) {
+  const { role } = await requireAuth(request);
   const component = await getComponent(params.slug);
   if (!component) throw new Response("Not Found", { status: 404 });
   const { settings } = await getSettings();
@@ -53,7 +55,7 @@ export async function loader({ params }: Route.LoaderArgs) {
           .filter((c) => c.slug !== params.slug)
           .map((c) => ({ slug: c.slug, name: c.name, type: c.type }))
       : [];
-  return { component, defaultBodyClasses, editorDarkMode, components };
+  return { component, defaultBodyClasses, editorDarkMode, components, canManage: can.remove(role) };
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
@@ -61,11 +63,14 @@ export async function action({ request, params }: Route.ActionArgs) {
   const intent = formData.get("intent");
 
   if (intent === "delete") {
+    await requireRole(request, "moderator"); // deleting is moderator+
     const sha = formData.get("sha") as string;
     await deleteComponent(params.slug, sha);
     return redirect("/components");
   }
 
+  // Saving/editing is editor+.
+  await requireAuth(request);
   const name = (formData.get("name") as string)?.trim();
   const category = (formData.get("category") as string)?.trim() || "Custom";
   const description = (formData.get("description") as string)?.trim();
@@ -177,7 +182,7 @@ function ConditionalComponentEditor({
 }
 
 function StaticComponentEditor({ loaderData }: { loaderData: Route.ComponentProps["loaderData"] }) {
-  const { component, editorDarkMode } = loaderData;
+  const { component, editorDarkMode, canManage } = loaderData;
   const navigation = useNavigation();
   const isSubmitting = navigation.state === "submitting";
   const [showDelete, setShowDelete] = useState(false);
@@ -341,7 +346,9 @@ function StaticComponentEditor({ loaderData }: { loaderData: Route.ComponentProp
               <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
             )}
           </button>
-          <Button variant="destructive" size="sm" onClick={() => setShowDelete(true)}>Delete</Button>
+          {canManage && (
+            <Button variant="destructive" size="sm" onClick={() => setShowDelete(true)}>Delete</Button>
+          )}
           <Button size="sm" onClick={handleSave} disabled={isSubmitting || compilingCss}>{compilingCss ? "Compiling CSS..." : isSubmitting ? "Saving..." : "Save"}</Button>
         </div>
       </div>

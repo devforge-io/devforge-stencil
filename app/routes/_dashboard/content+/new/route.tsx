@@ -1,6 +1,7 @@
 import { Form, redirect, useNavigation } from "react-router";
 import { useState } from "react";
 import { saveContent, type ContentType } from "~/lib/content.server";
+import { requireAuth } from "~/lib/auth.server";
 import { upsertArticleIndex } from "~/lib/articles.server";
 import { MarkdownEditor } from "~/components/markdown-editor";
 import { ImageUploadField } from "~/components/image-upload-field";
@@ -14,6 +15,7 @@ import { Checkbox } from "~/components/ui/checkbox";
 import type { Route } from "./+types/route";
 
 export async function action({ request }: Route.ActionArgs) {
+  await requireAuth(request); // any signed-in role (editor+) may create content
   const formData = await request.formData();
   const slug = (formData.get("slug") as string)?.trim();
   const title = (formData.get("title") as string)?.trim();

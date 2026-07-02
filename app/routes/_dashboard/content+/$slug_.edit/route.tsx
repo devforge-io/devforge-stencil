@@ -7,6 +7,7 @@ import {
   type ContentType,
 } from "~/lib/content.server";
 import { listWhiteboardsForPage } from "~/lib/whiteboard.server";
+import { requireAuth } from "~/lib/auth.server";
 import { upsertArticleIndex } from "~/lib/articles.server";
 import { buildPageRaw } from "~/lib/page.server";
 import { MarkdownEditor } from "~/components/markdown-editor";
@@ -61,6 +62,7 @@ export async function loader({ params }: Route.LoaderArgs) {
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
+  await requireAuth(request); // any signed-in role (editor+) may edit content
   const formData = await request.formData();
   const sha = formData.get("sha") as string;
   const contentType =

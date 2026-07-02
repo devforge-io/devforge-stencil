@@ -2,6 +2,7 @@ import { Form, useNavigation } from "react-router";
 import { useState, useCallback } from "react";
 import { getSettings, saveSettings, type StencilSettings } from "~/lib/settings.server";
 import { listContent } from "~/lib/content.server";
+import { requireRole } from "~/lib/auth.server";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
@@ -11,7 +12,8 @@ import { Separator } from "~/components/ui/separator";
 import { cn } from "~/lib/utils";
 import type { Route } from "./+types/route";
 
-export async function loader() {
+export async function loader({ request }: Route.LoaderArgs) {
+  await requireRole(request, "admin");
   const { settings, sha } = await getSettings();
   const pages = (await listContent())
     .filter((c) => c.contentType === "page")
@@ -20,6 +22,7 @@ export async function loader() {
 }
 
 export async function action({ request }: Route.ActionArgs) {
+  await requireRole(request, "admin");
   const formData = await request.formData();
   const bodyClasses = (formData.get("bodyClasses") as string || "").split(" ").filter(Boolean);
   const darkBodyClasses = (formData.get("darkBodyClasses") as string || "").split(" ").filter(Boolean);

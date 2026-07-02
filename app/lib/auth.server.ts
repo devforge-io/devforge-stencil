@@ -30,20 +30,77 @@ export async function destroySession(
   return sessionStorage.destroySession(session);
 }
 
-export async function requireAuth(request: Request) {
+// --- Roles -------------------------------------------------------------------
+// Derived from the signed-in user's permission on GITHUB_OWNER/GITHUB_REPO.
+
+export type Role = "admin" | "moderator" | "editor";
+
+const ROLE_RANK: Record<Role, number> = { editor: 1, moderator: 2, admin: 3 };
+
+export interface AuthUser {
+  username: string;
+  role: Role;
+  avatarUrl?: string;
+}
+
+/**
+ * Map a GitHub repo role (`role_name`, or the coarser `permission`) to a CMS
+ * role. Anything below write access → null (no CMS access).
+ */
+export function roleFromGitHubPermission(permission: string | null | undefined): Role | null {
+  switch (permission) {
+    case "admin":
+      return "admin";
+    case "maintain":
+      return "moderator";
+    case "write":
+    case "push":
+      return "editor";
+    default:
+      return null; // triage, read, none
+  }
+}
+
+export function hasAtLeast(role: Role, min: Role): boolean {
+  return ROLE_RANK[role] >= ROLE_RANK[min];
+}
+
+/** Capability matrix (admin ⊃ moderator ⊃ editor). */
+export const can = {
+  edit: (role: Role) => hasAtLeast(role, "editor"),
+  publish: (role: Role) => hasAtLeast(role, "moderator"),
+  remove: (role: Role) => hasAtLeast(role, "moderator"),
+  manageSettings: (role: Role) => hasAtLeast(role, "admin"),
+  manageVisitors: (role: Role) => hasAtLeast(role, "admin"),
+};
+
+export async function getAuthUser(request: Request): Promise<AuthUser | null> {
   const session = await getSession(request);
   const username = session.get("username");
+  const role = session.get("role") as Role | undefined;
+  if (!username || !role) return null;
+  return { username, role, avatarUrl: session.get("avatarUrl") as string | undefined };
+}
 
-  if (!username) {
+export async function requireAuth(request: Request): Promise<AuthUser> {
+  const user = await getAuthUser(request);
+  if (!user) {
     throw redirect("/login");
   }
+  return user;
+}
 
-  return { username: username as string };
+/** Require a minimum role; a signed-in user below it gets a 403. */
+export async function requireRole(request: Request, min: Role): Promise<AuthUser> {
+  const user = await requireAuth(request);
+  if (!hasAtLeast(user.role, min)) {
+    throw new Response(`Forbidden — this action requires the ${min} role.`, { status: 403 });
+  }
+  return user;
 }
 
 export async function isAuthenticated(request: Request): Promise<boolean> {
-  const session = await getSession(request);
-  return !!session.get("username");
+  return !!(await getAuthUser(request));
 }
 
 /**
