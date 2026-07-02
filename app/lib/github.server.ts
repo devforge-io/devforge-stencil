@@ -624,6 +624,54 @@ export async function getFileHistory(
   }));
 }
 
+/** The last page number from a GitHub pagination `Link` header (rel="last"). */
+function lastPageFromLink(link: string | undefined): number | null {
+  const m = link?.match(/[?&]page=(\d+)[^>]*>;\s*rel="last"/);
+  return m ? parseInt(m[1], 10) : null;
+}
+
+/**
+ * Created/updated timestamps for a content file, taken from its git history:
+ * `createdAt` = the file's first (initial) commit, `updatedAt` = its latest.
+ * Uses per_page=1 + the Link header to jump straight to the oldest commit, so
+ * it's two API calls regardless of history length. Both null if no history.
+ */
+export async function getContentDates(
+  slug: string,
+  branch?: string,
+  type: ContentType = "markdown"
+): Promise<{ createdAt: string | null; updatedAt: string | null }> {
+  const config = getConfig();
+  const octokit = getOctokit(config.token);
+  const filePath = contentFilePath(config.contentPath, slug, type);
+  const sha = branch ?? config.branch;
+
+  const latest = await octokit.rest.repos.listCommits({
+    owner: config.owner,
+    repo: config.repo,
+    path: filePath,
+    sha,
+    per_page: 1,
+    page: 1,
+  });
+  const updatedAt = latest.data[0]?.commit.author?.date ?? null;
+  if (!updatedAt) return { createdAt: null, updatedAt: null };
+
+  // With per_page=1, the last page holds the single oldest (initial) commit.
+  const lastPage = lastPageFromLink(latest.headers.link);
+  if (!lastPage || lastPage <= 1) return { createdAt: updatedAt, updatedAt };
+
+  const oldest = await octokit.rest.repos.listCommits({
+    owner: config.owner,
+    repo: config.repo,
+    path: filePath,
+    sha,
+    per_page: 1,
+    page: lastPage,
+  });
+  return { createdAt: oldest.data[0]?.commit.author?.date ?? updatedAt, updatedAt };
+}
+
 // --- Whiteboard operations ---
 // Whiteboards are scoped to content pages.
 // Path: {contentPath}/whiteboards/{pageSlug}/{wbSlug}.excalidraw

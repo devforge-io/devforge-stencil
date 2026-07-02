@@ -25,9 +25,15 @@ export async function loader({ params }: Route.LoaderArgs) {
   }
   const publishStatus = await getContentPublishStatus(params.slug, content.contentType);
 
+  const { getContentDates, getGitHubConfig } = await import("~/lib/github.server");
+  // Created = initial commit, Updated = latest commit — from the draft branch's
+  // history (the authoring timeline), not the frontmatter (which can drift).
+  const dates = await getContentDates(params.slug, undefined, content.contentType).catch(
+    () => ({ createdAt: null, updatedAt: null })
+  );
+
   let compiledCss: string | null = null;
   if (content.contentType === "page") {
-    const { getGitHubConfig } = await import("~/lib/github.server");
     compiledCss = await getPageCompiledCss(params.slug, getGitHubConfig().branch);
   }
 
@@ -35,7 +41,7 @@ export async function loader({ params }: Route.LoaderArgs) {
   const bodyClasses = [...settings.bodyClasses, ...settings.darkBodyClasses].join(" ");
   const editorDarkMode = settings.editorDarkMode ?? false;
 
-  return { content, publishStatus, compiledCss, bodyClasses, editorDarkMode };
+  return { content, publishStatus, compiledCss, bodyClasses, editorDarkMode, dates };
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
@@ -60,7 +66,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 }
 
 export default function ContentView({ loaderData }: Route.ComponentProps) {
-  const { content, publishStatus, compiledCss, bodyClasses, editorDarkMode } = loaderData;
+  const { content, publishStatus, compiledCss, bodyClasses, editorDarkMode, dates } = loaderData;
   const htmlClass = editorDarkMode ? "dark" : "";
   const headerImage = content.frontmatter.headerImage;
   const headerImageUrl = typeof headerImage === "string" ? headerImage.trim() : "";
@@ -192,9 +198,14 @@ export default function ContentView({ loaderData }: Route.ComponentProps) {
             {tag}
           </Badge>
         ))}
-        {content.frontmatter.publishedAt && (
+        {dates.createdAt && (
           <span className="text-xs text-muted-foreground flex items-center">
-            Created {formatDate(content.frontmatter.publishedAt)}
+            Created {formatDate(dates.createdAt)}
+          </span>
+        )}
+        {dates.updatedAt && dates.updatedAt !== dates.createdAt && (
+          <span className="text-xs text-muted-foreground flex items-center">
+            Updated {formatDate(dates.updatedAt)}
           </span>
         )}
       </div>
