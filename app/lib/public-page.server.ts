@@ -10,6 +10,25 @@ function escapeHtml(str: string): string {
     .replace(/"/g, "&quot;");
 }
 
+function formatArticleDate(iso: string): string {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  return new Intl.DateTimeFormat("en-US", { year: "numeric", month: "short", day: "numeric" }).format(d);
+}
+
+/** "Created … · Updated …" byline for a public article (Updated shown only when it differs). */
+function renderArticleDates(createdAt: string | null, updatedAt: string | null): string {
+  if (!createdAt) return "";
+  const created = formatArticleDate(createdAt);
+  if (!created) return "";
+  const parts = [`Created <time datetime="${escapeHtml(createdAt)}">${escapeHtml(created)}</time>`];
+  if (updatedAt && updatedAt !== createdAt) {
+    const updated = formatArticleDate(updatedAt);
+    if (updated) parts.push(`Updated <time datetime="${escapeHtml(updatedAt)}">${escapeHtml(updated)}</time>`);
+  }
+  return `<p class="pb-article-meta">${parts.join(" &middot; ")}</p>`;
+}
+
 // Cacheable by default; conditional pages opt out (see below).
 const PUBLIC_CACHE = "public, max-age=60, stale-while-revalidate=300";
 const PRIVATE_CACHE = "private, no-store";
@@ -54,7 +73,8 @@ body { margin: 0; background: #ffffff; color: #1a1a1a; font-family: system-ui, -
 // inside a template's slot. Constrains media to the column; OS dark-mode aware.
 const ARTICLE_BODY_CSS = `
 .pb-article-body img, .pb-article-body video, .pb-article-body iframe { max-width: 100%; height: auto; }
-.pb-article-body img[data-pb-header-image] { margin-bottom: 2rem; border-radius: 8px; }
+.pb-article-body img[data-pb-header-image] { margin-bottom: 1rem; border-radius: 8px; }
+.pb-article-body .pb-article-meta { margin: 0 0 2rem; font-size: 0.875rem; color: #71717a; }
 .pb-article-body figure { margin: 1.5rem 0; }
 .pb-article-body figure img { border-radius: 8px; }
 .pb-article-body h1, .pb-article-body h2, .pb-article-body h3, .pb-article-body h4 { line-height: 1.25; margin: 1.75rem 0 0.75rem; }
@@ -68,6 +88,7 @@ const ARTICLE_BODY_CSS = `
 .pb-article-body th, .pb-article-body td { border: 1px solid #e4e4e7; padding: 0.5rem 0.75rem; text-align: left; }
 @media (prefers-color-scheme: dark) {
   .pb-article-body a { color: #a5b4fc; }
+  .pb-article-body .pb-article-meta { color: #a1a1aa; }
   .pb-article-body pre { background: #18181b; }
   .pb-article-body blockquote { border-left-color: #3f3f46; color: #a1a1aa; }
   .pb-article-body hr, .pb-article-body th, .pb-article-body td { border-color: #3f3f46; }
@@ -155,7 +176,14 @@ export async function renderPublicPageResponse(
 
     head = `${TAILWIND_HEAD}<style>${css}</style>`;
   } else if (content.contentType === "article") {
-    const articleBody = `<div class="pb-article-body">${headerImage}${content.html}</div>`;
+    // Created/updated byline under the header image, from the published git
+    // history (the live timeline): created = first publish, updated = latest.
+    const { getContentDates, getGitHubConfig } = await import("./github.server");
+    const dates = await getContentDates(content.slug, getGitHubConfig().publishBranch, "article").catch(
+      () => ({ createdAt: null, updatedAt: null })
+    );
+    const meta = renderArticleDates(dates.createdAt, dates.updatedAt);
+    const articleBody = `<div class="pb-article-body">${headerImage}${meta}${content.html}</div>`;
     const tplSlug = typeof settings.articleTemplateSlug === "string" ? settings.articleTemplateSlug : "";
     const template = tplSlug ? await getPublishedContent(tplSlug) : null;
 
@@ -195,11 +223,20 @@ export async function renderPublicPageResponse(
       // Default layout: centered ~800px column, media constrained, dark-mode aware.
       // Body classes (if any) sit on <body> and override the fallback chrome.
       head = `${TAILWIND_HEAD}<style>${ARTICLE_PAGE_CSS}${ARTICLE_BODY_CSS}</style>`;
-      body = `<article class="pb-article-body" style="max-width:800px;margin:0 auto;padding:2rem 1.25rem;">${headerImage}${content.html}</article>`;
+      body = `<article class="pb-article-body" style="max-width:800px;margin:0 auto;padding:2rem 1.25rem;">${headerImage}${meta}${content.html}</article>`;
     }
   } else {
     head = TAILWIND_HEAD;
     body = `<article>${headerImage}${content.html}</article>`;
+  }
+
+  // Substitute {variables} in text (e.g. {username}) against the request context.
+  // Runs last so tokens inside resolved conditional branches are also filled.
+  if (request) {
+    const { resolveTextVariables } = await import("./variables/resolve.server");
+    const r = await resolveTextVariables(body, request, content);
+    body = r.html;
+    if (r.private) cacheControl = PRIVATE_CACHE;
   }
 
   const html = `<!DOCTYPE html>
