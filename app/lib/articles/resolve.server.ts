@@ -173,22 +173,22 @@ const sortKey = (a: ArticleIndexEntry) => a.publishedAt ?? a.updatedAt ?? "";
 // --- renderers (Tailwind utilities; the page's Tailwind CDN styles them) -----
 
 function renderCard(a: ArticleIndexEntry): string {
-  return `<a href="/articles/${esc(a.slug)}" class="group block overflow-hidden rounded-lg border border-gray-200 bg-white no-underline transition hover:shadow-md">`
-    + `<div class="aspect-[16/9] w-full overflow-hidden bg-gradient-to-br from-gray-100 to-gray-200">${cardImage(a)}</div>`
+  return `<a href="/articles/${esc(a.slug)}" class="group block overflow-hidden rounded-lg border border-gray-200 bg-white no-underline transition hover:shadow-md dark:border-gray-800 dark:bg-gray-900">`
+    + `<div class="aspect-[16/9] w-full overflow-hidden bg-gradient-to-br from-gray-100 to-gray-200 dark:from-gray-800 dark:to-gray-700">${cardImage(a)}</div>`
     + `<div class="p-5">${tagChips(a)}`
-    + `<h3 class="mb-1 text-lg font-semibold text-gray-900 group-hover:text-indigo-600">${esc(a.title)}</h3>`
-    + description(a, "mb-3 line-clamp-2 text-sm text-gray-500")
-    + dateEl(a, "text-xs text-gray-400")
+    + `<h3 class="mb-1 text-lg font-semibold text-gray-900 group-hover:text-indigo-600 dark:text-white dark:group-hover:text-indigo-400">${esc(a.title)}</h3>`
+    + description(a, "mb-3 line-clamp-2 text-sm text-gray-500 dark:text-gray-400")
+    + dateEl(a, "text-xs text-gray-400 dark:text-gray-500")
     + `</div></a>`;
 }
 
 function renderListCard(a: ArticleIndexEntry): string {
   return `<a href="/articles/${esc(a.slug)}" class="group flex gap-5 py-5 no-underline">`
-    + `<div class="aspect-[16/9] w-40 shrink-0 overflow-hidden rounded-lg bg-gradient-to-br from-gray-100 to-gray-200">${cardImage(a)}</div>`
+    + `<div class="aspect-[16/9] w-40 shrink-0 overflow-hidden rounded-lg bg-gradient-to-br from-gray-100 to-gray-200 dark:from-gray-800 dark:to-gray-700">${cardImage(a)}</div>`
     + `<div class="min-w-0 flex-1">${tagChips(a)}`
-    + `<h3 class="mb-1 text-lg font-semibold text-gray-900 group-hover:text-indigo-600">${esc(a.title)}</h3>`
-    + description(a, "mb-2 line-clamp-2 text-sm text-gray-500")
-    + dateEl(a, "text-xs text-gray-400")
+    + `<h3 class="mb-1 text-lg font-semibold text-gray-900 group-hover:text-indigo-600 dark:text-white dark:group-hover:text-indigo-400">${esc(a.title)}</h3>`
+    + description(a, "mb-2 line-clamp-2 text-sm text-gray-500 dark:text-gray-400")
+    + dateEl(a, "text-xs text-gray-400 dark:text-gray-500")
     + `</div></a>`;
 }
 
@@ -237,7 +237,7 @@ function cardImage(a: ArticleIndexEntry): string {
     : "";
 }
 
-function tagChips(a: ArticleIndexEntry, cls = "bg-indigo-50 text-indigo-600"): string {
+function tagChips(a: ArticleIndexEntry, cls = "bg-indigo-50 text-indigo-600 dark:bg-indigo-500/15 dark:text-indigo-300"): string {
   const tags = (a.tags ?? []).slice(0, MAX_TAGS_ON_CARD);
   if (tags.length === 0) return "";
   return `<div class="mb-2 flex flex-wrap gap-1.5">${tags
