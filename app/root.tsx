@@ -8,7 +8,25 @@ import {
 } from "react-router";
 
 import type { Route } from "./+types/root";
+import { runWithRequestToken } from "./lib/request-token.server";
+import { resolveRequestToken } from "./lib/session-token.server";
 import "./app.css";
+
+/**
+ * Resolve the GitHub token for every request (service token, else the signed-in
+ * user's) and expose it via AsyncLocalStorage for git operations. Server-only —
+ * stripped from the client bundle like loaders/actions.
+ */
+export const middleware: Route.MiddlewareFunction[] = [
+  async ({ request }, next) => {
+    const { token, setCookie } = await resolveRequestToken(request);
+    return runWithRequestToken(token, async () => {
+      const response = await next();
+      if (setCookie) response.headers.append("Set-Cookie", setCookie);
+      return response;
+    });
+  },
+];
 
 export const links: Route.LinksFunction = () => [
   { rel: "preconnect", href: "https://fonts.googleapis.com" },

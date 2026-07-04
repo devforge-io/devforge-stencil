@@ -247,6 +247,7 @@ export default function EditContent({
 
   const isPage = loaderData.contentType === "page";
   const isWikipedia = loaderData.contentType === "wikipedia";
+  const isArticle = loaderData.contentType === "article";
 
   return (
     <div>
@@ -454,7 +455,8 @@ export default function EditContent({
             <input type="hidden" name="headerImage" value={headerImage} />
           )}
 
-          <div>
+          {/* Articles render in an ~800px column; cap the editor to match. */}
+          <div className={isArticle ? "max-w-[800px] mx-auto" : undefined}>
             <label className="block text-sm font-medium mb-1.5">
               Content ({isWikipedia ? "Wikitext" : "Markdown"})
             </label>

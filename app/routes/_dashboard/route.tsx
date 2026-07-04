@@ -30,9 +30,12 @@ export default function DashboardLayout({ loaderData }: Route.ComponentProps) {
       <header className="sticky top-0 z-30 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="flex h-14 items-center justify-between px-6">
           <div className="flex items-center gap-6">
-            <Link to="/" className="text-lg font-bold tracking-tight">
+            {/* Full-page nav (not client-side): "/" may be a server-rendered
+                page assigned to the root path, served by the index route's
+                middleware — a client navigation would show the fallback. */}
+            <a href="/" className="text-lg font-bold tracking-tight">
               Stencil
-            </Link>
+            </a>
             <Separator orientation="vertical" className="h-6" />
             <nav className="flex gap-1">
               {navItems.map((item) => {

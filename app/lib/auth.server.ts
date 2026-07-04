@@ -1,4 +1,7 @@
 import { createCookieSessionStorage, redirect } from "react-router";
+import type { GitHubTokenBundle } from "./oauth.server";
+
+type Session = Awaited<ReturnType<typeof getSession>>;
 
 const sessionSecret = process.env.SESSION_SECRET || "dev-secret-change-me";
 
@@ -28,6 +31,28 @@ export async function destroySession(
   session: Awaited<ReturnType<typeof getSession>>
 ) {
   return sessionStorage.destroySession(session);
+}
+
+// --- GitHub token bundle (session) -------------------------------------------
+// Stored so the user's own credentials can drive git operations when no service
+// GITHUB_TOKEN is configured. The cookie is encrypted (httpOnly + secrets).
+
+export function setTokenBundle(session: Session, bundle: GitHubTokenBundle): void {
+  session.set("gh_at", bundle.accessToken);
+  bundle.refreshToken ? session.set("gh_rt", bundle.refreshToken) : session.unset("gh_rt");
+  bundle.accessExpiresAt ? session.set("gh_at_exp", bundle.accessExpiresAt) : session.unset("gh_at_exp");
+  bundle.refreshExpiresAt ? session.set("gh_rt_exp", bundle.refreshExpiresAt) : session.unset("gh_rt_exp");
+}
+
+export function getTokenBundle(session: Session): GitHubTokenBundle | null {
+  const accessToken = session.get("gh_at") as string | undefined;
+  if (!accessToken) return null;
+  return {
+    accessToken,
+    refreshToken: session.get("gh_rt") as string | undefined,
+    accessExpiresAt: session.get("gh_at_exp") as number | undefined,
+    refreshExpiresAt: session.get("gh_rt_exp") as number | undefined,
+  };
 }
 
 // --- Roles -------------------------------------------------------------------

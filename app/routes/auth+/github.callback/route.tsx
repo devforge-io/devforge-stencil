@@ -1,5 +1,5 @@
 import { redirect } from "react-router";
-import { getSession, commitSession, roleFromGitHubPermission } from "~/lib/auth.server";
+import { getSession, commitSession, roleFromGitHubPermission, setTokenBundle } from "~/lib/auth.server";
 import { exchangeCodeForToken } from "~/lib/oauth.server";
 import { getGitHubUserFromToken, getUserRepoPermission } from "~/lib/github.server";
 import type { Route } from "./+types/route";
@@ -18,19 +18,24 @@ export async function loader({ request }: Route.LoaderArgs) {
   }
   session.unset("oauth_state");
 
-  const token = await exchangeCodeForToken(code, `${url.origin}/auth/github/callback`);
-  if (!token) return redirect("/login?error=oauth");
+  const bundle = await exchangeCodeForToken(code, `${url.origin}/auth/github/callback`);
+  if (!bundle) return redirect("/login?error=oauth");
 
-  const ghUser = await getGitHubUserFromToken(token);
+  const ghUser = await getGitHubUserFromToken(bundle.accessToken);
   if (!ghUser) return redirect("/login?error=oauth");
 
-  const permission = await getUserRepoPermission(ghUser.login);
+  // Check the user's repo role with their own token, so it works even when no
+  // service GITHUB_TOKEN is configured.
+  const permission = await getUserRepoPermission(ghUser.login, bundle.accessToken);
   const role = roleFromGitHubPermission(permission);
   if (!role) return redirect("/login?error=access");
 
   session.set("username", ghUser.login);
   session.set("role", role);
   session.set("avatarUrl", ghUser.avatarUrl);
+  // Persist the credentials so git operations can act as this user when there's
+  // no service token. Harmless when GITHUB_TOKEN is set (it takes precedence).
+  setTokenBundle(session, bundle);
   return redirect("/content", {
     headers: { "Set-Cookie": await commitSession(session) },
   });

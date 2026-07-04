@@ -112,6 +112,51 @@ async function fillArticleSlot(templateHtml: string, articleBody: string): Promi
 }
 
 /**
+ * OpenGraph + Twitter Card meta for social sharing. The header image is resolved
+ * to an ABSOLUTE URL (scrapers require it) against the request origin, and the
+ * request path (query stripped) is used as the canonical URL.
+ */
+function renderSocialMeta(content: AnyContentItem, request?: Request): string {
+  const fm = content.frontmatter;
+  const type = content.contentType === "article" ? "article" : "website";
+  const tags: string[] = [`<meta property="og:type" content="${type}">`];
+
+  if (fm.title) {
+    tags.push(`<meta property="og:title" content="${escapeHtml(fm.title)}">`);
+    tags.push(`<meta name="twitter:title" content="${escapeHtml(fm.title)}">`);
+  }
+  if (fm.description) {
+    tags.push(`<meta property="og:description" content="${escapeHtml(fm.description)}">`);
+    tags.push(`<meta name="twitter:description" content="${escapeHtml(fm.description)}">`);
+  }
+
+  let image = "";
+  if (fm.headerImage) {
+    try {
+      image = request ? new URL(fm.headerImage, request.url).toString() : fm.headerImage;
+    } catch {
+      image = fm.headerImage;
+    }
+  }
+  if (image) {
+    tags.push(`<meta property="og:image" content="${escapeHtml(image)}">`);
+    tags.push(`<meta name="twitter:image" content="${escapeHtml(image)}">`);
+  }
+
+  if (request) {
+    try {
+      const u = new URL(request.url);
+      tags.push(`<meta property="og:url" content="${escapeHtml(u.origin + u.pathname)}">`);
+    } catch {
+      /* ignore malformed URL */
+    }
+  }
+
+  tags.push(`<meta name="twitter:card" content="${image ? "summary_large_image" : "summary"}">`);
+  return tags.join("\n  ");
+}
+
+/**
  * Render a published content item as a full standalone HTML document Response.
  * Pages get the Tailwind runtime + their compiled CSS; other content types get
  * a basic <article> wrapper. Shared by the public splat route (custom paths)
@@ -131,6 +176,7 @@ export async function renderPublicPageResponse(
     ? `<meta name="description" content="${escapeHtml(content.frontmatter.description)}">`
     : "";
   const headerImage = renderHeaderImage(content.frontmatter.headerImage);
+  const socialMeta = renderSocialMeta(content, request);
 
   // Site body classes, applied live at render (not baked per page).
   const { settings } = await getSettings();
@@ -246,6 +292,7 @@ export async function renderPublicPageResponse(
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>${title}</title>
   ${descTag}
+  ${socialMeta}
   ${head}
 </head>
 <body class="${bodyClass}">

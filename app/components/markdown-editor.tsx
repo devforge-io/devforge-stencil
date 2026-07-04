@@ -292,7 +292,8 @@ export function MarkdownEditor({
   }
 
   return (
-    <div className="border border-gray-300 dark:border-gray-700 rounded-lg overflow-hidden">
+    // Note: no overflow-hidden — it would trap the sticky toolbar below.
+    <div className="border border-gray-300 dark:border-gray-700 rounded-lg">
       {/* Hidden file input */}
       <input
         ref={fileInputRef}
@@ -303,8 +304,8 @@ export function MarkdownEditor({
         className="hidden"
       />
 
-      {/* Tab bar + toolbar */}
-      <div className="border-b border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900">
+      {/* Tab bar + toolbar — sticks below the dashboard header (h-14) on scroll. */}
+      <div className="sticky top-14 z-20 rounded-t-lg border-b border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900">
         <div className="flex items-center justify-between px-2 py-1 border-b border-gray-200 dark:border-gray-800">
           <div className="flex gap-1">
             <button
@@ -463,10 +464,10 @@ export function MarkdownEditor({
             </ToolbarBtn>
           </div>
         )}
-      </div>
 
-      {/* Image picker panel */}
-      {showImagePicker && tab === "write" && (
+        {/* Image picker — kept inside the sticky bar so it stays directly below
+            the toolbar as you scroll, instead of at its scrolled-away origin. */}
+        {showImagePicker && tab === "write" && (
         <ImagePicker
           onSelect={(url) => {
             if (editor) {
@@ -486,13 +487,14 @@ export function MarkdownEditor({
           }}
           onClose={() => setShowImagePicker(false)}
         />
-      )}
+        )}
+      </div>
 
       {/* Editor area */}
       {tab === "write" && editor && (
         <EditorContent
           editor={editor}
-          className="prose max-w-none px-4 py-3 bg-white dark:bg-gray-950 min-h-[400px] focus-within:outline-none [&_.ProseMirror]:outline-none [&_.ProseMirror]:min-h-[380px] [&_.ProseMirror_pre]:bg-gray-900 [&_.ProseMirror_pre]:text-gray-100 [&_.ProseMirror_pre]:p-4 [&_.ProseMirror_pre]:rounded-lg [&_.ProseMirror_pre_code]:bg-transparent [&_.ProseMirror_code]:bg-gray-100 [&_.ProseMirror_code]:dark:bg-gray-800 [&_.ProseMirror_code]:px-1.5 [&_.ProseMirror_code]:py-0.5 [&_.ProseMirror_code]:rounded [&_.ProseMirror_code]:text-sm [&_.ProseMirror_code]:font-mono [&_.ProseMirror_blockquote]:border-l-4 [&_.ProseMirror_blockquote]:border-brand-500 [&_.ProseMirror_blockquote]:pl-4 [&_.ProseMirror_blockquote]:italic [&_.ProseMirror_blockquote]:text-gray-500 [&_.ProseMirror_p.is-editor-empty:first-child::before]:content-[attr(data-placeholder)] [&_.ProseMirror_p.is-editor-empty:first-child::before]:text-gray-400 [&_.ProseMirror_p.is-editor-empty:first-child::before]:float-left [&_.ProseMirror_p.is-editor-empty:first-child::before]:pointer-events-none [&_.ProseMirror_p.is-editor-empty:first-child::before]:h-0 [&_.ProseMirror_ul[data-type=taskList]]:list-none [&_.ProseMirror_ul[data-type=taskList]]:pl-0 [&_.ProseMirror_ul[data-type=taskList]_li]:flex [&_.ProseMirror_ul[data-type=taskList]_li]:gap-2 [&_.ProseMirror_ul[data-type=taskList]_li_label]:mt-0.5 [&_.ProseMirror_hr]:my-6 [&_.ProseMirror_hr]:border-gray-300 [&_.ProseMirror_hr]:dark:border-gray-700 [&_.ProseMirror_img]:rounded-lg [&_.ProseMirror_img]:max-w-full [&_.ProseMirror_img]:my-4"
+          className="prose max-w-none px-4 py-3 bg-white dark:bg-gray-950 min-h-[400px] rounded-b-lg focus-within:outline-none [&_.ProseMirror]:outline-none [&_.ProseMirror]:min-h-[380px] [&_.ProseMirror_pre]:bg-gray-900 [&_.ProseMirror_pre]:text-gray-100 [&_.ProseMirror_pre]:p-4 [&_.ProseMirror_pre]:rounded-lg [&_.ProseMirror_pre_code]:bg-transparent [&_.ProseMirror_code]:bg-gray-100 [&_.ProseMirror_code]:dark:bg-gray-800 [&_.ProseMirror_code]:px-1.5 [&_.ProseMirror_code]:py-0.5 [&_.ProseMirror_code]:rounded [&_.ProseMirror_code]:text-sm [&_.ProseMirror_code]:font-mono [&_.ProseMirror_blockquote]:border-l-4 [&_.ProseMirror_blockquote]:border-brand-500 [&_.ProseMirror_blockquote]:pl-4 [&_.ProseMirror_blockquote]:italic [&_.ProseMirror_blockquote]:text-gray-500 [&_.ProseMirror_p.is-editor-empty:first-child::before]:content-[attr(data-placeholder)] [&_.ProseMirror_p.is-editor-empty:first-child::before]:text-gray-400 [&_.ProseMirror_p.is-editor-empty:first-child::before]:float-left [&_.ProseMirror_p.is-editor-empty:first-child::before]:pointer-events-none [&_.ProseMirror_p.is-editor-empty:first-child::before]:h-0 [&_.ProseMirror_ul[data-type=taskList]]:list-none [&_.ProseMirror_ul[data-type=taskList]]:pl-0 [&_.ProseMirror_ul[data-type=taskList]_li]:flex [&_.ProseMirror_ul[data-type=taskList]_li]:gap-2 [&_.ProseMirror_ul[data-type=taskList]_li_label]:mt-0.5 [&_.ProseMirror_hr]:my-6 [&_.ProseMirror_hr]:border-gray-300 [&_.ProseMirror_hr]:dark:border-gray-700 [&_.ProseMirror_img]:rounded-lg [&_.ProseMirror_img]:max-w-full [&_.ProseMirror_img]:my-4"
         />
       )}
 
@@ -502,7 +504,7 @@ export function MarkdownEditor({
           onChange={(e) => handleRawChange(e.target.value)}
           rows={24}
           spellCheck={false}
-          className="w-full px-4 py-3 bg-white dark:bg-gray-950 text-sm font-mono text-gray-700 dark:text-gray-300 focus:outline-none resize-y min-h-[400px]"
+          className="w-full px-4 py-3 bg-white dark:bg-gray-950 text-sm font-mono text-gray-700 dark:text-gray-300 focus:outline-none resize-y min-h-[400px] rounded-b-lg"
         />
       )}
 

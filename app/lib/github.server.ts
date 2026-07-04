@@ -1,4 +1,5 @@
 import { Octokit } from "octokit";
+import { getRequestToken } from "./request-token.server";
 
 export interface GitHubConfig {
   token: string;
@@ -33,7 +34,8 @@ export interface GitHubCommit {
 
 function getOctokit(token: string) {
   return new Octokit({
-    auth: token,
+    // Empty ⇒ unauthenticated (public-repo reads only, subject to rate limits).
+    ...(token ? { auth: token } : {}),
     headers: {
       "X-GitHub-Api-Version": "2022-11-28",
     },
@@ -41,7 +43,6 @@ function getOctokit(token: string) {
 }
 
 function getConfig(): GitHubConfig {
-  const token = process.env.GITHUB_TOKEN;
   const owner = process.env.GITHUB_OWNER;
   const repo = process.env.GITHUB_REPO;
   const branch = process.env.GITHUB_BRANCH || "draft";
@@ -49,9 +50,13 @@ function getConfig(): GitHubConfig {
   const contentPath = process.env.GITHUB_CONTENT_PATH || "content";
   const componentPath = process.env.GITHUB_COMPONENT_PATH || "components";
 
-  if (!token || !owner || !repo) {
+  // Prefer an explicit service token; otherwise the signed-in user's token
+  // (injected per-request by the root middleware). GITHUB_TOKEN is optional.
+  const token = process.env.GITHUB_TOKEN || getRequestToken();
+
+  if (!owner || !repo) {
     throw new Error(
-      "Missing required environment variables: GITHUB_TOKEN, GITHUB_OWNER, GITHUB_REPO"
+      "Missing required environment variables: GITHUB_OWNER, GITHUB_REPO"
     );
   }
 
@@ -1037,9 +1042,9 @@ export async function getGitHubUserFromToken(
  * collaborator. Queried with the app token (GITHUB_TOKEN), which has repo access,
  * so the OAuth token itself needs no repo scope.
  */
-export async function getUserRepoPermission(username: string): Promise<string | null> {
+export async function getUserRepoPermission(username: string, token?: string): Promise<string | null> {
   const config = getConfig();
-  const octokit = getOctokit(config.token);
+  const octokit = getOctokit(token || config.token);
   try {
     const { data } = await octokit.rest.repos.getCollaboratorPermissionLevel({
       owner: config.owner,
