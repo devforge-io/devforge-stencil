@@ -1,5 +1,7 @@
 import { Link } from "react-router";
+import { useMemo, useState } from "react";
 import { listContent } from "~/lib/content.server";
+import { getSettings } from "~/lib/settings.server";
 import { formatDate } from "~/lib/format";
 import { Button } from "~/components/ui/button";
 import { Badge } from "~/components/ui/badge";
@@ -7,12 +9,44 @@ import { Card, CardContent } from "~/components/ui/card";
 import type { Route } from "./+types/route";
 
 export async function loader() {
-  const items = await listContent();
-  return { items };
+  const [items, { settings }] = await Promise.all([listContent(), getSettings()]);
+  const templateSlug = typeof settings.articleTemplateSlug === "string" ? settings.articleTemplateSlug : null;
+  return { items, templateSlug };
 }
 
+// Singular labels for the content types (+ the derived "template" type).
+const TYPE_LABEL: Record<string, string> = {
+  article: "Article",
+  page: "Page",
+  template: "Template",
+  markdown: "Markdown",
+  wikipedia: "Wiki",
+};
+
 export default function ContentIndex({ loaderData }: Route.ComponentProps) {
-  const { items } = loaderData;
+  const { items, templateSlug } = loaderData;
+  const [selected, setSelected] = useState<string | null>(null);
+
+  // The page designated as the article template is shown as its own "template"
+  // type rather than a plain "page".
+  const displayType = (it: (typeof items)[number]) =>
+    it.contentType === "page" && it.slug === templateSlug ? "template" : it.contentType;
+
+  // One tab per (display) type actually present, each with a count.
+  const tabs = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const it of items) {
+      const t = it.contentType === "page" && it.slug === templateSlug ? "template" : it.contentType;
+      counts.set(t, (counts.get(t) ?? 0) + 1);
+    }
+    const order = ["article", "page", "template", "markdown", "wikipedia"];
+    const present = [...counts.keys()].sort((a, b) => order.indexOf(a) - order.indexOf(b));
+    return present.map((t) => ({ value: t, label: TYPE_LABEL[t] ?? t, count: counts.get(t) ?? 0 }));
+  }, [items, templateSlug]);
+
+  // Default to the first tab when nothing is explicitly selected.
+  const active = selected ?? tabs[0]?.value ?? "";
+  const filtered = items.filter((it) => displayType(it) === active);
 
   return (
     <div>
@@ -20,6 +54,23 @@ export default function ContentIndex({ loaderData }: Route.ComponentProps) {
         <h1 className="text-2xl font-bold tracking-tight">Content</h1>
         <Button render={<Link to="/content/new" />}>New Post</Button>
       </div>
+
+      {items.length > 0 && (
+        <div className="flex flex-wrap gap-1 mb-4 border-b pb-2">
+          {tabs.map((t) => (
+            <Button
+              key={t.value}
+              variant={active === t.value ? "secondary" : "ghost"}
+              size="sm"
+              className="cursor-pointer"
+              onClick={() => setSelected(t.value)}
+            >
+              {t.label}
+              <span className="ml-1.5 text-xs text-muted-foreground">{t.count}</span>
+            </Button>
+          ))}
+        </div>
+      )}
 
       {items.length === 0 ? (
         <Card>
@@ -33,15 +84,23 @@ export default function ContentIndex({ loaderData }: Route.ComponentProps) {
         </Card>
       ) : (
         <div className="space-y-2">
-          {items.map((item) => (
+          {filtered.map((item) => (
             <Link key={item.slug} to={`/content/${item.slug}`} className="block">
               <Card className="hover:border-primary/50 transition-colors">
                 <CardContent className="flex items-start justify-between py-4">
                   <div>
                     <div className="flex items-center gap-2 mb-1">
                       <h2 className="font-semibold">{item.meta.title}</h2>
-                      <Badge variant={item.contentType === "page" ? "secondary" : "outline"}>
-                        {item.contentType === "page" ? "Page" : "Article"}
+                      <Badge
+                        variant={
+                          displayType(item) === "template"
+                            ? "default"
+                            : item.contentType === "page"
+                              ? "secondary"
+                              : "outline"
+                        }
+                      >
+                        {TYPE_LABEL[displayType(item)] ?? displayType(item)}
                       </Badge>
                       {item.published ? (
                         item.upToDate ? (
@@ -55,6 +114,11 @@ export default function ContentIndex({ loaderData }: Route.ComponentProps) {
                         )
                       ) : (
                         <Badge variant="secondary">Draft</Badge>
+                      )}
+                      {item.meta.path && (
+                        <code className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded font-mono">
+                          {item.meta.path}
+                        </code>
                       )}
                     </div>
                     {item.meta.description && (
