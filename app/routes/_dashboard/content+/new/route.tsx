@@ -181,7 +181,7 @@ export default function NewContent({ actionData }: Route.ComponentProps) {
             </div>
             <div className="space-y-2">
               <Label>Social share image</Label>
-              <ImageUploadField name="ogImage" value={ogImage} onChange={setOgImage} slug={effectiveSlug} />
+              <ImageUploadField name="ogImage" value={ogImage} onChange={setOgImage} slug={effectiveSlug} crop={{ width: 1200, height: 630 }} />
               <p className="text-xs text-muted-foreground">
                 Used for OpenGraph/Twitter previews. Ideally 1200×630 (1.91:1), under 1&nbsp;MB. Falls back to the header image if empty.
               </p>
