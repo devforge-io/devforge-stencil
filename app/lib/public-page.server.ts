@@ -30,8 +30,15 @@ function renderArticleDates(createdAt: string | null, updatedAt: string | null):
   return `<p class="pb-article-meta">${parts.join(" &middot; ")}</p>`;
 }
 
-// Cacheable by default; conditional pages opt out (see below).
-const PUBLIC_CACHE = "public, max-age=60, stale-while-revalidate=300";
+// Cacheable by default; conditional/personalized pages opt out (see below).
+// `s-maxage` is what a shared cache / CDN (e.g. Vercel's edge) uses — with only
+// `max-age` the SSR output was cached in the browser but regenerated at the edge
+// on every unique request. `max-age=0` keeps browsers revalidating (so a publish
+// shows quickly) while the edge serves the cached HTML; `stale-while-revalidate`
+// means users never block on a regeneration — the edge serves the last copy and
+// refreshes in the background. Each full URL (incl. `?tag=`) caches separately.
+const PUBLIC_CACHE =
+  "public, max-age=0, s-maxage=360, stale-while-revalidate=86400";
 const PRIVATE_CACHE = "private, no-store";
 
 // Tailwind runtime for public pages. `darkMode:'media'` so the site's `dark:`
