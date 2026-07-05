@@ -1,6 +1,7 @@
 import { buildContext } from "../conditional/context.server";
 import type { ConditionContext } from "../conditional/types";
 import type { AnyContentItem } from "../content.server";
+import { parseFragment, collectTextNodes } from "../dom.server";
 
 /**
  * Substitute `{variable}` tokens in text against the per-request context —
@@ -43,7 +44,7 @@ export async function resolveTextVariables(
   content?: AnyContentItem,
   deps?: VariableResolveDeps
 ): Promise<VariableResolveResult> {
-  // Cheap guard before paying for jsdom / context building.
+  // Cheap guard before paying for DOM parsing / context building.
   if (!html.includes("{")) return { html, resolved: false, private: false };
 
   const context = deps?.context ?? (await buildContext(request, content));
@@ -51,13 +52,8 @@ export async function resolveTextVariables(
   // while namespaces (`{query.x}`, `{geo.country}`) resolve via the full path.
   const vars: Record<string, unknown> = { ...context, ...context.auth };
 
-  const { JSDOM } = await import("jsdom");
-  const dom = new JSDOM(`<!DOCTYPE html><body>${html}</body>`);
-  const doc = dom.window.document;
-  const walker = doc.createTreeWalker(doc.body, dom.window.NodeFilter.SHOW_TEXT);
-
-  const textNodes: Text[] = [];
-  while (walker.nextNode()) textNodes.push(walker.currentNode as Text);
+  const doc = parseFragment(html);
+  const textNodes = collectTextNodes(doc.body);
 
   let resolved = false;
   let isPrivate = false;

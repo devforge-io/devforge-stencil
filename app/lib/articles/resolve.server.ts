@@ -1,5 +1,6 @@
 import { listArticleIndex, type ArticleIndexEntry } from "../articles.server";
 import { listContent, listPublishedContent, type ContentListItem } from "../content.server";
+import { parseFragment } from "../dom.server";
 
 export interface ArticleResolveResult {
   html: string;
@@ -44,14 +45,12 @@ export async function resolveArticleBlocks(
   request?: Request,
   deps?: ArticleResolveDeps
 ): Promise<ArticleResolveResult> {
-  // Cheap string guard before paying for jsdom.
+  // Cheap string guard before paying for DOM parsing.
   if (!html.includes("data-pb-articles")) {
     return { html, css: "", resolved: false, private: false };
   }
 
-  const { JSDOM } = await import("jsdom");
-  const dom = new JSDOM(`<!DOCTYPE html><body>${html}</body>`);
-  const doc = dom.window.document;
+  const doc = parseFragment(html);
   const placeholders = Array.from(doc.querySelectorAll("[data-pb-articles]"));
   if (placeholders.length === 0) {
     return { html, css: "", resolved: false, private: false };

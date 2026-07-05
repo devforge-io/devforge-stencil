@@ -1,6 +1,7 @@
 import { getPageCompiledCss, getPublishedContent, type AnyContentItem } from "./content.server";
 import { renderHeaderImage } from "./page.server";
 import { getSettings } from "./settings.server";
+import { parseFragment } from "./dom.server";
 
 function escapeHtml(str: string): string {
   return str
@@ -48,8 +49,7 @@ const TAILWIND_HEAD = `<script src="https://cdn.tailwindcss.com"><\/script><scri
  */
 async function stripBodyClassesFromRoot(html: string, bodyClasses: string[]): Promise<string> {
   if (!bodyClasses.length || !html.trim()) return html;
-  const { JSDOM } = await import("jsdom");
-  const doc = new JSDOM(`<!DOCTYPE html><body>${html}</body>`).window.document;
+  const doc = parseFragment(html);
   const root = doc.body.firstElementChild;
   if (root && root.getAttribute("class")) {
     const remove = new Set(bodyClasses);
@@ -100,9 +100,7 @@ const ARTICLE_BODY_CSS = `
  * takes its place, so the slot's editor-only preview styling is discarded.
  */
 async function fillArticleSlot(templateHtml: string, articleBody: string): Promise<string> {
-  const { JSDOM } = await import("jsdom");
-  const dom = new JSDOM(`<!DOCTYPE html><body>${templateHtml}</body>`);
-  const doc = dom.window.document;
+  const doc = parseFragment(templateHtml);
   const slot = doc.querySelector("[data-pb-article-slot]");
   if (!slot) return templateHtml;
   const tpl = doc.createElement("template");

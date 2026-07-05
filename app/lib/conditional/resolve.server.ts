@@ -1,5 +1,6 @@
 import { getComponent, type ComponentData } from "../component.server";
 import type { AnyContentItem } from "../content.server";
+import { parseFragment } from "../dom.server";
 import { buildContext } from "./context.server";
 import { pickBranch } from "./evaluate";
 import type { BranchTarget, ConditionContext } from "./types";
@@ -40,14 +41,12 @@ export async function resolveConditionals(
   content?: AnyContentItem,
   deps?: ResolveDeps
 ): Promise<ResolveResult> {
-  // Cheap string guard before paying for jsdom.
+  // Cheap string guard before paying for DOM parsing.
   if (!html.includes("data-pb-conditional")) {
     return { html, css: "", resolved: false };
   }
 
-  const { JSDOM } = await import("jsdom");
-  const dom = new JSDOM(`<!DOCTYPE html><body>${html}</body>`);
-  const doc = dom.window.document;
+  const doc = parseFragment(html);
   const placeholders = Array.from(doc.querySelectorAll("[data-pb-conditional]"));
   if (placeholders.length === 0) {
     return { html, css: "", resolved: false };
