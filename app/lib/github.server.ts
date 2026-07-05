@@ -1037,25 +1037,51 @@ export async function getGitHubUserFromToken(
 }
 
 /**
- * The user's granular role on GITHUB_OWNER/GITHUB_REPO — "admin" | "maintain" |
- * "write" | "triage" | "read" — or null if they have no access / aren't a
- * collaborator. Queried with the app token (GITHUB_TOKEN), which has repo access,
- * so the OAuth token itself needs no repo scope.
+ * The user's role on GITHUB_OWNER/GITHUB_REPO — "admin" | "maintain" | "write"
+ * | "triage" | "read" — or null if they have no access.
+ *
+ * Preferred path: a service token (GITHUB_TOKEN) reads the user's role via the
+ * collaborators API (reliable, full access). Fallback (no service token): derive
+ * it from the user's OWN view of the repo via GET /repos → `permissions`, which
+ * only needs Metadata access and so works with a GitHub App user token — the
+ * collaborators API usually does not.
  */
-export async function getUserRepoPermission(username: string, token?: string): Promise<string | null> {
+export async function getUserRepoPermission(username: string, userToken?: string): Promise<string | null> {
   const config = getConfig();
-  const octokit = getOctokit(token || config.token);
-  try {
-    const { data } = await octokit.rest.repos.getCollaboratorPermissionLevel({
-      owner: config.owner,
-      repo: config.repo,
-      username,
-    });
-    // role_name is the granular role; `permission` collapses maintain→write.
-    return (data as { role_name?: string }).role_name ?? data.permission ?? null;
-  } catch {
-    return null;
+  const serviceToken = process.env.GITHUB_TOKEN;
+
+  if (serviceToken) {
+    try {
+      const octokit = getOctokit(serviceToken);
+      const { data } = await octokit.rest.repos.getCollaboratorPermissionLevel({
+        owner: config.owner,
+        repo: config.repo,
+        username,
+      });
+      // role_name is the granular role; `permission` collapses maintain→write.
+      const role = (data as { role_name?: string }).role_name ?? data.permission;
+      if (role) return role;
+    } catch {
+      // fall through to the user-token path
+    }
   }
+
+  if (userToken) {
+    try {
+      const octokit = getOctokit(userToken);
+      const { data } = await octokit.rest.repos.get({ owner: config.owner, repo: config.repo });
+      const p = data.permissions as
+        | { admin?: boolean; maintain?: boolean; push?: boolean }
+        | undefined;
+      if (p?.admin) return "admin";
+      if (p?.maintain) return "maintain";
+      if (p?.push) return "write";
+    } catch {
+      // no access / not visible to this token
+    }
+  }
+
+  return null;
 }
 
 function isNotFoundError(error: unknown): boolean {
