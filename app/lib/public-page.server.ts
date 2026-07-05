@@ -77,9 +77,11 @@ const ARTICLE_BODY_CSS = `
 .pb-article-body .pb-article-title { font-size: 2.25rem; line-height: 1.15; font-weight: 800; letter-spacing: -0.02em; margin: 0 0 1.25rem; }
 .pb-article-body .pb-article-meta-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin: 0 0 2rem; }
 .pb-article-body .pb-article-meta { margin: 0; font-size: 0.875rem; color: #71717a; }
-.pb-article-body .pb-article-share { display: inline-flex; align-items: center; gap: 0.4rem; font: inherit; font-size: 0.8125rem; padding: 0.35rem 0.8rem; border: 1px solid #e4e4e7; border-radius: 9999px; background: transparent; color: inherit; cursor: pointer; }
-.pb-article-body .pb-article-share:hover { background: #f4f4f5; }
-.pb-article-body .pb-article-share svg { width: 0.95rem; height: 0.95rem; }
+.pb-article-body .pb-share-row { display: inline-flex; align-items: center; gap: 0.4rem; }
+.pb-article-body .pb-share-btn { display: inline-flex; align-items: center; justify-content: center; width: 2rem; height: 2rem; border: 1px solid #e4e4e7; border-radius: 9999px; color: #52525b; background: transparent; cursor: pointer; text-decoration: none; transition: background .15s, color .15s, border-color .15s; }
+.pb-article-body .pb-share-btn:hover { background: #f4f4f5; color: #18181b; }
+.pb-article-body .pb-share-btn.copied { color: #16a34a; border-color: #16a34a; }
+.pb-article-body .pb-share-btn svg { width: 1rem; height: 1rem; }
 .pb-article-body figure { margin: 1.5rem 0; }
 .pb-article-body figure img { border-radius: 8px; }
 .pb-article-body h1, .pb-article-body h2, .pb-article-body h3, .pb-article-body h4 { line-height: 1.25; margin: 1.75rem 0 0.75rem; }
@@ -94,8 +96,8 @@ const ARTICLE_BODY_CSS = `
 @media (prefers-color-scheme: dark) {
   .pb-article-body a { color: #a5b4fc; }
   .pb-article-body .pb-article-meta { color: #a1a1aa; }
-  .pb-article-body .pb-article-share { border-color: #3f3f46; }
-  .pb-article-body .pb-article-share:hover { background: #18181b; }
+  .pb-article-body .pb-share-btn { border-color: #3f3f46; color: #a1a1aa; }
+  .pb-article-body .pb-share-btn:hover { background: #27272a; color: #fafafa; }
   .pb-article-body pre { background: #18181b; }
   .pb-article-body blockquote { border-left-color: #3f3f46; color: #a1a1aa; }
   .pb-article-body hr, .pb-article-body th, .pb-article-body td { border-color: #3f3f46; }
@@ -204,13 +206,41 @@ function metaDescription(content: AnyContentItem): string {
   return "";
 }
 
-// Share button: native share sheet where available, else copy-the-URL to the
-// clipboard with brief "Copied!" feedback. Self-contained inline handler so it
-// works on the static public page (no framework runtime).
-const ARTICLE_SHARE_BUTTON =
-  `<button type="button" class="pb-article-share" aria-label="Share" onclick="var s=this.querySelector('.pb-share-text'),u=location.href;if(navigator.share){navigator.share({title:document.title,url:u}).catch(function(){})}else if(navigator.clipboard){navigator.clipboard.writeText(u);var o=s.textContent;s.textContent='Copied!';setTimeout(function(){s.textContent=o},1500)}">` +
-  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.6" y1="13.5" x2="15.4" y2="17.5"/><line x1="15.4" y1="6.5" x2="8.6" y2="10.5"/></svg>` +
-  `<span class="pb-share-text">Share</span></button>`;
+const SHARE_ICONS = {
+  x: `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M18.901 1.153h3.68l-8.04 9.19L24 22.846h-7.406l-5.8-7.584-6.638 7.584H.474l8.6-9.83L0 1.154h7.594l5.243 6.932ZM17.61 20.644h2.039L6.486 3.24H4.298Z"/></svg>`,
+  facebook: `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>`,
+  linkedin: `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.225 0z"/></svg>`,
+  instagram: `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.052.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98C8.333 23.986 8.741 24 12 24c3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 100 12.324 6.162 6.162 0 000-12.324zM12 16a4 4 0 110-8 4 4 0 010 8zm6.406-11.845a1.44 1.44 0 100 2.881 1.44 1.44 0 000-2.881z"/></svg>`,
+  copy: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>`,
+};
+
+// Copy the current URL to the clipboard, with a brief green "copied" state.
+const SHARE_COPY_JS =
+  "if(navigator.clipboard){navigator.clipboard.writeText(location.href);var b=this;b.classList.add('copied');setTimeout(function(){b.classList.remove('copied')},1500)}";
+
+/**
+ * A row of share buttons: X, Facebook, LinkedIn open the network's share URL;
+ * Instagram and Copy copy the link (Instagram has no web share endpoint). Plain
+ * links + inline handlers so it works on the static public page.
+ */
+function renderShareRow(url: string, title: string): string {
+  if (!url) return "";
+  const u = encodeURIComponent(url);
+  const t = encodeURIComponent(title);
+  const link = (href: string, label: string, svg: string) =>
+    `<a class="pb-share-btn" href="${href}" target="_blank" rel="noopener noreferrer" title="${label}" aria-label="${label}">${svg}</a>`;
+  const copyBtn = (label: string, svg: string) =>
+    `<button type="button" class="pb-share-btn" title="${label}" aria-label="${label}" onclick="${SHARE_COPY_JS}">${svg}</button>`;
+  return (
+    `<div class="pb-share-row">` +
+    link(`https://twitter.com/intent/tweet?url=${u}&amp;text=${t}`, "Share on X", SHARE_ICONS.x) +
+    link(`https://www.facebook.com/sharer/sharer.php?u=${u}`, "Share on Facebook", SHARE_ICONS.facebook) +
+    link(`https://www.linkedin.com/sharing/share-offsite/?url=${u}`, "Share on LinkedIn", SHARE_ICONS.linkedin) +
+    copyBtn("Copy link for Instagram", SHARE_ICONS.instagram) +
+    copyBtn("Copy link", SHARE_ICONS.copy) +
+    `</div>`
+  );
+}
 
 /**
  * Render a published content item as a full standalone HTML document Response.
@@ -291,10 +321,12 @@ export async function renderPublicPageResponse(
       () => ({ createdAt: null, updatedAt: null })
     );
     const meta = renderArticleDates(dates.createdAt, dates.updatedAt);
-    // Title above the header image, then a byline row (dates + share button).
+    const shareUrl = request ? (() => { const u = new URL(request.url); return u.origin + u.pathname; })() : "";
+    const shareRow = renderShareRow(shareUrl, content.frontmatter.title);
+    // Title above the header image, then a byline row (dates + share buttons).
     const articleHead =
       `<h1 class="pb-article-title">${title}</h1>${headerImage}` +
-      `<div class="pb-article-meta-row">${meta}${ARTICLE_SHARE_BUTTON}</div>`;
+      `<div class="pb-article-meta-row">${meta}${shareRow}</div>`;
     const articleBody = `<div class="pb-article-body">${articleHead}${content.html}</div>`;
     const tplSlug = typeof settings.articleTemplateSlug === "string" ? settings.articleTemplateSlug : "";
     const template = tplSlug ? await getPublishedContent(tplSlug) : null;
