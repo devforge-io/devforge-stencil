@@ -5,6 +5,7 @@ import {
   Outlet,
   Scripts,
   ScrollRestoration,
+  useRouteLoaderData,
 } from "react-router";
 
 import type { Route } from "./+types/root";
@@ -41,13 +42,26 @@ export const links: Route.LinksFunction = () => [
   },
 ];
 
+export async function loader() {
+  const { getSettings } = await import("./lib/settings.server");
+  try {
+    const { settings } = await getSettings();
+    return { favicon: typeof settings.favicon === "string" ? settings.favicon : null };
+  } catch {
+    return { favicon: null };
+  }
+}
+
 export function Layout({ children }: { children: React.ReactNode }) {
+  const data = useRouteLoaderData<typeof loader>("root");
+  const favicon = data?.favicon;
   return (
     <html lang="en" className="dark">
       <head>
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <title>Stencil CMS</title>
+        {favicon && <link rel="icon" href={favicon} />}
         <Meta />
         <Links />
       </head>

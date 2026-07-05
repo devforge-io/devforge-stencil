@@ -7,6 +7,7 @@ import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import { Card, CardContent } from "~/components/ui/card";
+import { ImageUploadField } from "~/components/image-upload-field";
 import { Badge } from "~/components/ui/badge";
 import { Separator } from "~/components/ui/separator";
 import { cn } from "~/lib/utils";
@@ -29,6 +30,7 @@ export async function action({ request }: Route.ActionArgs) {
   const fonts = (formData.get("fonts") as string || "").split("\n").map((s) => s.trim()).filter(Boolean);
   const articleTemplateSlug = (formData.get("articleTemplateSlug") as string || "").trim();
   const siteName = (formData.get("siteName") as string || "").trim();
+  const favicon = (formData.get("favicon") as string || "").trim();
   const sha = (formData.get("sha") as string) || undefined;
 
   // Merge onto existing settings so other fields (e.g. editorDarkMode) survive.
@@ -40,6 +42,7 @@ export async function action({ request }: Route.ActionArgs) {
     fonts,
     articleTemplateSlug: articleTemplateSlug || undefined,
     siteName: siteName || undefined,
+    favicon: favicon || undefined,
   };
   await saveSettings(settings, sha);
   return { saved: true };
@@ -68,6 +71,9 @@ export default function SettingsPage({ loaderData, actionData }: Route.Component
   const [articleTemplateSlug, setArticleTemplateSlug] = useState<string>(initial.articleTemplateSlug ?? "");
   const [siteName, setSiteName] = useState<string>(
     typeof initial.siteName === "string" ? initial.siteName : ""
+  );
+  const [favicon, setFavicon] = useState<string>(
+    typeof initial.favicon === "string" ? initial.favicon : ""
   );
   const [newClass, setNewClass] = useState("");
   const [newDarkClass, setNewDarkClass] = useState("");
@@ -114,6 +120,17 @@ export default function SettingsPage({ loaderData, actionData }: Route.Component
             />
             <p className="text-xs text-muted-foreground">
               Used as <code className="text-xs bg-muted px-1 py-0.5 rounded">og:site_name</code> on shared links (e.g. above the title on Discord).
+            </p>
+
+            <Label className="text-sm font-semibold pt-2">Favicon</Label>
+            <ImageUploadField
+              name="favicon"
+              value={favicon}
+              onChange={setFavicon}
+              accept="image/png,image/svg+xml,image/x-icon,image/vnd.microsoft.icon,.ico"
+            />
+            <p className="text-xs text-muted-foreground">
+              The browser-tab icon. PNG, SVG, or ICO — a square image (e.g. 32×32 or 512×512) works best.
             </p>
           </CardContent>
         </Card>

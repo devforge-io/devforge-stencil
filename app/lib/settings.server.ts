@@ -10,6 +10,8 @@ export interface StencilSettings {
   articleTemplateSlug?: string;
   /** Site name — used for og:site_name on shared pages. */
   siteName?: string;
+  /** Favicon URL (asset path or absolute), emitted as <link rel="icon">. */
+  favicon?: string;
   [key: string]: unknown;
 }
 
