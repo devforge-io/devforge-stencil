@@ -11,13 +11,16 @@ export function parseFragment(html: string): Document {
     .document as unknown as Document;
 }
 
-/** Collect every text node under `root`, in document order. */
+// Text inside these elements isn't user-facing prose — don't treat it as content.
+const SKIP_TEXT_PARENTS = new Set(["SCRIPT", "STYLE"]);
+
+/** Collect every text node under `root` (skipping <script>/<style>), in order. */
 export function collectTextNodes(root: Node): Text[] {
   const out: Text[] = [];
   const walk = (node: Node) => {
     for (const child of Array.from(node.childNodes)) {
       if (child.nodeType === 3) out.push(child as Text);
-      else walk(child);
+      else if (child.nodeType === 1 && !SKIP_TEXT_PARENTS.has((child as Element).tagName)) walk(child);
     }
   };
   walk(root);

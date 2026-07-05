@@ -89,6 +89,10 @@ const ARTICLE_BODY_CSS = `
 .pb-article-body .pb-share-btn:hover { background: #f4f4f5; color: #18181b; }
 .pb-article-body .pb-share-btn.copied { color: #16a34a; border-color: #16a34a; }
 .pb-article-body .pb-share-btn svg { width: 1rem; height: 1rem; }
+.pb-article-body .pb-article-actions { display: inline-flex; align-items: center; gap: 0.5rem; }
+.pb-article-body .pb-edit-btn { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.8125rem; padding: 0.35rem 0.85rem; border: 1px solid #e4e4e7; border-radius: 9999px; color: #52525b; background: transparent; text-decoration: none; }
+.pb-article-body .pb-edit-btn:hover { background: #f4f4f5; color: #18181b; }
+.pb-article-body .pb-edit-btn[hidden] { display: none; }
 .pb-article-body figure { margin: 1.5rem 0; }
 .pb-article-body figure img { border-radius: 8px; }
 .pb-article-body h1, .pb-article-body h2, .pb-article-body h3, .pb-article-body h4 { line-height: 1.25; margin: 1.75rem 0 0.75rem; }
@@ -105,6 +109,8 @@ const ARTICLE_BODY_CSS = `
   .pb-article-body .pb-article-meta { color: #a1a1aa; }
   .pb-article-body .pb-share-btn { border-color: #3f3f46; color: #a1a1aa; }
   .pb-article-body .pb-share-btn:hover { background: #27272a; color: #fafafa; }
+  .pb-article-body .pb-edit-btn { border-color: #3f3f46; color: #a1a1aa; }
+  .pb-article-body .pb-edit-btn:hover { background: #27272a; color: #fafafa; }
   .pb-article-body pre { background: #18181b; }
   .pb-article-body blockquote { border-left-color: #3f3f46; color: #a1a1aa; }
   .pb-article-body hr, .pb-article-body th, .pb-article-body td { border-color: #3f3f46; }
@@ -259,6 +265,21 @@ function renderShareRow(url: string, title: string): string {
   );
 }
 
+/** An Edit link, hidden by default and revealed client-side (see the reveal
+ * script) for signed-in CMS users, so the cached public HTML stays identical. */
+function renderEditLink(slug: string): string {
+  return (
+    `<a id="pb-edit-link" class="pb-edit-btn" href="/content/${escapeHtml(slug)}/edit" hidden>` +
+    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>` +
+    `<span>Edit</span></a>`
+  );
+}
+
+// Reveals #pb-edit-link when /api/me reports a signed-in CMS role. Per-request
+// (no-store), so it doesn't affect the shared/edge-cached page.
+const EDIT_REVEAL_SCRIPT =
+  `<script>fetch('/api/me',{headers:{accept:'application/json'}}).then(function(r){return r.ok?r.json():null}).then(function(d){if(d&&d.role){var e=document.getElementById('pb-edit-link');if(e){e.hidden=false}}}).catch(function(){});<\/script>`;
+
 /**
  * Render a published content item as a full standalone HTML document Response.
  * Pages get the Tailwind runtime + their compiled CSS; other content types get
@@ -340,10 +361,11 @@ export async function renderPublicPageResponse(
     const meta = renderArticleDates(dates.createdAt, dates.updatedAt);
     const shareUrl = request ? (() => { const u = new URL(request.url); return u.origin + u.pathname; })() : "";
     const shareRow = renderShareRow(shareUrl, content.frontmatter.title);
-    // Title above the header image, then a byline row (dates + share buttons).
+    // Byline row: dates on the left; edit (CMS users only) + share on the right.
+    const actions = `<div class="pb-article-actions">${renderEditLink(content.slug)}${shareRow}</div>`;
     const articleHead =
       `<h1 class="pb-article-title">${title}</h1>${headerImage}` +
-      `<div class="pb-article-meta-row">${meta}${shareRow}</div>`;
+      `<div class="pb-article-meta-row">${meta}${actions}</div>${EDIT_REVEAL_SCRIPT}`;
     const articleBody = `<div class="pb-article-body">${articleHead}${content.html}</div>`;
     const tplSlug = typeof settings.articleTemplateSlug === "string" ? settings.articleTemplateSlug : "";
     const template = tplSlug ? await getPublishedContent(tplSlug) : null;
