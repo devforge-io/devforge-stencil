@@ -25,6 +25,8 @@ export async function action({ request }: Route.ActionArgs) {
   const body = (formData.get("body") as string) ?? "";
   const headerImage = (formData.get("headerImage") as string)?.trim();
   const ogImage = (formData.get("ogImage") as string)?.trim();
+  const ogTitle = (formData.get("ogTitle") as string)?.trim();
+  const ogDescription = (formData.get("ogDescription") as string)?.trim();
   const draft = formData.get("draft") === "on";
   const now = new Date().toISOString();
 
@@ -60,6 +62,8 @@ export async function action({ request }: Route.ActionArgs) {
       tagList.length ? `tags: [${tagList.map((t) => `"${t}"`).join(", ")}]` : null,
       headerImage ? `headerImage: "${headerImage}"` : null,
       ogImage ? `ogImage: "${ogImage}"` : null,
+      ogTitle ? `ogTitle: "${ogTitle.replace(/"/g, '\\"')}"` : null,
+      ogDescription ? `ogDescription: "${ogDescription.replace(/"/g, '\\"')}"` : null,
       `publishedAt: "${now}"`,
       draft ? `draft: true` : null,
       "---",
@@ -96,6 +100,8 @@ export default function NewContent({ actionData }: Route.ComponentProps) {
   const [body, setBody] = useState("");
   const [headerImage, setHeaderImage] = useState("");
   const [ogImage, setOgImage] = useState("");
+  const [ogTitle, setOgTitle] = useState("");
+  const [ogDescription, setOgDescription] = useState("");
   const [contentType, setContentType] = useState<ContentType>("article");
   const [slug, setSlug] = useState("");
   const [slugTouched, setSlugTouched] = useState(false);
@@ -185,6 +191,18 @@ export default function NewContent({ actionData }: Route.ComponentProps) {
               <p className="text-xs text-muted-foreground">
                 Used for OpenGraph/Twitter previews. Ideally 1200×630 (1.91:1), under 1&nbsp;MB. Falls back to the header image if empty.
               </p>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="ogTitle">Social title</Label>
+                <Input id="ogTitle" name="ogTitle" value={ogTitle} onChange={(e) => setOgTitle(e.target.value)} placeholder="Falls back to the title" />
+                <p className="text-xs text-muted-foreground">Optional. Aim for ≤60 characters.</p>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="ogDescription">Social description</Label>
+                <Input id="ogDescription" name="ogDescription" value={ogDescription} onChange={(e) => setOgDescription(e.target.value)} placeholder="Falls back to the description" />
+                <p className="text-xs text-muted-foreground">Optional. Aim for ~120–155 characters.</p>
+              </div>
             </div>
           </>
         )}

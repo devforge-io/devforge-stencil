@@ -126,13 +126,17 @@ function renderSocialMeta(
 
   if (siteName) tags.push(`<meta property="og:site_name" content="${escapeHtml(siteName)}">`);
 
-  if (fm.title) {
-    tags.push(`<meta property="og:title" content="${escapeHtml(fm.title)}">`);
-    tags.push(`<meta name="twitter:title" content="${escapeHtml(fm.title)}">`);
+  // Social overrides, falling back to the page title / meta description.
+  const ogTitle = (typeof fm.ogTitle === "string" && fm.ogTitle.trim()) || fm.title;
+  const ogDescription = (typeof fm.ogDescription === "string" && fm.ogDescription.trim()) || description;
+
+  if (ogTitle) {
+    tags.push(`<meta property="og:title" content="${escapeHtml(ogTitle)}">`);
+    tags.push(`<meta name="twitter:title" content="${escapeHtml(ogTitle)}">`);
   }
-  if (description) {
-    tags.push(`<meta property="og:description" content="${escapeHtml(description)}">`);
-    tags.push(`<meta name="twitter:description" content="${escapeHtml(description)}">`);
+  if (ogDescription) {
+    tags.push(`<meta property="og:description" content="${escapeHtml(ogDescription)}">`);
+    tags.push(`<meta name="twitter:description" content="${escapeHtml(ogDescription)}">`);
   }
 
   // Dedicated OpenGraph image, falling back to the header image.

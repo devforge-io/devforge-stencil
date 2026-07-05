@@ -122,6 +122,10 @@ export interface ContentFrontmatter {
   headerImage?: string;
   /** Social-share image (OpenGraph/Twitter). Falls back to headerImage. */
   ogImage?: string;
+  /** Social-share title override. Falls back to `title`. */
+  ogTitle?: string;
+  /** Social-share description override. Falls back to `description`/excerpt. */
+  ogDescription?: string;
   /** Optional public URL path this page is served at, e.g. "/about". */
   path?: string;
   publishedAt?: string;

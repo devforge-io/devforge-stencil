@@ -42,6 +42,8 @@ export async function loader({ params }: Route.LoaderArgs) {
     tags: frontmatter.tags?.join(", ") ?? "",
     headerImage: frontmatter.headerImage ?? "",
     ogImage: frontmatter.ogImage ?? "",
+    ogTitle: frontmatter.ogTitle ?? "",
+    ogDescription: frontmatter.ogDescription ?? "",
     path: frontmatter.path ?? "",
     publishedAt: frontmatter.publishedAt ?? "",
     draft: frontmatter.draft ?? false,
@@ -73,6 +75,8 @@ export async function action({ request, params }: Route.ActionArgs) {
   const tags = (formData.get("tags") as string)?.trim();
   const headerImage = (formData.get("headerImage") as string)?.trim();
   const ogImage = (formData.get("ogImage") as string)?.trim();
+  const ogTitle = (formData.get("ogTitle") as string)?.trim();
+  const ogDescription = (formData.get("ogDescription") as string)?.trim();
   const path = normalizeUrlPath(formData.get("path"));
   const publishedAt = (formData.get("publishedAt") as string)?.trim();
   const draft = formData.get("draft") === "on";
@@ -101,6 +105,8 @@ export async function action({ request, params }: Route.ActionArgs) {
     if (tags) fm.tags = tags.split(",").map((t) => t.trim());
     if (headerImage) fm.headerImage = headerImage;
     if (ogImage) fm.ogImage = ogImage;
+    if (ogTitle) fm.ogTitle = ogTitle;
+    if (ogDescription) fm.ogDescription = ogDescription;
     if (path) fm.path = path;
     if (publishedAt) fm.publishedAt = publishedAt;
     fm.updatedAt = new Date().toISOString();
@@ -116,6 +122,8 @@ export async function action({ request, params }: Route.ActionArgs) {
       tagList.length ? `tags: [${tagList.map((t) => `"${t}"`).join(", ")}]` : null,
       headerImage ? `headerImage: "${headerImage}"` : null,
       ogImage ? `ogImage: "${ogImage}"` : null,
+      ogTitle ? `ogTitle: "${ogTitle.replace(/"/g, '\\"')}"` : null,
+      ogDescription ? `ogDescription: "${ogDescription.replace(/"/g, '\\"')}"` : null,
       publishedAt ? `publishedAt: "${publishedAt}"` : null,
       `updatedAt: "${now}"`,
       draft ? `draft: true` : null,
@@ -179,6 +187,8 @@ export default function EditContent({
   const [body, setBody] = useState(loaderData.body);
   const [headerImage, setHeaderImage] = useState(loaderData.headerImage);
   const [ogImage, setOgImage] = useState(loaderData.ogImage);
+  const [ogTitle, setOgTitle] = useState(loaderData.ogTitle);
+  const [ogDescription, setOgDescription] = useState(loaderData.ogDescription);
 
   // Page editor state
   const [pageProjectData, setPageProjectData] = useState(
@@ -463,12 +473,38 @@ export default function EditContent({
                   Used for OpenGraph/Twitter previews. Ideally 1200×630 (1.91:1), under 1&nbsp;MB. Falls back to the header image if empty.
                 </p>
               </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium mb-1.5">Social title</label>
+                  <input
+                    name="ogTitle"
+                    value={ogTitle}
+                    onChange={(e) => setOgTitle(e.target.value)}
+                    placeholder="Falls back to the title"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                  />
+                  <p className="mt-1 text-xs text-muted-foreground">Optional. Aim for ≤60 characters.</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1.5">Social description</label>
+                  <input
+                    name="ogDescription"
+                    value={ogDescription}
+                    onChange={(e) => setOgDescription(e.target.value)}
+                    placeholder="Falls back to the description"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                  />
+                  <p className="mt-1 text-xs text-muted-foreground">Optional. Aim for ~120–155 characters.</p>
+                </div>
+              </div>
             </>
           ) : (
             // Preserve any existing header/social images on non-article content.
             <>
               <input type="hidden" name="headerImage" value={headerImage} />
               <input type="hidden" name="ogImage" value={ogImage} />
+              <input type="hidden" name="ogTitle" value={ogTitle} />
+              <input type="hidden" name="ogDescription" value={ogDescription} />
             </>
           )}
 
