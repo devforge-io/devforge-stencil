@@ -1,0 +1,13 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "headers": [
+    {
+      "source": "/content",
+      "headers": [{ "key": "Cache-Control", "value": "private, no-store, max-age=0" }]
+    },
+    {
+      "source": "/content/:path*",
+      "headers": [{ "key": "Cache-Control", "value": "private, no-store, max-age=0" }]
+    }
+  ]
+}
