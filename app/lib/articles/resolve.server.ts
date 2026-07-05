@@ -174,8 +174,10 @@ const sortKey = (a: ArticleIndexEntry) => a.publishedAt ?? a.updatedAt ?? "";
 function renderCard(a: ArticleIndexEntry): string {
   return `<a href="/articles/${esc(a.slug)}" class="group block overflow-hidden rounded-lg border border-gray-200 bg-white no-underline transition hover:shadow-md dark:border-gray-800 dark:bg-gray-900">`
     + `<div class="aspect-[16/9] w-full overflow-hidden bg-gradient-to-br from-gray-100 to-gray-200 dark:from-gray-800 dark:to-gray-700">${cardImage(a)}</div>`
-    + `<div class="p-5">${tagChips(a)}`
-    + `<h3 class="mb-1 text-lg font-semibold text-gray-900 group-hover:text-indigo-600 dark:text-white dark:group-hover:text-indigo-400">${esc(a.title)}</h3>`
+    + `<div class="p-5">`
+    + `<h3 class="mb-2 text-lg font-semibold text-gray-900 group-hover:text-indigo-600 dark:text-white dark:group-hover:text-indigo-400">${esc(a.title)}</h3>`
+    // All tags, under the title.
+    + tagChips(a, undefined, Infinity)
     + description(a, "mb-3 line-clamp-2 text-sm text-gray-500 dark:text-gray-400")
     + dateEl(a, "text-xs text-gray-400 dark:text-gray-500")
     + `</div></a>`;
@@ -236,8 +238,12 @@ function cardImage(a: ArticleIndexEntry): string {
     : "";
 }
 
-function tagChips(a: ArticleIndexEntry, cls = "bg-indigo-50 text-indigo-600 dark:bg-indigo-500/15 dark:text-indigo-300"): string {
-  const tags = (a.tags ?? []).slice(0, MAX_TAGS_ON_CARD);
+function tagChips(
+  a: ArticleIndexEntry,
+  cls = "bg-indigo-50 text-indigo-600 dark:bg-indigo-500/15 dark:text-indigo-300",
+  limit = MAX_TAGS_ON_CARD
+): string {
+  const tags = (a.tags ?? []).slice(0, limit);
   if (tags.length === 0) return "";
   return `<div class="mb-2 flex flex-wrap gap-1.5">${tags
     .map((t) => `<span class="rounded-full px-2 py-0.5 text-xs font-medium ${cls}">${esc(t)}</span>`)
