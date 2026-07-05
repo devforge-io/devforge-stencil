@@ -41,6 +41,7 @@ export async function loader({ params }: Route.LoaderArgs) {
     description: frontmatter.description ?? "",
     tags: frontmatter.tags?.join(", ") ?? "",
     headerImage: frontmatter.headerImage ?? "",
+    ogImage: frontmatter.ogImage ?? "",
     path: frontmatter.path ?? "",
     publishedAt: frontmatter.publishedAt ?? "",
     draft: frontmatter.draft ?? false,
@@ -71,6 +72,7 @@ export async function action({ request, params }: Route.ActionArgs) {
   const description = (formData.get("description") as string)?.trim();
   const tags = (formData.get("tags") as string)?.trim();
   const headerImage = (formData.get("headerImage") as string)?.trim();
+  const ogImage = (formData.get("ogImage") as string)?.trim();
   const path = normalizeUrlPath(formData.get("path"));
   const publishedAt = (formData.get("publishedAt") as string)?.trim();
   const draft = formData.get("draft") === "on";
@@ -98,6 +100,7 @@ export async function action({ request, params }: Route.ActionArgs) {
     if (description) fm.description = description;
     if (tags) fm.tags = tags.split(",").map((t) => t.trim());
     if (headerImage) fm.headerImage = headerImage;
+    if (ogImage) fm.ogImage = ogImage;
     if (path) fm.path = path;
     if (publishedAt) fm.publishedAt = publishedAt;
     fm.updatedAt = new Date().toISOString();
@@ -112,6 +115,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       description ? `description: "${description}"` : null,
       tagList.length ? `tags: [${tagList.map((t) => `"${t}"`).join(", ")}]` : null,
       headerImage ? `headerImage: "${headerImage}"` : null,
+      ogImage ? `ogImage: "${ogImage}"` : null,
       publishedAt ? `publishedAt: "${publishedAt}"` : null,
       `updatedAt: "${now}"`,
       draft ? `draft: true` : null,
@@ -174,6 +178,7 @@ export default function EditContent({
   const isSubmitting = navigation.state === "submitting";
   const [body, setBody] = useState(loaderData.body);
   const [headerImage, setHeaderImage] = useState(loaderData.headerImage);
+  const [ogImage, setOgImage] = useState(loaderData.ogImage);
 
   // Page editor state
   const [pageProjectData, setPageProjectData] = useState(
@@ -444,15 +449,27 @@ export default function EditContent({
           </div>
 
           {loaderData.contentType === "article" ? (
-            <div>
-              <label className="block text-sm font-medium mb-1.5">
-                Header image <span className="text-red-600">*</span>
-              </label>
-              <ImageUploadField name="headerImage" value={headerImage} onChange={setHeaderImage} slug={loaderData.slug} />
-            </div>
+            <>
+              <div>
+                <label className="block text-sm font-medium mb-1.5">
+                  Header image <span className="text-red-600">*</span>
+                </label>
+                <ImageUploadField name="headerImage" value={headerImage} onChange={setHeaderImage} slug={loaderData.slug} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1.5">Social share image</label>
+                <ImageUploadField name="ogImage" value={ogImage} onChange={setOgImage} slug={loaderData.slug} />
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Used for OpenGraph/Twitter previews. Ideally 1200×630 (1.91:1), under 1&nbsp;MB. Falls back to the header image if empty.
+                </p>
+              </div>
+            </>
           ) : (
-            // Preserve any existing header image on non-article content.
-            <input type="hidden" name="headerImage" value={headerImage} />
+            // Preserve any existing header/social images on non-article content.
+            <>
+              <input type="hidden" name="headerImage" value={headerImage} />
+              <input type="hidden" name="ogImage" value={ogImage} />
+            </>
           )}
 
           {/* Articles render in an ~800px column; cap the editor to match. */}

@@ -24,6 +24,7 @@ export async function action({ request }: Route.ActionArgs) {
   const contentType = (formData.get("contentType") as ContentType) ?? "markdown";
   const body = (formData.get("body") as string) ?? "";
   const headerImage = (formData.get("headerImage") as string)?.trim();
+  const ogImage = (formData.get("ogImage") as string)?.trim();
   const draft = formData.get("draft") === "on";
   const now = new Date().toISOString();
 
@@ -58,6 +59,7 @@ export async function action({ request }: Route.ActionArgs) {
       description ? `description: "${description}"` : null,
       tagList.length ? `tags: [${tagList.map((t) => `"${t}"`).join(", ")}]` : null,
       headerImage ? `headerImage: "${headerImage}"` : null,
+      ogImage ? `ogImage: "${ogImage}"` : null,
       `publishedAt: "${now}"`,
       draft ? `draft: true` : null,
       "---",
@@ -93,6 +95,7 @@ export default function NewContent({ actionData }: Route.ComponentProps) {
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [headerImage, setHeaderImage] = useState("");
+  const [ogImage, setOgImage] = useState("");
   const [contentType, setContentType] = useState<ContentType>("article");
   const [slug, setSlug] = useState("");
   const [slugTouched, setSlugTouched] = useState(false);
@@ -171,10 +174,19 @@ export default function NewContent({ actionData }: Route.ComponentProps) {
         </div>
 
         {contentType === "article" && (
-          <div className="space-y-2">
-            <Label>Header image <span className="text-destructive">*</span></Label>
-            <ImageUploadField name="headerImage" value={headerImage} onChange={setHeaderImage} slug={effectiveSlug} />
-          </div>
+          <>
+            <div className="space-y-2">
+              <Label>Header image <span className="text-destructive">*</span></Label>
+              <ImageUploadField name="headerImage" value={headerImage} onChange={setHeaderImage} slug={effectiveSlug} />
+            </div>
+            <div className="space-y-2">
+              <Label>Social share image</Label>
+              <ImageUploadField name="ogImage" value={ogImage} onChange={setOgImage} slug={effectiveSlug} />
+              <p className="text-xs text-muted-foreground">
+                Used for OpenGraph/Twitter previews. Ideally 1200×630 (1.91:1), under 1&nbsp;MB. Falls back to the header image if empty.
+              </p>
+            </div>
+          </>
         )}
 
         {(contentType === "markdown" || contentType === "article") && (

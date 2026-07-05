@@ -120,6 +120,8 @@ export interface ContentFrontmatter {
   description?: string;
   tags?: string[];
   headerImage?: string;
+  /** Social-share image (OpenGraph/Twitter). Falls back to headerImage. */
+  ogImage?: string;
   /** Optional public URL path this page is served at, e.g. "/about". */
   path?: string;
   publishedAt?: string;

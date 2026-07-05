@@ -28,6 +28,7 @@ export async function action({ request }: Route.ActionArgs) {
   const darkBodyClasses = (formData.get("darkBodyClasses") as string || "").split(" ").filter(Boolean);
   const fonts = (formData.get("fonts") as string || "").split("\n").map((s) => s.trim()).filter(Boolean);
   const articleTemplateSlug = (formData.get("articleTemplateSlug") as string || "").trim();
+  const siteName = (formData.get("siteName") as string || "").trim();
   const sha = (formData.get("sha") as string) || undefined;
 
   // Merge onto existing settings so other fields (e.g. editorDarkMode) survive.
@@ -38,6 +39,7 @@ export async function action({ request }: Route.ActionArgs) {
     darkBodyClasses,
     fonts,
     articleTemplateSlug: articleTemplateSlug || undefined,
+    siteName: siteName || undefined,
   };
   await saveSettings(settings, sha);
   return { saved: true };
@@ -64,6 +66,9 @@ export default function SettingsPage({ loaderData, actionData }: Route.Component
   const [darkBodyClasses, setDarkBodyClasses] = useState<string[]>(initial.darkBodyClasses);
   const [fonts, setFonts] = useState<string[]>(initial.fonts);
   const [articleTemplateSlug, setArticleTemplateSlug] = useState<string>(initial.articleTemplateSlug ?? "");
+  const [siteName, setSiteName] = useState<string>(
+    typeof initial.siteName === "string" ? initial.siteName : ""
+  );
   const [newClass, setNewClass] = useState("");
   const [newDarkClass, setNewDarkClass] = useState("");
 
@@ -95,6 +100,23 @@ export default function SettingsPage({ loaderData, actionData }: Route.Component
         <input type="hidden" name="darkBodyClasses" value={darkBodyClasses.join(" ")} />
         <input type="hidden" name="fonts" value={fonts.join("\n")} />
         <input type="hidden" name="articleTemplateSlug" value={articleTemplateSlug} />
+
+        {/* Site */}
+        <Card>
+          <CardContent className="pt-6 space-y-2">
+            <Label className="text-sm font-semibold">Site Name</Label>
+            <Input
+              name="siteName"
+              value={siteName}
+              onChange={(e) => setSiteName(e.target.value)}
+              placeholder="My Site"
+              className="max-w-sm"
+            />
+            <p className="text-xs text-muted-foreground">
+              Used as <code className="text-xs bg-muted px-1 py-0.5 rounded">og:site_name</code> on shared links (e.g. above the title on Discord).
+            </p>
+          </CardContent>
+        </Card>
 
         {/* Body Classes */}
         <Card>

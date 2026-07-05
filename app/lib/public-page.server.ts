@@ -110,35 +110,45 @@ async function fillArticleSlot(templateHtml: string, articleBody: string): Promi
 }
 
 /**
- * OpenGraph + Twitter Card meta for social sharing. The header image is resolved
- * to an ABSOLUTE URL (scrapers require it) against the request origin, and the
- * request path (query stripped) is used as the canonical URL.
+ * OpenGraph + Twitter Card meta for social sharing. The image is the dedicated
+ * `ogImage` (falling back to `headerImage`), resolved to an ABSOLUTE URL that
+ * scrapers require; the request path (query stripped) is the canonical URL.
+ * `og:site_name`, `og:image:alt`, and a description are included when available.
  */
-function renderSocialMeta(content: AnyContentItem, request?: Request): string {
+function renderSocialMeta(
+  content: AnyContentItem,
+  opts: { request?: Request; siteName?: string; description?: string }
+): string {
+  const { request, siteName, description } = opts;
   const fm = content.frontmatter;
   const type = content.contentType === "article" ? "article" : "website";
   const tags: string[] = [`<meta property="og:type" content="${type}">`];
+
+  if (siteName) tags.push(`<meta property="og:site_name" content="${escapeHtml(siteName)}">`);
 
   if (fm.title) {
     tags.push(`<meta property="og:title" content="${escapeHtml(fm.title)}">`);
     tags.push(`<meta name="twitter:title" content="${escapeHtml(fm.title)}">`);
   }
-  if (fm.description) {
-    tags.push(`<meta property="og:description" content="${escapeHtml(fm.description)}">`);
-    tags.push(`<meta name="twitter:description" content="${escapeHtml(fm.description)}">`);
+  if (description) {
+    tags.push(`<meta property="og:description" content="${escapeHtml(description)}">`);
+    tags.push(`<meta name="twitter:description" content="${escapeHtml(description)}">`);
   }
 
+  // Dedicated OpenGraph image, falling back to the header image.
+  const rawImage = fm.ogImage || fm.headerImage;
   let image = "";
-  if (fm.headerImage) {
+  if (rawImage) {
     try {
-      image = request ? new URL(fm.headerImage, request.url).toString() : fm.headerImage;
+      image = request ? new URL(rawImage, request.url).toString() : rawImage;
     } catch {
-      image = fm.headerImage;
+      image = rawImage;
     }
   }
   if (image) {
     tags.push(`<meta property="og:image" content="${escapeHtml(image)}">`);
     tags.push(`<meta name="twitter:image" content="${escapeHtml(image)}">`);
+    if (fm.title) tags.push(`<meta property="og:image:alt" content="${escapeHtml(fm.title)}">`);
   }
 
   if (request) {
@@ -152,6 +162,35 @@ function renderSocialMeta(content: AnyContentItem, request?: Request): string {
 
   tags.push(`<meta name="twitter:card" content="${image ? "summary_large_image" : "summary"}">`);
   return tags.join("\n  ");
+}
+
+/** Strip tags/entities/whitespace and trim to ~160 chars at a word boundary. */
+function excerptFromHtml(html: string, max = 160): string {
+  const text = html
+    .replace(/<[^>]*>/g, " ")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (text.length <= max) return text;
+  const cut = text.slice(0, max);
+  const lastSpace = cut.lastIndexOf(" ");
+  return (lastSpace > 40 ? cut.slice(0, lastSpace) : cut).trimEnd() + "…";
+}
+
+/** The meta/social description: frontmatter description, else a body excerpt
+ * (for text content — not pages, whose body is layout chrome). */
+function metaDescription(content: AnyContentItem): string {
+  const fm = content.frontmatter;
+  if (typeof fm.description === "string" && fm.description.trim()) return fm.description.trim();
+  if (content.contentType !== "page" && "html" in content && typeof content.html === "string") {
+    return excerptFromHtml(content.html);
+  }
+  return "";
 }
 
 /**
@@ -169,17 +208,23 @@ export async function renderPublicPageResponse(
   content: AnyContentItem,
   request?: Request
 ): Promise<Response> {
-  const title = escapeHtml(content.frontmatter.title);
-  const descTag = content.frontmatter.description
-    ? `<meta name="description" content="${escapeHtml(content.frontmatter.description)}">`
-    : "";
-  const headerImage = renderHeaderImage(content.frontmatter.headerImage);
-  const socialMeta = renderSocialMeta(content, request);
-
   // Site body classes, applied live at render (not baked per page).
   const { settings } = await getSettings();
   const bodyClassList = [...settings.bodyClasses, ...settings.darkBodyClasses];
   const bodyClass = bodyClassList.join(" ");
+
+  const title = escapeHtml(content.frontmatter.title);
+  // Falls back to an excerpt of the body so social/SEO snippets aren't blank.
+  const description = metaDescription(content);
+  const descTag = description
+    ? `<meta name="description" content="${escapeHtml(description)}">`
+    : "";
+  const headerImage = renderHeaderImage(content.frontmatter.headerImage);
+  const socialMeta = renderSocialMeta(content, {
+    request,
+    siteName: typeof settings.siteName === "string" ? settings.siteName : undefined,
+    description,
+  });
 
   let head = "";
   let body: string;

@@ -8,6 +8,8 @@ export interface StencilSettings {
   editorDarkMode?: boolean;
   /** Slug of the page used as the layout template for all article pages. */
   articleTemplateSlug?: string;
+  /** Site name — used for og:site_name on shared pages. */
+  siteName?: string;
   [key: string]: unknown;
 }
 
