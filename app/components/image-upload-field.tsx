@@ -25,6 +25,7 @@ export function ImageUploadField({
   accept = "image/*",
   slug,
   crop,
+  deriveFromUrl,
 }: {
   name: string;
   value: string;
@@ -34,6 +35,8 @@ export function ImageUploadField({
   slug?: string;
   /** Enable an aspect-locked crop/resize step, producing this exact size. */
   crop?: { width: number; height: number };
+  /** When set (with `crop`), offer a button to crop from this image URL. */
+  deriveFromUrl?: string;
 }) {
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -86,14 +89,22 @@ export function ImageUploadField({
   const onImageLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {
     if (!aspect) return;
     const { width, height } = e.currentTarget;
-    setCropRect(
-      centerCrop(makeAspectCrop({ unit: "%", width: 90 }, aspect, width, height), width, height)
-    );
+    const pct = centerCrop(makeAspectCrop({ unit: "%", width: 90 }, aspect, width, height), width, height);
+    setCropRect(pct);
+    // Seed the completed (pixel) crop too, so Apply works on the default crop
+    // without requiring a manual drag first.
+    setCompletedRect({
+      unit: "px",
+      x: (pct.x / 100) * width,
+      y: (pct.y / 100) * height,
+      width: (pct.width / 100) * width,
+      height: (pct.height / 100) * height,
+    });
   };
 
   const applyCrop = async () => {
     const image = imgRef.current;
-    if (!image || !completedRect || !crop) return;
+    if (!image || !completedRect || !completedRect.width || !crop) return;
     const scaleX = image.naturalWidth / image.width;
     const scaleY = image.naturalHeight / image.height;
     const canvas = document.createElement("canvas");
@@ -113,9 +124,16 @@ export function ImageUploadField({
       crop.width,
       crop.height
     );
-    const blob: Blob | null = await new Promise((resolve) =>
-      canvas.toBlob((b) => resolve(b), "image/jpeg", 0.85)
-    );
+    // Re-encode at decreasing quality until it's comfortably under 1 MB.
+    const MAX_BYTES = 950_000;
+    const encode = (q: number): Promise<Blob | null> =>
+      new Promise((resolve) => canvas.toBlob((b) => resolve(b), "image/jpeg", q));
+    let quality = 0.85;
+    let blob = await encode(quality);
+    while (blob && blob.size > MAX_BYTES && quality > 0.4) {
+      quality -= 0.1;
+      blob = await encode(quality);
+    }
     setCropSrc(null);
     if (blob) await handleFile(new File([blob], cropName, { type: "image/jpeg" }));
   };
@@ -137,10 +155,25 @@ export function ImageUploadField({
         </div>
       )}
 
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <Button type="button" variant="outline" size="sm" disabled={uploading} onClick={() => fileRef.current?.click()}>
           {uploading ? "Uploading…" : value ? "Replace image" : "Upload image"}
         </Button>
+        {crop && deriveFromUrl && (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={uploading}
+            onClick={() => {
+              setError(null);
+              setCropName("social-image.jpg");
+              setCropSrc(deriveFromUrl);
+            }}
+          >
+            Crop from header image
+          </Button>
+        )}
         <Input
           // Plain text, not type="url": uploaded assets are relative paths
           // (e.g. /api/assets/foo.png) which fail native URL validation.
@@ -188,6 +221,7 @@ export function ImageUploadField({
                   ref={imgRef}
                   src={cropSrc}
                   alt="To crop"
+                  crossOrigin="anonymous"
                   onLoad={onImageLoad}
                   style={{ maxHeight: "60vh", width: "auto" }}
                 />

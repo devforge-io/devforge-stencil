@@ -458,7 +458,7 @@ export default function EditContent({
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1.5">Social share image</label>
-                <ImageUploadField name="ogImage" value={ogImage} onChange={setOgImage} slug={loaderData.slug} crop={{ width: 1200, height: 630 }} />
+                <ImageUploadField name="ogImage" value={ogImage} onChange={setOgImage} slug={loaderData.slug} crop={{ width: 1200, height: 630 }} deriveFromUrl={headerImage || undefined} />
                 <p className="mt-1 text-xs text-muted-foreground">
                   Used for OpenGraph/Twitter previews. Ideally 1200×630 (1.91:1), under 1&nbsp;MB. Falls back to the header image if empty.
                 </p>
