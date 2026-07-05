@@ -74,7 +74,12 @@ body { margin: 0; background: #ffffff; color: #1a1a1a; font-family: system-ui, -
 const ARTICLE_BODY_CSS = `
 .pb-article-body img, .pb-article-body video, .pb-article-body iframe { max-width: 100%; height: auto; }
 .pb-article-body img[data-pb-header-image] { margin-bottom: 1rem; border-radius: 8px; }
-.pb-article-body .pb-article-meta { margin: 0 0 2rem; font-size: 0.875rem; color: #71717a; }
+.pb-article-body .pb-article-title { font-size: 2.25rem; line-height: 1.15; font-weight: 800; letter-spacing: -0.02em; margin: 0 0 1.25rem; }
+.pb-article-body .pb-article-meta-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; margin: 0 0 2rem; }
+.pb-article-body .pb-article-meta { margin: 0; font-size: 0.875rem; color: #71717a; }
+.pb-article-body .pb-article-share { display: inline-flex; align-items: center; gap: 0.4rem; font: inherit; font-size: 0.8125rem; padding: 0.35rem 0.8rem; border: 1px solid #e4e4e7; border-radius: 9999px; background: transparent; color: inherit; cursor: pointer; }
+.pb-article-body .pb-article-share:hover { background: #f4f4f5; }
+.pb-article-body .pb-article-share svg { width: 0.95rem; height: 0.95rem; }
 .pb-article-body figure { margin: 1.5rem 0; }
 .pb-article-body figure img { border-radius: 8px; }
 .pb-article-body h1, .pb-article-body h2, .pb-article-body h3, .pb-article-body h4 { line-height: 1.25; margin: 1.75rem 0 0.75rem; }
@@ -89,6 +94,8 @@ const ARTICLE_BODY_CSS = `
 @media (prefers-color-scheme: dark) {
   .pb-article-body a { color: #a5b4fc; }
   .pb-article-body .pb-article-meta { color: #a1a1aa; }
+  .pb-article-body .pb-article-share { border-color: #3f3f46; }
+  .pb-article-body .pb-article-share:hover { background: #18181b; }
   .pb-article-body pre { background: #18181b; }
   .pb-article-body blockquote { border-left-color: #3f3f46; color: #a1a1aa; }
   .pb-article-body hr, .pb-article-body th, .pb-article-body td { border-color: #3f3f46; }
@@ -197,6 +204,14 @@ function metaDescription(content: AnyContentItem): string {
   return "";
 }
 
+// Share button: native share sheet where available, else copy-the-URL to the
+// clipboard with brief "Copied!" feedback. Self-contained inline handler so it
+// works on the static public page (no framework runtime).
+const ARTICLE_SHARE_BUTTON =
+  `<button type="button" class="pb-article-share" aria-label="Share" onclick="var s=this.querySelector('.pb-share-text'),u=location.href;if(navigator.share){navigator.share({title:document.title,url:u}).catch(function(){})}else if(navigator.clipboard){navigator.clipboard.writeText(u);var o=s.textContent;s.textContent='Copied!';setTimeout(function(){s.textContent=o},1500)}">` +
+  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.6" y1="13.5" x2="15.4" y2="17.5"/><line x1="15.4" y1="6.5" x2="8.6" y2="10.5"/></svg>` +
+  `<span class="pb-share-text">Share</span></button>`;
+
 /**
  * Render a published content item as a full standalone HTML document Response.
  * Pages get the Tailwind runtime + their compiled CSS; other content types get
@@ -276,7 +291,11 @@ export async function renderPublicPageResponse(
       () => ({ createdAt: null, updatedAt: null })
     );
     const meta = renderArticleDates(dates.createdAt, dates.updatedAt);
-    const articleBody = `<div class="pb-article-body">${headerImage}${meta}${content.html}</div>`;
+    // Title above the header image, then a byline row (dates + share button).
+    const articleHead =
+      `<h1 class="pb-article-title">${title}</h1>${headerImage}` +
+      `<div class="pb-article-meta-row">${meta}${ARTICLE_SHARE_BUTTON}</div>`;
+    const articleBody = `<div class="pb-article-body">${articleHead}${content.html}</div>`;
     const tplSlug = typeof settings.articleTemplateSlug === "string" ? settings.articleTemplateSlug : "";
     const template = tplSlug ? await getPublishedContent(tplSlug) : null;
 
@@ -316,7 +335,7 @@ export async function renderPublicPageResponse(
       // Default layout: centered ~800px column, media constrained, dark-mode aware.
       // Body classes (if any) sit on <body> and override the fallback chrome.
       head = `${TAILWIND_HEAD}<style>${ARTICLE_PAGE_CSS}${ARTICLE_BODY_CSS}</style>`;
-      body = `<article class="pb-article-body" style="max-width:800px;margin:0 auto;padding:2rem 1.25rem;">${headerImage}${meta}${content.html}</article>`;
+      body = `<article class="pb-article-body" style="max-width:800px;margin:0 auto;padding:2rem 1.25rem;">${articleHead}${content.html}</article>`;
     }
   } else {
     head = TAILWIND_HEAD;
