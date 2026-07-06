@@ -49,16 +49,24 @@ function rehypeImageAttrs() {
         imgStyles.push(`width:${attrs.width}`);
       }
 
-      if (attrs.align) {
-        switch (attrs.align) {
+      // A sized image with no explicit alignment defaults to center (matches the
+      // editor's default). `text-align` only affects inline-level children, and
+      // Tailwind's reset makes <img> display:block — so force inline-block.
+      const align = attrs.align ?? (attrs.width ? "center" : undefined);
+
+      if (align) {
+        switch (align) {
           case "center":
             figStyles.push("text-align:center");
+            imgStyles.push("display:inline-block");
             break;
           case "right":
             figStyles.push("text-align:right");
+            imgStyles.push("display:inline-block");
             break;
           case "left":
             figStyles.push("text-align:left");
+            imgStyles.push("display:inline-block");
             break;
           case "float-left":
             imgStyles.push("float:left", "margin-right:1rem", "margin-bottom:0.5rem");

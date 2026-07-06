@@ -113,6 +113,10 @@ export const ResizableImage = Node.create({
     } else if (alignment === "float-right") {
       style.push("float: right", "margin-left: 1rem", "margin-bottom: 0.5rem");
     }
+    // inline-block so text-align actually centers/right-aligns the image.
+    if (alignment !== "float-left" && alignment !== "float-right") {
+      style.push("display: inline-block");
+    }
 
     return [
       "figure",
@@ -247,7 +251,9 @@ function ImageNodeView({ node, updateAttributes, selected }: NodeViewProps) {
         alt={alt ?? ""}
         draggable={false}
         style={{ width: width ?? "auto" }}
-        className={`rounded-lg max-w-full ${
+        // inline-block so the wrapper's text-align (center/right) actually
+        // centers it — Tailwind's reset otherwise makes <img> display:block.
+        className={`inline-block rounded-lg max-w-full ${
           selected ? "ring-2 ring-brand-500" : ""
         } ${resizing ? "pointer-events-none" : ""}`}
       />
