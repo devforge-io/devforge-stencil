@@ -244,3 +244,41 @@ body {
     @apply font-sans;
   }
 }
+/* highlight.js token colors (GitHub-dark) for editor code blocks (lowlight)
+   and any admin-side highlighted code. The public article carries its own
+   copy in ARTICLE_BODY_CSS (separate document). */
+.hljs-comment,
+.hljs-quote { color: #8b949e; font-style: italic; }
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-literal,
+.hljs-doctag,
+.hljs-formula { color: #ff7b72; }
+.hljs-string,
+.hljs-meta .hljs-string,
+.hljs-regexp { color: #a5d6ff; }
+.hljs-number,
+.hljs-symbol,
+.hljs-bullet,
+.hljs-link { color: #79c0ff; }
+.hljs-title,
+.hljs-title.class_,
+.hljs-title.function_,
+.hljs-section,
+.hljs-name { color: #d2a8ff; }
+.hljs-attr,
+.hljs-attribute,
+.hljs-variable,
+.hljs-template-variable,
+.hljs-type,
+.hljs-params,
+.hljs-built_in,
+.hljs-builtin-name { color: #ffa657; }
+.hljs-tag,
+.hljs-selector-id,
+.hljs-selector-class { color: #7ee787; }
+.hljs-meta { color: #79c0ff; }
+.hljs-deletion { color: #ffdcd7; background: #67060c; }
+.hljs-addition { color: #aff5b4; background: #033a16; }
+.hljs-emphasis { font-style: italic; }
+.hljs-strong { font-weight: 600; }

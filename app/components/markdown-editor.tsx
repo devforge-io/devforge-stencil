@@ -13,6 +13,30 @@ import { gfm } from "turndown-plugin-gfm";
 
 const lowlight = createLowlight(common);
 
+// Languages offered in the code-block toolbar (all in lowlight's `common` set).
+const CODE_LANGUAGES: { value: string; label: string }[] = [
+  { value: "plaintext", label: "Plain" },
+  { value: "bash", label: "Bash" },
+  { value: "javascript", label: "JavaScript" },
+  { value: "typescript", label: "TypeScript" },
+  { value: "python", label: "Python" },
+  { value: "java", label: "Java" },
+  { value: "c", label: "C" },
+  { value: "cpp", label: "C++" },
+  { value: "csharp", label: "C#" },
+  { value: "go", label: "Go" },
+  { value: "rust", label: "Rust" },
+  { value: "ruby", label: "Ruby" },
+  { value: "php", label: "PHP" },
+  { value: "xml", label: "HTML/XML" },
+  { value: "css", label: "CSS" },
+  { value: "scss", label: "SCSS" },
+  { value: "json", label: "JSON" },
+  { value: "yaml", label: "YAML" },
+  { value: "sql", label: "SQL" },
+  { value: "markdown", label: "Markdown" },
+];
+
 function createTurndown() {
   const td = new TurndownService({
     headingStyle: "atx",
@@ -446,6 +470,22 @@ export function MarkdownEditor({
             >
               {"```"}
             </ToolbarBtn>
+            {editor.isActive("codeBlock") && (
+              <select
+                value={editor.getAttributes("codeBlock").language || "plaintext"}
+                onChange={(e) =>
+                  editor.chain().focus().updateAttributes("codeBlock", { language: e.target.value }).run()
+                }
+                title="Code language"
+                className="h-6 rounded border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-1 text-xs"
+              >
+                {CODE_LANGUAGES.map((l) => (
+                  <option key={l.value} value={l.value}>
+                    {l.label}
+                  </option>
+                ))}
+              </select>
+            )}
             <ToolbarBtn
               active={false}
               onClick={() =>
