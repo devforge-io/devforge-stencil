@@ -1,380 +1,311 @@
 # Stencil
 
-A headless CMS that stores content as Markdown in a GitHub repository. Edit, preview, and publish with full version history. Embed content anywhere via API or script tag.
+A Git-backed CMS **and visual site builder**. Content lives as plain files in a GitHub repository — Markdown, articles, wiki markup, and drag‑and‑drop pages — edited through a rich admin UI, versioned by Git, and served (or embedded) anywhere.
 
-Built with React Router 7, remix-flat-routes, and the GitHub API.
+Think of it as a headless CMS with a **visual page builder** bolted on: you author content and design layouts visually, everything is stored as human‑readable files in your repo, and there's no database.
+
+Built with React Router 7, remix‑flat‑routes, and the GitHub API.
+
+---
+
+## Highlights
+
+- **Four content types** — Markdown, **Articles**, **Pages** (visual builder), and **Wikipedia/Wikitext**.
+- **Visual page builder** — drag‑and‑drop blocks, a layers tree, live class/style editing, responsive canvas, and custom URL paths — the output is your own clean HTML.
+- **Reusable components** — build a component once, drop it into any page; edits propagate.
+- **Conditional components** — components that render different branches per visitor based on **auth, geo, time, device, query params, A/B bucket, or page data**, resolved on the server per request. Edited in a visual flow editor.
+- **Articles** — first‑class blog/news content with header + social images, tags, git‑derived created/updated dates, an `articles.json` index, ready‑made grid/card/featured/tag‑filter blocks, per‑article layout templates, share buttons, and social/OpenGraph metadata.
+- **Rich Markdown editor** — WYSIWYG (TipTap) with raw‑markdown toggle, image resize/align, code blocks with **syntax highlighting** + language picker, tasks, tables, and Excalidraw whiteboards.
+- **GitHub OAuth login with roles** — Admin / Moderator / Editor derived from each user's permission on the content repo.
+- **Two‑branch publishing** — drafts on one branch, published content on another, with full history and side‑by‑side diffs.
+- **Text variables** — `{username}`, `{query.ref}`, `{geo.country}`, `{data.*}` … substituted at render time.
+- **Anonymous‑by‑default public site** with edge caching, plus a headless JSON API and iframe embeds.
+
+---
 
 ## Setup
 
 ### Prerequisites
 
-- Node.js 22+
-- A GitHub repository to store content (must exist with at least one commit)
-- A GitHub Personal Access Token with **Contents: Read and write** and **Metadata: Read** permissions on the content repository
+- **Node.js 22+** (`require(esm)` support is needed for some deps; the repo pins `engines.node: 22.x`)
+- A **GitHub repository** to store content (must exist with at least one commit)
+- A **GitHub OAuth App** for sign‑in (see below)
+- Optionally, a **GitHub token** for a shared service account (see `GITHUB_TOKEN`)
 
-### Installation
+### Generating GitHub credentials
+
+You need two things: an **OAuth App** (so people can sign in) and, optionally, a **token** (a shared service account for git operations). All of these live under **GitHub → Settings → Developer settings**.
+
+#### `GITHUB_OAUTH_CLIENT_ID` + `GITHUB_OAUTH_CLIENT_SECRET` (required — sign‑in)
+
+Sign‑in uses GitHub OAuth, and each user's role is derived from their permission on the content repo.
+
+1. Go to **GitHub → Settings → Developer settings → OAuth Apps → [New OAuth App](https://github.com/settings/applications/new)**.
+2. Fill in:
+   - **Application name** — anything (e.g. "My Stencil CMS").
+   - **Homepage URL** — your site's origin (e.g. `http://localhost:5174` in dev, or your production URL).
+   - **Authorization callback URL** — `<your-site-origin>/auth/github/callback` (e.g. `http://localhost:5174/auth/github/callback`).
+3. Click **Register application**. Copy the **Client ID** → `GITHUB_OAUTH_CLIENT_ID`.
+4. Click **Generate a new client secret**, copy it immediately (it's shown once) → `GITHUB_OAUTH_CLIENT_SECRET`.
+
+> An OAuth App allows **one** callback URL, so use a separate app per environment (dev/prod), or create a **GitHub App** instead — use its **Client ID** + a generated **client secret** the same way (the App's *private key* is **not** needed for this login flow).
+
+Role mapping (from the signed‑in user's permission on the repo): `admin → Admin`, `maintain → Moderator`, `write → Editor`. Anything below write access can't sign in to the CMS.
+
+#### `GITHUB_TOKEN` (optional — shared service account)
+
+If set, all git operations use this token instead of each signed‑in user's own token. **Required** if your content repo is **private** and you want anonymous visitors to see the published site (anonymous requests have no user token to fall back to). Use a **fine‑grained** token scoped to just the content repo:
+
+1. Go to **GitHub → Settings → Developer settings → Personal access tokens → Fine‑grained tokens → [Generate new token](https://github.com/settings/personal-access-tokens/new)**.
+2. Set **Resource owner** to the account/org that owns the content repo, and **Repository access → Only select repositories → \<your content repo\>**.
+3. Under **Permissions → Repository permissions**, grant:
+   - **Contents** → **Read and write** (read/commit content & assets)
+   - **Metadata** → **Read‑only** (mandatory)
+   - **Administration** → **Read‑only** *(optional — lets the token look up collaborators' roles for sign‑in; not needed if the OAuth login already resolves roles)*
+4. **Generate token** and copy it → `GITHUB_TOKEN`.
+
+> Prefer the simplest thing that works: a **classic** token (Developer settings → *Tokens (classic)*) with the **`repo`** scope also works, but grants broad access — fine‑grained is recommended. Leave `GITHUB_TOKEN` unset for a public repo to have commits attributed to whoever is signed in.
+
+### Installation & configuration
 
 ```bash
 npm install
-```
-
-### Configuration
-
-Copy the example env file and fill in your values:
-
-```bash
-cp .env.example .env
+cp .env.example .env   # then fill in the values
 ```
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
-| `GITHUB_TOKEN` | Yes | | GitHub PAT with `repo` or fine-grained `contents:write` + `metadata:read` |
-| `GITHUB_OWNER` | Yes | | GitHub user or organization that owns the content repo |
-| `GITHUB_REPO` | Yes | | Name of the content repository |
-| `GITHUB_BRANCH` | No | `draft` | Working branch — admin edits go here |
-| `GITHUB_PUBLISH_BRANCH` | No | `main` | Publish branch — public API serves content from here |
-| `GITHUB_CONTENT_PATH` | No | `content` | Directory within the repo where markdown files are stored |
+| `GITHUB_OWNER` | Yes | | GitHub user/org that owns the content repo |
+| `GITHUB_REPO` | Yes | | Content repository name |
+| `GITHUB_OAUTH_CLIENT_ID` | Yes | | OAuth App client ID (for "Login with GitHub") |
+| `GITHUB_OAUTH_CLIENT_SECRET` | Yes | | OAuth App client secret |
 | `SESSION_SECRET` | Yes | | Random string used to encrypt session cookies |
+| `GITHUB_TOKEN` | No | | Shared service token. **If set**, all git ops use it. **If unset**, ops use the signed‑in user's own token (commits are attributed to them). A **private** repo still needs a token for anonymous public serving. |
+| `GITHUB_BRANCH` | No | `draft` | Working branch — admin edits land here |
+| `GITHUB_PUBLISH_BRANCH` | No | `main` | Publish branch — the public site/API serve from here |
+| `GITHUB_CONTENT_PATH` | No | `content` | Directory for content files and assets |
+| `GITHUB_COMPONENT_PATH` | No | `components` | Directory for reusable components |
+| `API_TOKEN` | No | | If set, the JSON API/embeds require `Authorization: Bearer <token>` or `?token=`. Leave unset for a fully public API. |
 
-### Development
+### Development / production
 
 ```bash
-npm run dev
+npm run dev      # dev server
+npm run build && npm start   # production
+npm run typecheck
+npm test
 ```
 
-### Production
-
-```bash
-npm run build
-npm start
-```
-
-## Content Model
-
-Content files are Markdown with YAML frontmatter, stored in `GITHUB_CONTENT_PATH/` as `{slug}.md`:
-
-```markdown
----
-title: "My Post"
-description: "A short summary"
-tags: ["docs", "tutorial"]
-publishedAt: "2026-04-12T00:00:00Z"
-draft: false
 ---
 
-Your markdown content here.
-```
+## Authentication & roles
 
-| Frontmatter Field | Type | Required | Description |
+Public pages are **anonymous** — only published content is visible to visitors. The CMS (`/content/*`, `/components/*`, settings) requires sign‑in.
+
+| Capability | Admin | Moderator | Editor |
+|---|:--:|:--:|:--:|
+| Create / edit content & components | ✓ | ✓ | ✓ |
+| Publish / unpublish · Delete | ✓ | ✓ | — |
+| Settings · manage | ✓ | — | — |
+
+Guards are enforced server‑side (route loaders/actions) and mirrored in the UI (buttons/nav hidden for lower roles). There's also a separate **visitor** auth track (`/api/visitor/*`) for real end‑user accounts, which is what the conditional `auth.*` signals read.
+
+---
+
+## Content types
+
+Content files live in `GITHUB_CONTENT_PATH/` as `{slug}.<ext>`, each with YAML frontmatter:
+
+| Type | Extension | Editor | Public URL |
 |---|---|---|---|
-| `title` | string | Yes | Display title |
-| `description` | string | No | Short summary, shown in listings and API |
-| `tags` | string[] | No | Used for filtering in the API |
-| `publishedAt` | string | No | ISO 8601 date, used for sorting |
-| `updatedAt` | string | No | ISO 8601 date |
-| `draft` | boolean | No | Drafts are hidden from public API by default |
+| **Markdown** | `.md` | WYSIWYG + raw markdown | assign a path |
+| **Article** | `.article` | Markdown editor + article fields | `/articles/<slug>` |
+| **Page** | `.page` | Visual page builder | assign a path (or `/`) |
+| **Wikipedia** | `.wikipedia` | Wikitext editor | assign a path |
 
-## Admin UI
+Common frontmatter: `title`, `description`, `tags`, `headerImage`, `ogImage`, `ogTitle`, `ogDescription`, `path` (custom public URL), `publishedAt`, `updatedAt`, `draft`.
 
-The admin interface is behind cookie-based authentication. Log in at `/login` with your GitHub PAT.
+Create content at **`/content/new`** (Article · Markdown · Page · Wiki). The content list at **`/content`** has per‑type tabs and shows each item's assigned URI.
 
-| Route | Description |
+---
+
+## Visual page builder (Pages)
+
+`.page` content opens in a drag‑and‑drop builder that produces clean, self‑hosted HTML:
+
+- **Blocks palette** — Layout, Basic, Components, Articles categories, plus your custom components and conditionals.
+- **Canvas** — drag blocks in, select/nest elements, resize the viewport to test screen sizes.
+- **Layers** — a tree view with drag‑to‑reorder / drag‑into‑container.
+- **Properties** — edit attributes, Tailwind classes, and inline styles per element; images upload to the content assets.
+- **Body classes** come from **Settings** and are applied to the public `<body>` at render time (change them once, every page updates).
+
+Pages are served at their assigned `path` (e.g. `/about`), or at the site **root `/`**. Public pages load the Tailwind runtime so utility classes render without a build step.
+
+---
+
+## Components & conditional components
+
+**Components** (`/components`) are reusable page‑builder fragments stored under `GITHUB_COMPONENT_PATH/`. Build one (e.g. a nav/header), then drop it into pages from the blocks palette — instances carry a `data-pb-component` marker and stay in sync.
+
+**Conditional components** render **one of several branches** depending on the current request, evaluated server‑side:
+
+- **Signals** — `auth.*` (logged in, username, roles, attributes), `query.<param>`, `data.<key>` (page frontmatter), `device` (mobile/desktop), `time.*` (UTC), `geo.*` (country/region/city), `ab.*` (stable A/B bucket).
+- **Editing** — a visual **flow editor** (React Flow) shows the condition branches and their target components, with live "test signals" preview.
+- **Rendering** — a placeholder (`data-pb-conditional`) is swapped for the chosen branch's markup at serve time. Personalized pages are served `private, no-store` so per‑visitor markup is never shared‑cached.
+
+---
+
+## Articles
+
+Articles are blog/news posts with extra structure:
+
+- **Header image** (required) and an optional **social share image** with an in‑browser **crop tool** (locked to 1200×630, re‑encoded under 1 MB) — falls back to the header image for OpenGraph/Twitter.
+- **Social overrides** — `ogTitle` / `ogDescription` for share cards, separate from the page title/description.
+- **`articles.json`** — a lightweight index of every article (title, tags, header image, dates) kept in sync on the publish branch, so public listing blocks read it in a single request.
+- **Article blocks** — drop **Article Grid / Card / Featured / Tag‑filter** blocks into any page; they render server‑side from `articles.json` (with `?tag=` filtering, published‑only or include‑drafts).
+- **Article template** — designate a Page (with an "Article Content" slot block) in Settings; every article renders inside that layout.
+- **Public article** — `/articles/<slug>` shows the title, header image, a Git‑derived **Created / Updated** byline, **social share buttons** (X, Facebook, LinkedIn, Instagram, copy), and an **Edit** button for signed‑in editors.
+
+---
+
+## Markdown editor
+
+The WYSIWYG editor (TipTap/ProseMirror) is used for Markdown and Article bodies, with a **Raw** markdown toggle:
+
+- **Formatting** — headings, bold/italic, lists, tasks, tables, blockquotes, links, horizontal rules.
+- **Code blocks** — syntax highlighting via lowlight/highlight.js (GitHub‑dark theme) with a **language picker**; the language round‑trips through Markdown and the published page (`rehype-highlight`).
+- **Images** — upload/drag/paste; click to set **alignment** (left/center/right/float) and **size** (25–100 % or drag‑resize). Size/alignment are encoded in the Markdown image title (`"width=50% align=center"`), and a sized image defaults to centered.
+- **Sticky toolbar** — stays visible while scrolling long articles.
+- **Whiteboards** — see below.
+
+### Whiteboards
+
+Every whiteboard is associated with a content page (no standalone whiteboards). From the edit page, the **Whiteboards** panel lets you create, edit (Excalidraw), and **Insert** a whiteboard image into the body. Saving commits the editable `.excalidraw` scene plus a rendered PNG; embeds reference the PNG and are **not** commit‑pinned, so edits propagate to every page that uses them.
+
+```
+content/whiteboards/{pageSlug}/{wbSlug}.excalidraw   # editable scene
+content/assets/whiteboard-{pageSlug}-{wbSlug}.png    # rendered image
+```
+
+---
+
+## Wikipedia / Wikitext
+
+`.wikipedia` content is authored in **Wikitext** (MediaWiki markup) with a dedicated editor and a live preview (`/api/preview-wiki`) — useful for wiki‑style knowledge bases alongside Markdown and visual pages.
+
+---
+
+## Settings
+
+**`/content/settings`** (Admin only) stores site‑wide config in `settings.json`:
+
+- **Site Name** — used for `og:site_name` on shared links.
+- **Favicon** — PNG/SVG/ICO, emitted as `<link rel="icon">` on public pages and the admin.
+- **Body classes** (light + dark) — applied to the public `<body>` at render.
+- **Fonts** — Google Fonts to load.
+- **Article template** — the Page used as the layout for all articles.
+
+---
+
+## Publishing workflow
+
+Two‑branch model:
+
+- **`draft`** — every admin save commits here.
+- **`main`** (`GITHUB_PUBLISH_BRANCH`) — what the public site/API serve; updated only when you publish.
+
+From a content view: **Publish** / **Publish Changes** (when the draft is ahead) / **Unpublish**. Listings show **Draft**, **Published**, or **Unpublished changes** badges. **`/content/:slug/history`** shows the Git log, marks the published commit, and offers a side‑by‑side diff between any two commits.
+
+---
+
+## Assets
+
+Uploaded from the editor (toolbar picker, drag‑and‑drop, or paste). Allowed: PNG, JPEG, GIF, WebP, SVG, ICO, PDF (max 10 MB). Files are written to `content/assets/<slug>/<filename>` (grouped per content item) on both branches and served via a splat route. Editor image references are **commit‑pinned** (`?ref=<sha>`) so they're immutable even if a same‑named file is uploaded later.
+
+---
+
+## Text variables
+
+Any text can contain `{variable}` tokens, substituted server‑side at render against the same signals conditions use:
+
+- `{username}` `{roles}` `{attributes.plan}` — the visitor (shorthands for `auth.*`)
+- `{query.ref}` · `{data.title}` · `{geo.country}` · `{time.hour}` · `{device}`
+
+Unknown tokens are left literal; a logged‑out `{username}` becomes empty. Values are inserted as text (no HTML injection), and pages using request‑specific variables become uncacheable.
+
+---
+
+## Headless API & embedding
+
+Public API/embed endpoints are read‑only, CORS‑enabled, and serve published content (optionally gated by `API_TOKEN`).
+
+| Endpoint | Description |
 |---|---|
-| `/content` | List all content |
-| `/content/new` | Create a new post |
-| `/content/:slug` | View a post with rendered HTML |
-| `/content/:slug/edit` | Edit the post with WYSIWYG editor, frontmatter fields, and whiteboards panel |
-| `/content/:slug/history` | View git commit history with side-by-side diff and published-version marker |
-| `/content/:slug/whiteboards` | List whiteboards associated with this page |
-| `/content/:slug/whiteboards/:wb` | Edit an individual whiteboard (Excalidraw) |
-
-## Whiteboards
-
-Stencil integrates [Excalidraw](https://excalidraw.com/) for drawing diagrams and sketches. Every whiteboard is **associated with a content page** — there are no standalone whiteboards.
-
-### How it works
-
-From the content edit page, a **Whiteboards** panel shows all whiteboards for the current page. Each whiteboard has:
-
-- **+ New** — create a new whiteboard for this page
-- **Insert** — append the whiteboard image to the markdown body
-- **Edit** — open the Excalidraw editor to modify the whiteboard
-
-When you save a whiteboard, two things are committed to the content repo:
-
-1. **Project file** (the editable scene) at `content/whiteboards/{pageSlug}/{wbSlug}.excalidraw` — full JSON containing elements, app state, and embedded assets. You can download and open this in the Excalidraw web app.
-2. **Rendered PNG** at `content/assets/whiteboard-{pageSlug}-{wbSlug}.png` — the exported image used for embedding.
-
-### Embedding whiteboards
-
-Whiteboard images are referenced as regular assets via their URL:
-
-```markdown
-![Architecture](/api/assets/whiteboard-hello-world-architecture.png)
-```
-
-Unlike normal image uploads, whiteboard references are **not commit-pinned**. When you edit a whiteboard, every page that embeds it automatically shows the updated version (no re-embedding needed).
-
-### Storage layout
-
-```
-content/
-├── {slug}.md                                  # content pages
-├── assets/
-│   ├── {filename}                             # uploaded files (images, PDFs)
-│   └── whiteboard-{pageSlug}-{wbSlug}.png     # rendered whiteboard images
-└── whiteboards/
-    └── {pageSlug}/
-        └── {wbSlug}.excalidraw                # whiteboard project files
-```
-
-## Publishing Workflow
-
-Stencil uses a two-branch model:
-
-- **`draft` branch** — where all admin edits land. Every save commits to this branch.
-- **`main` branch** (or `GITHUB_PUBLISH_BRANCH`) — what the public API serves. Only updated when you explicitly publish.
-
-On the content view page:
-- **Publish** — copies the current draft version to the publish branch
-- **Publish Changes** — shown when draft has updates ahead of published
-- **Unpublish** — removes the file from the publish branch
-
-The content listing shows status badges: **Draft**, **Published**, or **Unpublished changes**.
-
-The history page shows the git commit log and marks the currently published commit with a green row and checkmark icon. Select two commits to see a side-by-side diff.
-
-## Asset Uploads
-
-Images and files can be uploaded from the markdown editor:
-
-- **Image toolbar button** — opens a picker with three tabs: Browse existing assets, Upload new file, or Insert from URL
-- **Drag and drop** — drop files directly into the editor
-- **Paste** — paste an image from clipboard to upload and insert
-
-Allowed: PNG, JPEG, GIF, WebP, SVG, PDF. Max file size: 10 MB.
-
-Uploaded assets are written to `content/assets/{filename}` on both the draft and publish branches simultaneously (since assets are immutable). Filenames are preserved with `-1`, `-2` suffixes appended only on collision.
-
-Image references in the markdown are pinned to a commit SHA:
-
-```markdown
-![photo](/api/assets/my-photo.png?ref=abc123def)
-```
-
-This guarantees the image is immutable — even if someone uploads a new file with the same name, existing references continue to resolve to the original version.
-
-### Image sizing and alignment
-
-Click an image in the editor to show a toolbar with:
-
-- **Alignment**: Left, Center, Right, Float L, Float R
-- **Size presets**: 25%, 50%, 75%, 100%, Auto
-- **Drag resize**: grab the right edge of the image
-
-Size and alignment are encoded in the markdown title field to keep the output clean:
-
-```markdown
-![photo](/api/assets/my-photo.png "width=50% align=center")
-```
-
-The markdown renderer parses these attributes and applies them via inline styles on render.
-
-## Headless API
-
-All API and embed endpoints are public, read-only, and include CORS headers (`Access-Control-Allow-Origin: *`). Drafts are excluded by default.
-
-### List content
-
-```
-GET /api/content
-```
-
-Query parameters:
-
-| Param | Description |
-|---|---|
-| `tag` | Filter by tag (e.g. `?tag=docs`) |
-| `draft` | Set to `true` to include drafts |
-
-Response:
-
-```json
-{
-  "items": [
-    {
-      "slug": "getting-started",
-      "title": "Getting Started",
-      "description": "A guide to...",
-      "tags": ["docs"],
-      "publishedAt": "2026-04-12T00:00:00Z",
-      "draft": false
-    }
-  ],
-  "total": 1
-}
-```
-
-### Get single content
-
-```
-GET /api/content/:slug
-```
-
-Response:
-
-```json
-{
-  "meta": {
-    "slug": "getting-started",
-    "title": "Getting Started",
-    "description": "A guide to...",
-    "tags": ["docs"],
-    "publishedAt": "2026-04-12T00:00:00Z",
-    "draft": false
-  },
-  "html": "<h1>Getting Started</h1><p>...</p>",
-  "raw": "---\ntitle: \"Getting Started\"\n---\n\n# Getting Started\n...",
-  "sha": "abc123"
-}
-```
-
-### Get rendered HTML only
-
-```
-GET /api/content/:slug?format=html
-```
-
-Returns the rendered HTML string with `Content-Type: text/html`.
-
-### Assets
-
-```
-GET /api/assets/:filename
-```
-
-Serves a file from `content/assets/`. Supports `?ref=<commitSha>` to pin to a specific git commit (used when images are inserted from the editor for immutability).
-
-```
-GET /api/assets
-```
-
-Lists all uploaded assets with their URLs and commit SHAs. Used internally by the asset picker in the editor.
-
-```
-POST /api/assets/upload
-```
-
-Upload a new file via `multipart/form-data`. Requires authentication. Returns `{ url, filename, commitSha }`.
-
-### Preview
-
-```
-POST /api/preview
-```
-
-Renders raw markdown to HTML. Used by the WYSIWYG editor for the preview tab. Accepts `text/plain` body.
-
-### Health check
-
-```
-GET /api/health
-```
-
-```json
-{
-  "status": "ok",
-  "timestamp": "2026-04-12T00:00:00.000Z",
-  "github": true
-}
-```
-
-## Embedding Content
-
-### Script tag (easiest)
-
-Drop this into any HTML page. It creates an auto-resizing iframe:
+| `GET /api/content` | List content (`?tag=`, `?draft=true`) |
+| `GET /api/content/:slug` | Single item — `{ meta, html, raw, sha }` (`?format=html` for HTML only) |
+| `GET /api/content/:slug/version/:sha` | A specific version + diff |
+| `GET /api/assets` · `GET /api/assets/*` | List / serve assets (`?ref=<sha>`) |
+| `POST /api/assets/upload` | Upload (auth required) |
+| `GET /api/components` · `/api/components/:slug` · `/api/components/:slug.css` | Component data + compiled CSS |
+| `GET /api/me` | The current CMS user's role (used to reveal admin affordances on public pages) |
+| `GET /api/health` | Health check |
+
+### Embedding an article on another site
+
+Renders the article body **with its styling but without the site template**, in an auto‑resizing iframe:
 
 ```html
-<div>
-  <script src="https://your-stencil-instance.com/embed/my-post.js"></script>
-</div>
+<iframe src="https://your-site/embed/articles/<slug>" style="width:100%;border:0" scrolling="no"></iframe>
+<script src="https://your-site/embed.js" async></script>
 ```
 
-### iframe
+The embed posts its height and `embed.js` sizes the iframe to fit. The copy‑paste snippet is available on a published article's admin view.
 
-```html
-<iframe
-  src="https://your-stencil-instance.com/embed/my-post"
-  style="width: 100%; border: none;"
-></iframe>
-```
+---
 
-The embed page includes a `postMessage`-based resize script. Listen for it to auto-size the iframe:
+## Caching
 
-```js
-window.addEventListener("message", (e) => {
-  if (e.data?.type === "stencil-resize") {
-    document.querySelector("iframe").style.height = e.data.height + "px";
-  }
-});
-```
+Public pages set `Cache-Control` with **`s-maxage`** so a shared cache / CDN (e.g. Vercel's edge) caches the rendered HTML — SSR runs at most once per TTL per URL, with `stale-while-revalidate` so visitors never block on a regeneration. Personalized/draft pages (conditionals, `{variables}`, include‑drafts) are `private, no-store`. The `/content/*` admin routes are `no-store` (see `vercel.json`).
 
-### Fetch and render
+---
 
-For full control, fetch the JSON API and render the HTML yourself:
+## Route structure
 
-```js
-const res = await fetch("https://your-stencil-instance.com/api/content/my-post");
-const { html } = await res.json();
-document.getElementById("content").innerHTML = html;
-```
-
-## Route Structure
-
-Uses [remix-flat-routes](https://github.com/kiliman/remix-flat-routes) with the directory+ convention. Every route is a directory containing a `route.tsx` file.
+Uses [remix‑flat‑routes](https://github.com/kiliman/remix-flat-routes) (`route.tsx` per directory; `+` folders are path segments, `$` params, `_` pathless layouts).
 
 ```
 app/routes/
-  _index/route.tsx                              /                           Landing page
-  _auth/route.tsx                               (pathless layout)           Auth wrapper
-  _auth+/login/route.tsx                        /login                      Login form
-  _auth+/logout/route.tsx                       /logout                     Destroy session
+  _index/                          /                         Home / page assigned to "/"
+  $/                               /*                        Public pages at custom paths
+  articles+/$slug/                 /articles/:slug           Public article
+  embed+/articles.$slug/           /embed/articles/:slug     Template-free article embed
+  embed[.]js/                      /embed.js                 Iframe resizer script
 
-  content+/route.tsx                            /content                    Layout (auth required)
-  content+/_index/route.tsx                     /content                    Content listing
-  content+/new/route.tsx                        /content/new                Create content
-  content+/$slug/route.tsx                      /content/:slug              View + publish/unpublish
-  content+/$slug_.edit/route.tsx                /content/:slug/edit         Edit (WYSIWYG + whiteboards panel)
-  content+/$slug_.history/route.tsx             /content/:slug/history      Git history with diff viewer
-  content+/$slug_.delete/route.tsx              /content/:slug/delete       Delete (action only)
-  content+/$slug_.whiteboards/route.tsx         /content/:slug/whiteboards  List whiteboards for page
-  content+/$slug_.whiteboards_.new/route.tsx    /content/:slug/whiteboards/new  Create whiteboard form
-  content+/$slug_.whiteboards_.$wb/route.tsx    /content/:slug/whiteboards/:wb  Edit whiteboard (Excalidraw)
+  _auth+/login · logout            /login · /logout          Sign-in page / sign-out
+  auth+/github · github.callback   /auth/github(/callback)   GitHub OAuth flow
 
-  api+/health/route.tsx                         /api/health                 Health check
-  api+/content/route.tsx                        /api/content                JSON list (published only)
-  api+/content.$slug/route.tsx                  /api/content/:slug          JSON single (published only)
-  api+/content.$slug.version.$sha/route.tsx     /api/content/:slug/version/:sha  Version content + diff
-  api+/preview/route.tsx                        /api/preview                Live markdown render (POST)
-  api+/assets/route.tsx                         /api/assets                 List all uploaded assets
-  api+/assets.$filename/route.tsx               /api/assets/:filename       Serve an asset (supports ?ref=)
-  api+/assets.upload/route.tsx                  /api/assets/upload          Upload new asset (POST)
+  _dashboard/                      (auth layout)             CMS shell
+    content+/_index                /content                  List (type tabs)
+    content+/new                   /content/new              Create
+    content+/$slug                 /content/:slug            View + publish/unpublish + embed
+    content+/$slug_.edit           /content/:slug/edit       Edit (WYSIWYG / builder / wikitext)
+    content+/$slug_.history        /content/:slug/history    Git history + diff
+    content+/$slug_.whiteboards…   …/whiteboards[/:wb]       Whiteboards (Excalidraw)
+    content+/settings              /content/settings         Site settings (admin)
+    components+/_index · $slug      /components[/:slug]       Components + conditional flow editor
 
-  embed+/$slug/route.tsx                        /embed/:slug                Embeddable HTML page
-  embed+/$slug[.js]/route.tsx                   /embed/:slug.js             JS embed widget
+  api+/…                           /api/*                    JSON API, assets, components, me, health, preview, visitor
 ```
 
-## Tech Stack
+---
 
-- [React Router 7](https://reactrouter.com/) (framework mode, SSR)
-- [remix-flat-routes](https://github.com/kiliman/remix-flat-routes) (directory+ routing)
-- [Octokit](https://github.com/octokit/octokit.js) (GitHub API client)
-- [TipTap](https://tiptap.dev/) + ProseMirror (WYSIWYG markdown editor)
-- [Excalidraw](https://excalidraw.com/) (embedded whiteboard editor)
-- [unified](https://unifiedjs.com/) / remark / rehype (Markdown to HTML pipeline)
-- [gray-matter](https://github.com/jonschlinkert/gray-matter) (frontmatter parsing)
-- [turndown](https://github.com/mixmark-io/turndown) (HTML to markdown serialization)
-- [diff](https://github.com/kpdecker/jsdiff) (version diffing)
-- [Tailwind CSS 4](https://tailwindcss.com/)
-- TypeScript
+## Tech stack
+
+- [React Router 7](https://reactrouter.com/) (framework mode, SSR) + [remix‑flat‑routes](https://github.com/kiliman/remix-flat-routes)
+- [Octokit](https://github.com/octokit/octokit.js) — GitHub API (content storage; no database)
+- [TipTap](https://tiptap.dev/) / ProseMirror — WYSIWYG editor; [lowlight](https://github.com/wooorm/lowlight) — code highlighting
+- [@xyflow/react](https://reactflow.dev/) (React Flow) — conditional‑component flow editor
+- [Excalidraw](https://excalidraw.com/) — whiteboards; [react‑image‑crop](https://github.com/DominicTobias/react-image-crop) — social‑image cropping
+- [unified](https://unifiedjs.com/) / remark / rehype — Markdown → HTML; [turndown](https://github.com/mixmark-io/turndown) — HTML → Markdown; [gray‑matter](https://github.com/jonschlinkert/gray-matter) — frontmatter
+- [linkedom](https://github.com/WebReflection/linkedom) — lightweight server‑side DOM for the render passes (conditionals, article blocks, variables)
+- [Tailwind CSS 4](https://tailwindcss.com/) · [lucide‑react](https://lucide.dev/) · TypeScript
