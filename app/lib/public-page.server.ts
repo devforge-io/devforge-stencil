@@ -457,3 +457,59 @@ export async function renderPublicPageResponse(
     },
   });
 }
+
+// Posts the document height to the parent so an embedding page (via /embed.js)
+// can auto-size the iframe.
+const EMBED_RESIZE_SCRIPT =
+  `<script>(function(){function p(){try{parent.postMessage({type:'stencil-embed-resize',height:document.documentElement.scrollHeight},'*')}catch(e){}}window.addEventListener('load',p);if(window.ResizeObserver){new ResizeObserver(p).observe(document.body)}window.addEventListener('resize',p);p();})();<\/script>`;
+
+/**
+ * Render an article as a standalone, EMBEDDABLE document: the article body and
+ * its styling only — no site template/chrome, no share/edit affordances. Frame-
+ * embeddable (no X-Frame-Options set) and cacheable; posts its height to the
+ * parent so `/embed.js` can auto-size the iframe.
+ */
+export async function renderArticleEmbedResponse(
+  content: AnyContentItem,
+  _request?: Request
+): Promise<Response> {
+  const { settings } = await getSettings();
+  const bodyClass = [...settings.bodyClasses, ...settings.darkBodyClasses].join(" ");
+  const title = escapeHtml(content.frontmatter.title);
+  const headerImage = renderHeaderImage(content.frontmatter.headerImage);
+  const contentHtml = "html" in content ? (content.html as string) : "";
+
+  const { getContentDates, getGitHubConfig } = await import("./github.server");
+  const dates = await getContentDates(content.slug, getGitHubConfig().publishBranch, "article").catch(
+    () => ({ createdAt: null, updatedAt: null })
+  );
+  const meta = renderArticleDates(dates.createdAt, dates.updatedAt);
+
+  const article =
+    `<article class="pb-article-body" style="max-width:800px;margin:0 auto;padding:1.5rem 1.25rem;">` +
+    `<h1 class="pb-article-title">${title}</h1>${headerImage}` +
+    (meta ? `<div class="pb-article-meta-row">${meta}</div>` : "") +
+    `${contentHtml}</article>`;
+
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${title}</title>
+  ${TAILWIND_HEAD}
+  <style>${ARTICLE_PAGE_CSS}${ARTICLE_BODY_CSS}</style>
+</head>
+<body class="${bodyClass}">
+  ${article}
+  ${EMBED_RESIZE_SCRIPT}
+</body>
+</html>`;
+
+  return new Response(html, {
+    headers: {
+      "Content-Type": "text/html; charset=utf-8",
+      "Cache-Control": PUBLIC_CACHE,
+    },
+  });
+}

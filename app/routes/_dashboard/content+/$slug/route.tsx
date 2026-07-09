@@ -43,7 +43,8 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   const bodyClasses = [...settings.bodyClasses, ...settings.darkBodyClasses].join(" ");
   const editorDarkMode = settings.editorDarkMode ?? false;
 
-  return { content, publishStatus, compiledCss, bodyClasses, editorDarkMode, dates, canManage: can.publish(role) };
+  const origin = new URL(request.url).origin;
+  return { content, publishStatus, compiledCss, bodyClasses, editorDarkMode, dates, origin, canManage: can.publish(role) };
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
@@ -70,7 +71,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 }
 
 export default function ContentView({ loaderData }: Route.ComponentProps) {
-  const { content, publishStatus, compiledCss, bodyClasses, editorDarkMode, dates, canManage } = loaderData;
+  const { content, publishStatus, compiledCss, bodyClasses, editorDarkMode, dates, origin, canManage } = loaderData;
   const htmlClass = editorDarkMode ? "dark" : "";
   const headerImage = content.frontmatter.headerImage;
   const headerImageUrl = typeof headerImage === "string" ? headerImage.trim() : "";
@@ -261,17 +262,8 @@ export default function ContentView({ loaderData }: Route.ComponentProps) {
         </Card>
       )}
 
-      {publishStatus.published && (
-        <p className="mt-4 text-xs text-muted-foreground">
-          Embed:{" "}
-          <code className="bg-muted px-1.5 py-0.5 rounded text-xs">
-            /api/content/{content.slug}
-          </code>
-          {" | "}
-          <code className="bg-muted px-1.5 py-0.5 rounded text-xs">
-            /embed/{content.slug}
-          </code>
-        </p>
+      {publishStatus.published && content.contentType === "article" && (
+        <EmbedSnippet origin={origin} slug={content.slug} title={content.frontmatter.title} />
       )}
 
       {publishStatus.published && typeof content.frontmatter.path === "string" && content.frontmatter.path && (
@@ -288,5 +280,39 @@ export default function ContentView({ loaderData }: Route.ComponentProps) {
         </p>
       )}
     </div>
+  );
+}
+
+function EmbedSnippet({ origin, slug, title }: { origin: string; slug: string; title: string }) {
+  const snippet =
+    `<iframe src="${origin}/embed/articles/${slug}" style="width:100%;border:0" scrolling="no" title="${title.replace(/"/g, "&quot;")}"></iframe>\n` +
+    `<script src="${origin}/embed.js" async></script>`;
+  const [copied, setCopied] = useState(false);
+  return (
+    <Card className="mt-4">
+      <CardContent className="py-4 space-y-2">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold">Embed on another site</h3>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              navigator.clipboard?.writeText(snippet);
+              setCopied(true);
+              setTimeout(() => setCopied(false), 1500);
+            }}
+          >
+            {copied ? "Copied!" : "Copy"}
+          </Button>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Article content + styling, without the site template. The iframe auto-sizes to the content
+          (the <code className="bg-muted px-1 rounded">embed.js</code> script handles resizing).
+        </p>
+        <pre className="text-xs bg-muted rounded p-2 overflow-x-auto whitespace-pre-wrap break-all">
+          <code>{snippet}</code>
+        </pre>
+      </CardContent>
+    </Card>
   );
 }
