@@ -122,6 +122,7 @@ export default function Index({ loaderData }: Route.ComponentProps) {
             </span>
           </div>
           <nav className="flex items-center gap-1.5">
+            <NavLink to="/guide" muted>Guide</NavLink>
             {loggedIn ? (
               <>
                 <NavLink to="/content">Dashboard</NavLink>
@@ -164,8 +165,8 @@ export default function Index({ loaderData }: Route.ComponentProps) {
               {loggedIn ? "Open the dashboard" : "Get started"}
               <ChevronRight size={16} />
             </CtaButton>
-            <CtaButton to="/api/health" external>
-              API status
+            <CtaButton to="/guide">
+              Read the guide
             </CtaButton>
           </div>
         </section>

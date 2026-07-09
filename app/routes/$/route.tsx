@@ -7,6 +7,7 @@ const RESERVED_PREFIXES = [
   "/content",
   "/api",
   "/embed",
+  "/guide",
   "/login",
   "/logout",
   "/components",
