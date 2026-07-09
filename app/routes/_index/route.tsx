@@ -173,7 +173,7 @@ export default function Index({ loaderData }: Route.ComponentProps) {
         {/* Feature cards */}
         <section className="pb-20">
           <div className="mb-6 flex items-center gap-3">
-            <span className="h-px w-5 flex-shrink-0 bg-indigo-400/70" />
+            <span className="h-px w-5 shrink-0 bg-indigo-400/70" />
             <span className="text-xs tracking-[0.3em] text-indigo-400/60">WHAT'S INSIDE</span>
           </div>
 
