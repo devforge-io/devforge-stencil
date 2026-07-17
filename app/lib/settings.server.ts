@@ -12,6 +12,10 @@ export interface StencilSettings {
   siteName?: string;
   /** Favicon URL (asset path or absolute), emitted as <link rel="icon">. */
   favicon?: string;
+  /** Show the Markdown content type in the "New Content" picker. Off by default. */
+  enableMarkdown?: boolean;
+  /** Show the Wiki (Wikitext) content type in the "New Content" picker. Off by default. */
+  enableWiki?: boolean;
   [key: string]: unknown;
 }
 

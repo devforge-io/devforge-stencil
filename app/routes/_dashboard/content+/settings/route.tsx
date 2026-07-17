@@ -8,6 +8,7 @@ import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import { Card, CardContent } from "~/components/ui/card";
 import { ImageUploadField } from "~/components/image-upload-field";
+import { Checkbox } from "~/components/ui/checkbox";
 import { Badge } from "~/components/ui/badge";
 import { Separator } from "~/components/ui/separator";
 import { cn } from "~/lib/utils";
@@ -31,6 +32,8 @@ export async function action({ request }: Route.ActionArgs) {
   const articleTemplateSlug = (formData.get("articleTemplateSlug") as string || "").trim();
   const siteName = (formData.get("siteName") as string || "").trim();
   const favicon = (formData.get("favicon") as string || "").trim();
+  const enableMarkdown = formData.get("enableMarkdown") === "on";
+  const enableWiki = formData.get("enableWiki") === "on";
   const sha = (formData.get("sha") as string) || undefined;
 
   // Merge onto existing settings so other fields (e.g. editorDarkMode) survive.
@@ -43,6 +46,8 @@ export async function action({ request }: Route.ActionArgs) {
     articleTemplateSlug: articleTemplateSlug || undefined,
     siteName: siteName || undefined,
     favicon: favicon || undefined,
+    enableMarkdown: enableMarkdown || undefined,
+    enableWiki: enableWiki || undefined,
   };
   await saveSettings(settings, sha);
   return { saved: true };
@@ -75,6 +80,8 @@ export default function SettingsPage({ loaderData, actionData }: Route.Component
   const [favicon, setFavicon] = useState<string>(
     typeof initial.favicon === "string" ? initial.favicon : ""
   );
+  const [enableMarkdown, setEnableMarkdown] = useState<boolean>(initial.enableMarkdown === true);
+  const [enableWiki, setEnableWiki] = useState<boolean>(initial.enableWiki === true);
   const [newClass, setNewClass] = useState("");
   const [newDarkClass, setNewDarkClass] = useState("");
 
@@ -132,6 +139,40 @@ export default function SettingsPage({ loaderData, actionData }: Route.Component
             <p className="text-xs text-muted-foreground">
               The browser-tab icon. PNG, SVG, or ICO — a square image (e.g. 32×32 or 512×512) works best.
             </p>
+          </CardContent>
+        </Card>
+
+        {/* Content Types */}
+        <Card>
+          <CardContent className="pt-6 space-y-3">
+            <div>
+              <Label className="text-sm font-semibold">Content Types</Label>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Articles and Pages are always available. Enable additional authoring formats here —
+                they appear in the “New Content” type picker. Existing content of a disabled type
+                stays viewable and editable.
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Checkbox
+                id="enableMarkdown"
+                name="enableMarkdown"
+                value="on"
+                checked={enableMarkdown}
+                onCheckedChange={(v) => setEnableMarkdown(v === true)}
+              />
+              <Label htmlFor="enableMarkdown" className="font-normal">Markdown</Label>
+            </div>
+            <div className="flex items-center gap-2">
+              <Checkbox
+                id="enableWiki"
+                name="enableWiki"
+                value="on"
+                checked={enableWiki}
+                onCheckedChange={(v) => setEnableWiki(v === true)}
+              />
+              <Label htmlFor="enableWiki" className="font-normal">Wiki (Wikitext)</Label>
+            </div>
           </CardContent>
         </Card>
 

@@ -2,6 +2,7 @@ import { Form, redirect, useNavigation } from "react-router";
 import { useState } from "react";
 import { saveContent, type ContentType } from "~/lib/content.server";
 import { requireAuth } from "~/lib/auth.server";
+import { getSettings } from "~/lib/settings.server";
 import { upsertArticleIndex } from "~/lib/articles.server";
 import { MarkdownEditor } from "~/components/markdown-editor";
 import { ImageUploadField } from "~/components/image-upload-field";
@@ -14,6 +15,15 @@ import { Card, CardContent } from "~/components/ui/card";
 import { Checkbox } from "~/components/ui/checkbox";
 import type { Route } from "./+types/route";
 
+export async function loader({ request }: Route.LoaderArgs) {
+  await requireAuth(request);
+  const { settings } = await getSettings();
+  return {
+    enableMarkdown: settings.enableMarkdown === true,
+    enableWiki: settings.enableWiki === true,
+  };
+}
+
 export async function action({ request }: Route.ActionArgs) {
   await requireAuth(request); // any signed-in role (editor+) may create content
   const formData = await request.formData();
@@ -21,7 +31,16 @@ export async function action({ request }: Route.ActionArgs) {
   const title = (formData.get("title") as string)?.trim();
   const description = (formData.get("description") as string)?.trim();
   const tags = (formData.get("tags") as string)?.trim();
-  const contentType = (formData.get("contentType") as ContentType) ?? "markdown";
+  const contentType = (formData.get("contentType") as ContentType) ?? "article";
+
+  // Markdown and Wiki are opt-in via Settings — reject creating them when off.
+  const { settings } = await getSettings();
+  if (contentType === "markdown" && settings.enableMarkdown !== true) {
+    return { error: "Markdown content is disabled. Enable it in Settings first." };
+  }
+  if (contentType === "wikipedia" && settings.enableWiki !== true) {
+    return { error: "Wiki content is disabled. Enable it in Settings first." };
+  }
   const body = (formData.get("body") as string) ?? "";
   const headerImage = (formData.get("headerImage") as string)?.trim();
   const ogImage = (formData.get("ogImage") as string)?.trim();
@@ -93,7 +112,7 @@ export async function action({ request }: Route.ActionArgs) {
   return redirect(`/content/${slug}`);
 }
 
-export default function NewContent({ actionData }: Route.ComponentProps) {
+export default function NewContent({ actionData, loaderData }: Route.ComponentProps) {
   const navigation = useNavigation();
   const isSubmitting = navigation.state === "submitting";
   const [title, setTitle] = useState("");
@@ -125,10 +144,10 @@ export default function NewContent({ actionData }: Route.ComponentProps) {
           {(
             [
               ["article", "Article"],
-              ["markdown", "Markdown"],
               ["page", "Page (Visual Builder)"],
-              ["wikipedia", "Wiki (Wikipedia)"],
-            ] as const
+              ...(loaderData.enableMarkdown ? [["markdown", "Markdown"]] : []),
+              ...(loaderData.enableWiki ? [["wikipedia", "Wiki (Wikipedia)"]] : []),
+            ] as [ContentType, string][]
           ).map(([type, label]) => (
             <Button
               key={type}
