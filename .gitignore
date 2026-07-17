@@ -1,6 +1,8 @@
 .DS_Store
 save.sh
 .env
+/env
+.env.local
 /node_modules/
 
 # React Router
