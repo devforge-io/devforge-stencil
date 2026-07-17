@@ -11,7 +11,12 @@ import type { Route } from "./+types/route";
 export async function loader() {
   const [items, { settings }] = await Promise.all([listContent(), getSettings()]);
   const templateSlug = typeof settings.articleTemplateSlug === "string" ? settings.articleTemplateSlug : null;
-  return { items, templateSlug };
+  return {
+    items,
+    templateSlug,
+    enableMarkdown: settings.enableMarkdown === true,
+    enableWiki: settings.enableWiki === true,
+  };
 }
 
 // Singular labels for the content types (+ the derived "template" type).
@@ -24,7 +29,7 @@ const TYPE_LABEL: Record<string, string> = {
 };
 
 export default function ContentIndex({ loaderData }: Route.ComponentProps) {
-  const { items, templateSlug } = loaderData;
+  const { items, templateSlug, enableMarkdown, enableWiki } = loaderData;
   const [selected, setSelected] = useState<string | null>(null);
 
   // The page designated as the article template is shown as its own "template"
@@ -32,17 +37,27 @@ export default function ContentIndex({ loaderData }: Route.ComponentProps) {
   const displayType = (it: (typeof items)[number]) =>
     it.contentType === "page" && it.slug === templateSlug ? "template" : it.contentType;
 
+  // Content types disabled in Settings never get a tab — even if content of
+  // that type still exists (it just isn't listed here).
+  const hiddenTypes = useMemo(() => {
+    const h = new Set<string>();
+    if (!enableMarkdown) h.add("markdown");
+    if (!enableWiki) h.add("wikipedia");
+    return h;
+  }, [enableMarkdown, enableWiki]);
+
   // One tab per (display) type actually present, each with a count.
   const tabs = useMemo(() => {
     const counts = new Map<string, number>();
     for (const it of items) {
       const t = it.contentType === "page" && it.slug === templateSlug ? "template" : it.contentType;
+      if (hiddenTypes.has(t)) continue;
       counts.set(t, (counts.get(t) ?? 0) + 1);
     }
     const order = ["article", "page", "template", "markdown", "wikipedia"];
     const present = [...counts.keys()].sort((a, b) => order.indexOf(a) - order.indexOf(b));
     return present.map((t) => ({ value: t, label: TYPE_LABEL[t] ?? t, count: counts.get(t) ?? 0 }));
-  }, [items, templateSlug]);
+  }, [items, templateSlug, hiddenTypes]);
 
   // Default to the first tab when nothing is explicitly selected.
   const active = selected ?? tabs[0]?.value ?? "";
@@ -55,7 +70,7 @@ export default function ContentIndex({ loaderData }: Route.ComponentProps) {
         <Button render={<Link to="/content/new" />}>New Post</Button>
       </div>
 
-      {items.length > 0 && (
+      {tabs.length > 0 && (
         <div className="flex flex-wrap gap-1 mb-4 border-b pb-2">
           {tabs.map((t) => (
             <Button
