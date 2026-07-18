@@ -1,4 +1,4 @@
-import { getPageCompiledCss, getPublishedContent, type AnyContentItem } from "./content.server";
+import { getContent, getPageCompiledCss, getPublishedContent, type AnyContentItem } from "./content.server";
 import { renderHeaderImage } from "./page.server";
 import { getSettings } from "./settings.server";
 import { parseFragment } from "./dom.server";
@@ -511,5 +511,333 @@ export async function renderArticleEmbedResponse(
       "Content-Type": "text/html; charset=utf-8",
       "Cache-Control": PUBLIC_CACHE,
     },
+  });
+}
+
+// --- Tutorial rendering ---------------------------------------------------
+// The chapter menu, chapter body, and overview are rendered as Tailwind-utility
+// markup so they drop into a template page (which loads the Tailwind runtime) or
+// the built-in fallback layout. Chapter bodies reuse `.pb-article-body`.
+
+type TutChapter = { slug: string; title: string; body: string };
+
+function tutorialHref(base: string, chapterSlug: string): string {
+  return `${base}/${escapeHtml(chapterSlug)}`;
+}
+
+/** The left chapter menu: tutorial title header + numbered chapter links. */
+function renderTutorialMenuHtml(base: string, title: string, chapters: TutChapter[], activeIndex: number): string {
+  const first = chapters[0]?.slug ?? "";
+  const items = chapters
+    .map((c, i) => {
+      const active = i === activeIndex;
+      const cls = active
+        ? "bg-indigo-50 font-medium text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300"
+        : "text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100";
+      const numCls = active ? "text-indigo-400" : "text-gray-400 dark:text-gray-600";
+      return (
+        `<li><a href="${tutorialHref(base, c.slug)}" class="flex gap-2 rounded px-3 py-1.5 text-sm no-underline ${cls}"${active ? ' aria-current="page"' : ""}>` +
+        `<span class="${numCls} tabular-nums">${String(i + 1).padStart(2, "0")}</span>` +
+        `<span>${escapeHtml(c.title || c.slug)}</span></a></li>`
+      );
+    })
+    .join("");
+  return (
+    `<nav class="pb-tutorial-menu">` +
+    `<a href="${tutorialHref(base, first)}" class="mb-4 block no-underline"><span class="block text-base font-bold text-gray-900 dark:text-gray-100">${escapeHtml(title)}</span></a>` +
+    `<p class="mb-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-gray-400">Chapters</p>` +
+    `<ol class="space-y-0.5 list-none p-0 m-0">${items}</ol></nav>`
+  );
+}
+
+/** Breadcrumbs + chapter title + body + prev/next. `chapterHtml` is rendered markdown. */
+function renderTutorialChapterMainHtml(base: string, editSlug: string, title: string, chapters: TutChapter[], index: number, chapterHtml: string): string {
+  const first = chapters[0]?.slug ?? "";
+  const chapter = chapters[index];
+  const prev = index > 0 ? chapters[index - 1] : null;
+  const next = index < chapters.length - 1 ? chapters[index + 1] : null;
+  const chapterTitle = escapeHtml(chapter.title || chapter.slug);
+
+  const crumbs =
+    `<nav class="mb-5 flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400" aria-label="Breadcrumb">` +
+    `<a href="${tutorialHref(base, first)}" class="text-indigo-600 no-underline hover:underline dark:text-indigo-400">${escapeHtml(title)}</a>` +
+    `<span class="text-gray-300 dark:text-gray-600">/</span>` +
+    `<span class="text-gray-700 dark:text-gray-300">${chapterTitle}</span>` +
+    `<span class="flex-1"></span>${renderEditLink(editSlug)}</nav>${EDIT_REVEAL_SCRIPT}`;
+
+  const pagerLink = (c: TutChapter, dir: "prev" | "next") =>
+    `<a href="${tutorialHref(base, c.slug)}" class="flex max-w-[48%] flex-col gap-0.5 rounded-lg border border-gray-200 px-4 py-2 no-underline hover:border-indigo-500 dark:border-gray-800${dir === "next" ? " ml-auto text-right" : ""}">` +
+    `<span class="text-[0.68rem] uppercase tracking-wide text-gray-500 dark:text-gray-400">${dir === "prev" ? "← Previous" : "Next →"}</span>` +
+    `<span class="text-sm text-gray-900 dark:text-gray-100">${escapeHtml(c.title || c.slug)}</span></a>`;
+
+  const pager =
+    `<div class="mt-12 flex justify-between gap-4 border-t border-gray-200 pt-6 dark:border-gray-800">` +
+    (prev ? pagerLink(prev, "prev") : `<span></span>`) +
+    (next ? pagerLink(next, "next") : "") +
+    `</div>`;
+
+  return (
+    crumbs +
+    `<article class="pb-article-body"><h1 class="mb-6 text-3xl font-extrabold tracking-tight">${chapterTitle}</h1>${chapterHtml}</article>` +
+    pager
+  );
+}
+
+/** Overview for the root page: title + description + chapter list. */
+function renderTutorialOverviewHtml(base: string, title: string, description: string, chapters: TutChapter[]): string {
+  const items = chapters
+    .map((c, i) =>
+      `<a href="${tutorialHref(base, c.slug)}" class="flex items-baseline gap-4 rounded-lg px-4 py-3 no-underline hover:bg-gray-100 dark:hover:bg-gray-800">` +
+      `<span class="font-mono text-sm text-gray-400">${String(i + 1).padStart(2, "0")}</span>` +
+      `<span class="text-gray-800 dark:text-gray-200">${escapeHtml(c.title || c.slug)}</span></a>`
+    )
+    .join("");
+  return (
+    `<div class="pb-tutorial-overview">` +
+    `<h1 class="mb-3 text-4xl font-extrabold tracking-tight">${escapeHtml(title)}</h1>` +
+    (description ? `<p class="mb-8 text-lg text-gray-500 dark:text-gray-400">${escapeHtml(description)}</p>` : "") +
+    `<div class="space-y-1">${items}</div></div>`
+  );
+}
+
+/** Replace the tutorial slot placeholders in a template page's HTML. */
+async function fillTutorialSlots(
+  templateHtml: string,
+  slots: { menu?: string; content?: string; overview?: string }
+): Promise<string> {
+  const doc = parseFragment(templateHtml);
+  const swap = (selector: string, html: string | undefined) => {
+    if (html == null) return;
+    const el = doc.querySelector(selector);
+    if (!el) return;
+    const tpl = doc.createElement("template");
+    tpl.innerHTML = html;
+    el.replaceWith(...Array.from(tpl.content.childNodes));
+  };
+  swap("[data-pb-tutorial-menu]", slots.menu);
+  swap("[data-pb-tutorial-content]", slots.content);
+  swap("[data-pb-tutorial-overview]", slots.overview);
+  return doc.body.innerHTML;
+}
+
+function tutorialTemplateHasSlot(template: AnyContentItem | null, ...attrs: string[]): template is AnyContentItem {
+  return (
+    !!template &&
+    template.contentType === "page" &&
+    "html" in template &&
+    attrs.some((a) => (template.html as string).includes(a))
+  );
+}
+
+/** Render a slot-filled template page to head+body (CSS + conditional/article passes). */
+async function renderFilledTemplate(
+  template: AnyContentItem,
+  filledHtml: string,
+  bodyClassList: string[],
+  request: Request | undefined,
+  content: AnyContentItem
+): Promise<{ head: string; body: string; cacheControl: string }> {
+  let css = ("css" in template ? (template as { css: string }).css : "") || (await getPageCompiledCss(template.slug)) || "";
+  if (!css) {
+    const { getGitHubConfig } = await import("./github.server");
+    css = (await getPageCompiledCss(template.slug, getGitHubConfig().branch)) || "";
+  }
+  let body = await stripBodyClassesFromRoot(filledHtml, bodyClassList);
+  let cacheControl = PUBLIC_CACHE;
+
+  if (request && body.includes("data-pb-conditional")) {
+    const { resolveConditionals } = await import("./conditional/resolve.server");
+    const r = await resolveConditionals(body, request, content);
+    body = r.html;
+    if (r.css) css += "\n" + r.css;
+    if (r.resolved) cacheControl = PRIVATE_CACHE;
+  }
+  if (body.includes("data-pb-articles")) {
+    const { resolveArticleBlocks } = await import("./articles/resolve.server");
+    const r = await resolveArticleBlocks(body, request);
+    body = r.html;
+    if (r.css) css += "\n" + r.css;
+    if (r.private) cacheControl = PRIVATE_CACHE;
+  }
+
+  return { head: `${TAILWIND_HEAD}<style>${css}\n${ARTICLE_BODY_CSS}</style>`, body, cacheControl };
+}
+
+function tutorialDocument(opts: {
+  title: string;
+  descTag: string;
+  favicon: unknown;
+  socialMeta: string;
+  head: string;
+  bodyClass: string;
+  body: string;
+  cacheControl: string;
+}): Response {
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${opts.title}</title>
+  ${opts.descTag}
+  ${renderFaviconLink(opts.favicon)}
+  ${opts.socialMeta}
+  ${opts.head}
+</head>
+<body class="${opts.bodyClass}">
+  ${opts.body}
+</body>
+</html>`;
+  return new Response(html, {
+    headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": opts.cacheControl },
+  });
+}
+
+/**
+ * Render one chapter of a tutorial. Uses the configured chapter template page
+ * (filling the Chapter Menu + Chapter Content slots) if set, else a built-in
+ * left-menu + content layout. 404 if the chapter slug isn't found.
+ */
+export async function renderTutorialChapterResponse(
+  content: AnyContentItem,
+  chapterSlug: string | undefined,
+  request?: Request,
+  opts?: { draft?: boolean }
+): Promise<Response> {
+  if (content.contentType !== "tutorial" || !("chapters" in content)) {
+    return new Response("Not Found", { status: 404 });
+  }
+  const chapters = (content as { chapters: TutChapter[] }).chapters;
+  const index = chapters.findIndex((c) => c.slug === chapterSlug);
+  if (index === -1) return new Response("Chapter not found", { status: 404 });
+  const chapter = chapters[index];
+
+  const { settings } = await getSettings();
+  const bodyClassList = [...settings.bodyClasses, ...settings.darkBodyClasses];
+  const bodyClass = bodyClassList.join(" ");
+  const slug = content.slug;
+  const title = content.frontmatter.title;
+  const chapterTitle = escapeHtml(chapter.title || chapter.slug);
+  const description = metaDescription(content);
+  const descTag = description ? `<meta name="description" content="${escapeHtml(description)}">` : "";
+  const socialMeta = renderSocialMeta(content, {
+    request,
+    siteName: typeof settings.siteName === "string" ? settings.siteName : undefined,
+    description,
+  });
+
+  const { renderBody } = await import("./markdown.server");
+  const chapterHtml = await renderBody(chapter.body || "");
+  // In draft preview, links stay inside the admin preview route (public
+  // /tutorial URLs would 404 for an unpublished tutorial).
+  const base = opts?.draft ? `/api/tutorial-preview/${escapeHtml(slug)}` : `/tutorial/${escapeHtml(slug)}`;
+  const menuHtml = renderTutorialMenuHtml(base, title, chapters, index);
+  const mainHtml = renderTutorialChapterMainHtml(base, slug, title, chapters, index, chapterHtml);
+
+  // Draft preview reads the template from the draft branch so the author sees
+  // the assigned template before anything is published.
+  const tplSlug = typeof settings.tutorialChapterTemplateSlug === "string" ? settings.tutorialChapterTemplateSlug : "";
+  const template = tplSlug ? await (opts?.draft ? getContent(tplSlug) : getPublishedContent(tplSlug)) : null;
+
+  let head: string;
+  let body: string;
+  let cacheControl: string;
+  // Requires the Chapter Content slot (the menu is optional); otherwise fall
+  // back to the built-in layout so the chapter body always renders.
+  if (tutorialTemplateHasSlot(template, "data-pb-tutorial-content")) {
+    const filled = await fillTutorialSlots(template.html as string, { menu: menuHtml, content: mainHtml });
+    ({ head, body, cacheControl } = await renderFilledTemplate(template, filled, bodyClassList, request, content));
+  } else {
+    head = `${TAILWIND_HEAD}<style>${ARTICLE_PAGE_CSS}${ARTICLE_BODY_CSS}</style>`;
+    body =
+      `<div class="mx-auto flex max-w-6xl items-start gap-8 px-5 py-8">` +
+      `<aside class="sticky top-6 hidden w-60 shrink-0 self-start lg:block">${menuHtml}</aside>` +
+      `<main class="min-w-0 max-w-3xl flex-1">${mainHtml}</main></div>`;
+    cacheControl = PUBLIC_CACHE;
+  }
+
+  if (request) {
+    const { resolveTextVariables } = await import("./variables/resolve.server");
+    const r = await resolveTextVariables(body, request, content);
+    body = r.html;
+    if (r.private) cacheControl = PRIVATE_CACHE;
+  }
+  if (opts?.draft) cacheControl = PRIVATE_CACHE;
+
+  return tutorialDocument({
+    title: `${chapterTitle} &middot; ${escapeHtml(title)}`,
+    descTag,
+    favicon: settings.favicon,
+    socialMeta,
+    head,
+    bodyClass,
+    body,
+    cacheControl,
+  });
+}
+
+/**
+ * Render the tutorial overview at /tutorial/<slug>. Uses the configured root
+ * template page (filling the Tutorial Overview slot) if set, else a built-in
+ * overview layout (title + description + chapter list).
+ */
+export async function renderTutorialRootResponse(
+  content: AnyContentItem,
+  request?: Request,
+  opts?: { draft?: boolean }
+): Promise<Response> {
+  if (content.contentType !== "tutorial" || !("chapters" in content)) {
+    return new Response("Not Found", { status: 404 });
+  }
+  const chapters = (content as { chapters: TutChapter[] }).chapters;
+
+  const { settings } = await getSettings();
+  const bodyClassList = [...settings.bodyClasses, ...settings.darkBodyClasses];
+  const bodyClass = bodyClassList.join(" ");
+  const slug = content.slug;
+  const title = content.frontmatter.title;
+  const description = metaDescription(content);
+  const descTag = description ? `<meta name="description" content="${escapeHtml(description)}">` : "";
+  const socialMeta = renderSocialMeta(content, {
+    request,
+    siteName: typeof settings.siteName === "string" ? settings.siteName : undefined,
+    description,
+  });
+
+  const base = opts?.draft ? `/api/tutorial-preview/${escapeHtml(slug)}` : `/tutorial/${escapeHtml(slug)}`;
+  const overviewHtml = renderTutorialOverviewHtml(base, title, description, chapters);
+
+  const tplSlug = typeof settings.tutorialRootTemplateSlug === "string" ? settings.tutorialRootTemplateSlug : "";
+  const template = tplSlug ? await (opts?.draft ? getContent(tplSlug) : getPublishedContent(tplSlug)) : null;
+
+  let head: string;
+  let body: string;
+  let cacheControl: string;
+  if (tutorialTemplateHasSlot(template, "data-pb-tutorial-overview")) {
+    const filled = await fillTutorialSlots(template.html as string, { overview: overviewHtml });
+    ({ head, body, cacheControl } = await renderFilledTemplate(template, filled, bodyClassList, request, content));
+  } else {
+    head = `${TAILWIND_HEAD}<style>${ARTICLE_PAGE_CSS}${ARTICLE_BODY_CSS}</style>`;
+    body = `<div class="mx-auto max-w-3xl px-5 py-12">${overviewHtml}</div>`;
+    cacheControl = PUBLIC_CACHE;
+  }
+
+  if (request) {
+    const { resolveTextVariables } = await import("./variables/resolve.server");
+    const r = await resolveTextVariables(body, request, content);
+    body = r.html;
+    if (r.private) cacheControl = PRIVATE_CACHE;
+  }
+  if (opts?.draft) cacheControl = PRIVATE_CACHE;
+
+  return tutorialDocument({
+    title: escapeHtml(title),
+    descTag,
+    favicon: settings.favicon,
+    socialMeta,
+    head,
+    bodyClass,
+    body,
+    cacheControl,
   });
 }

@@ -8,6 +8,10 @@ export interface StencilSettings {
   editorDarkMode?: boolean;
   /** Slug of the page used as the layout template for all article pages. */
   articleTemplateSlug?: string;
+  /** Page slug used as the layout for the /tutorial/<slug> overview. */
+  tutorialRootTemplateSlug?: string;
+  /** Page slug used as the layout for /tutorial/<slug>/<chapter> pages. */
+  tutorialChapterTemplateSlug?: string;
   /** Site name — used for og:site_name on shared pages. */
   siteName?: string;
   /** Favicon URL (asset path or absolute), emitted as <link rel="icon">. */

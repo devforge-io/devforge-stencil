@@ -39,12 +39,18 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     compiledCss = await getPageCompiledCss(params.slug, getGitHubConfig().branch);
   }
 
+  // Chapter list (slug + title) for the preview iframe's chapter switcher.
+  let tutorialChapters: { slug: string; title: string }[] | null = null;
+  if (content.contentType === "tutorial" && "chapters" in content) {
+    tutorialChapters = content.chapters.map((c) => ({ slug: c.slug, title: c.title }));
+  }
+
   const { settings } = await getSettings();
   const bodyClasses = [...settings.bodyClasses, ...settings.darkBodyClasses].join(" ");
   const editorDarkMode = settings.editorDarkMode ?? false;
 
   const origin = new URL(request.url).origin;
-  return { content, publishStatus, compiledCss, bodyClasses, editorDarkMode, dates, origin, canManage: can.publish(role) };
+  return { content, publishStatus, compiledCss, bodyClasses, editorDarkMode, dates, origin, tutorialChapters, canManage: can.publish(role) };
 }
 
 export async function action({ request, params }: Route.ActionArgs) {
@@ -71,7 +77,7 @@ export async function action({ request, params }: Route.ActionArgs) {
 }
 
 export default function ContentView({ loaderData }: Route.ComponentProps) {
-  const { content, publishStatus, compiledCss, bodyClasses, editorDarkMode, dates, origin, canManage } = loaderData;
+  const { content, publishStatus, compiledCss, bodyClasses, editorDarkMode, dates, origin, tutorialChapters, canManage } = loaderData;
   const htmlClass = editorDarkMode ? "dark" : "";
   const headerImage = content.frontmatter.headerImage;
   const headerImageUrl = typeof headerImage === "string" ? headerImage.trim() : "";
@@ -227,6 +233,12 @@ export default function ContentView({ loaderData }: Route.ComponentProps) {
             title={content.frontmatter.title}
           />
         </Card>
+      ) : content.contentType === "tutorial" ? (
+        <TutorialPreview
+          slug={content.slug}
+          chapters={tutorialChapters ?? []}
+          published={publishStatus.published}
+        />
       ) : content.contentType === "wikipedia" ? (
         <Card className={htmlClass}>
           <CardContent className="p-8">
@@ -313,6 +325,68 @@ function EmbedSnippet({ origin, slug, title }: { origin: string; slug: string; t
           <code>{snippet}</code>
         </pre>
       </CardContent>
+    </Card>
+  );
+}
+
+function TutorialPreview({
+  slug,
+  chapters,
+  published,
+}: {
+  slug: string;
+  chapters: { slug: string; title: string }[];
+  published: boolean;
+}) {
+  const [active, setActive] = useState(0);
+  if (chapters.length === 0) {
+    return (
+      <Card>
+        <CardContent className="p-6">
+          <p className="text-sm text-muted-foreground">No chapters yet — add them in the editor.</p>
+        </CardContent>
+      </Card>
+    );
+  }
+  const current = chapters[Math.min(active, chapters.length - 1)];
+  return (
+    <Card className="overflow-hidden">
+      {/* Renders the real (draft) tutorial through the assigned template, so the
+          preview matches what visitors will see once published. */}
+      <div className="flex items-center justify-between gap-2 border-b bg-muted/30 px-3 py-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground shrink-0">
+            Preview
+          </span>
+          <select
+            value={active}
+            onChange={(e) => setActive(Number(e.target.value))}
+            className="h-7 max-w-xs rounded border border-border bg-background px-2 text-sm"
+          >
+            {chapters.map((c, i) => (
+              <option key={c.slug} value={i}>
+                {String(i + 1).padStart(2, "0")} · {c.title || c.slug}
+              </option>
+            ))}
+          </select>
+        </div>
+        {published && (
+          <a
+            href={`/tutorial/${slug}`}
+            target="_blank"
+            rel="noreferrer"
+            className="text-xs text-brand-600 dark:text-brand-400 hover:underline shrink-0"
+          >
+            Open published ↗
+          </a>
+        )}
+      </div>
+      <iframe
+        title="Tutorial preview"
+        src={`/api/tutorial-preview/${slug}/${current.slug}`}
+        className="w-full border-0 bg-white dark:bg-gray-950"
+        style={{ height: "72vh" }}
+      />
     </Card>
   );
 }

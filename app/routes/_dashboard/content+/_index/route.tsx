@@ -24,6 +24,7 @@ const TYPE_LABEL: Record<string, string> = {
   article: "Article",
   page: "Page",
   template: "Template",
+  tutorial: "Tutorial",
   markdown: "Markdown",
   wikipedia: "Wiki",
 };
@@ -54,7 +55,7 @@ export default function ContentIndex({ loaderData }: Route.ComponentProps) {
       if (hiddenTypes.has(t)) continue;
       counts.set(t, (counts.get(t) ?? 0) + 1);
     }
-    const order = ["article", "page", "template", "markdown", "wikipedia"];
+    const order = ["article", "page", "template", "tutorial", "markdown", "wikipedia"];
     const present = [...counts.keys()].sort((a, b) => order.indexOf(a) - order.indexOf(b));
     return present.map((t) => ({ value: t, label: TYPE_LABEL[t] ?? t, count: counts.get(t) ?? 0 }));
   }, [items, templateSlug, hiddenTypes]);

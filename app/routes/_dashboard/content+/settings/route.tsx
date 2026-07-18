@@ -30,6 +30,8 @@ export async function action({ request }: Route.ActionArgs) {
   const darkBodyClasses = (formData.get("darkBodyClasses") as string || "").split(" ").filter(Boolean);
   const fonts = (formData.get("fonts") as string || "").split("\n").map((s) => s.trim()).filter(Boolean);
   const articleTemplateSlug = (formData.get("articleTemplateSlug") as string || "").trim();
+  const tutorialRootTemplateSlug = (formData.get("tutorialRootTemplateSlug") as string || "").trim();
+  const tutorialChapterTemplateSlug = (formData.get("tutorialChapterTemplateSlug") as string || "").trim();
   const siteName = (formData.get("siteName") as string || "").trim();
   const favicon = (formData.get("favicon") as string || "").trim();
   const enableMarkdown = formData.get("enableMarkdown") === "on";
@@ -44,6 +46,8 @@ export async function action({ request }: Route.ActionArgs) {
     darkBodyClasses,
     fonts,
     articleTemplateSlug: articleTemplateSlug || undefined,
+    tutorialRootTemplateSlug: tutorialRootTemplateSlug || undefined,
+    tutorialChapterTemplateSlug: tutorialChapterTemplateSlug || undefined,
     siteName: siteName || undefined,
     favicon: favicon || undefined,
     enableMarkdown: enableMarkdown || undefined,
@@ -74,6 +78,12 @@ export default function SettingsPage({ loaderData, actionData }: Route.Component
   const [darkBodyClasses, setDarkBodyClasses] = useState<string[]>(initial.darkBodyClasses);
   const [fonts, setFonts] = useState<string[]>(initial.fonts);
   const [articleTemplateSlug, setArticleTemplateSlug] = useState<string>(initial.articleTemplateSlug ?? "");
+  const [tutorialRootTemplateSlug, setTutorialRootTemplateSlug] = useState<string>(
+    typeof initial.tutorialRootTemplateSlug === "string" ? initial.tutorialRootTemplateSlug : ""
+  );
+  const [tutorialChapterTemplateSlug, setTutorialChapterTemplateSlug] = useState<string>(
+    typeof initial.tutorialChapterTemplateSlug === "string" ? initial.tutorialChapterTemplateSlug : ""
+  );
   const [siteName, setSiteName] = useState<string>(
     typeof initial.siteName === "string" ? initial.siteName : ""
   );
@@ -113,6 +123,8 @@ export default function SettingsPage({ loaderData, actionData }: Route.Component
         <input type="hidden" name="darkBodyClasses" value={darkBodyClasses.join(" ")} />
         <input type="hidden" name="fonts" value={fonts.join("\n")} />
         <input type="hidden" name="articleTemplateSlug" value={articleTemplateSlug} />
+        <input type="hidden" name="tutorialRootTemplateSlug" value={tutorialRootTemplateSlug} />
+        <input type="hidden" name="tutorialChapterTemplateSlug" value={tutorialChapterTemplateSlug} />
 
         {/* Site */}
         <Card>
@@ -315,6 +327,59 @@ export default function SettingsPage({ loaderData, actionData }: Route.Component
                 Selected template “{articleTemplateSlug}” is no longer a page.
               </p>
             )}
+          </CardContent>
+        </Card>
+
+        {/* Tutorial Templates */}
+        <Card>
+          <CardContent className="pt-6 space-y-4">
+            <div>
+              <Label className="text-sm font-semibold">Tutorial Templates</Label>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Optional <strong>pages</strong> used as the layout for tutorials. Build them in the page
+                editor, drop the tutorial slot blocks where each part should render, and <strong>publish
+                the page</strong> — like article templates, it's read from the published branch. Without a
+                template, tutorials use a built-in default layout.
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-xs font-medium">
+                Overview template <span className="text-muted-foreground font-mono">/tutorial/&lt;slug&gt;</span>
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                Drop a <strong>Tutorial Overview</strong> block where the title, description &amp; chapter list should go.
+              </p>
+              <select
+                value={tutorialRootTemplateSlug}
+                onChange={(e) => setTutorialRootTemplateSlug(e.target.value)}
+                className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-background focus:outline-none focus:ring-2 focus:ring-ring"
+              >
+                <option value="">— Built-in default —</option>
+                {pages.map((p) => (
+                  <option key={p.slug} value={p.slug}>{p.title} ({p.slug})</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-xs font-medium">
+                Chapter template <span className="text-muted-foreground font-mono">/tutorial/&lt;slug&gt;/&lt;chapter&gt;</span>
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                Drop a <strong>Chapter Menu</strong> block and a <strong>Chapter Content</strong> block where each should render.
+              </p>
+              <select
+                value={tutorialChapterTemplateSlug}
+                onChange={(e) => setTutorialChapterTemplateSlug(e.target.value)}
+                className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-background focus:outline-none focus:ring-2 focus:ring-ring"
+              >
+                <option value="">— Built-in default —</option>
+                {pages.map((p) => (
+                  <option key={p.slug} value={p.slug}>{p.title} ({p.slug})</option>
+                ))}
+              </select>
+            </div>
           </CardContent>
         </Card>
 

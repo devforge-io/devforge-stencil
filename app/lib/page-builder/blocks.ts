@@ -185,4 +185,25 @@ export const DEFAULT_BLOCKS: PBBlock[] = [
     icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V4h8l8.59 8.59a2 2 0 010 2.82z"/><circle cx="6.5" cy="7.5" r="1"/></svg>`,
     content: `<div data-pb-name="Tag Filter" data-pb-articles="tags" data-pb-drafts="exclude" class="pb-articles flex flex-wrap gap-2 p-3 border-2 border-dashed border-emerald-400 rounded"><span class="rounded-full border border-indigo-500 px-3 py-1 text-sm text-indigo-600">All</span><span class="rounded-full border border-gray-200 px-3 py-1 text-sm text-gray-500">Tag A</span><span class="rounded-full border border-gray-200 px-3 py-1 text-sm text-gray-500">Tag B</span><span class="w-full text-[11px] font-medium text-emerald-600">&#8635; Tag Filter — links add ?tag= to this page</span></div>`,
   },
+  {
+    id: "tutorial-overview-slot",
+    label: "Tutorial Overview",
+    category: "Tutorial",
+    icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="16" rx="2"/><line x1="7" y1="9" x2="17" y2="9"/><line x1="7" y1="13" x2="15" y2="13"/><line x1="7" y1="17" x2="13" y2="17"/></svg>`,
+    content: `<div data-pb-name="Tutorial Overview" data-pb-tutorial-overview="true" class="pb-tutorial-slot flex items-center justify-center rounded border-2 border-dashed border-violet-400 p-10 text-center text-sm font-medium text-violet-600">&#8681; The tutorial title, description &amp; chapter list render here (root template — /tutorial/&lt;slug&gt;)</div>`,
+  },
+  {
+    id: "tutorial-menu-slot",
+    label: "Chapter Menu",
+    category: "Tutorial",
+    icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="8" y1="6" x2="20" y2="6"/><line x1="8" y1="12" x2="20" y2="12"/><line x1="8" y1="18" x2="20" y2="18"/><circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="18" r="1"/></svg>`,
+    content: `<div data-pb-name="Chapter Menu" data-pb-tutorial-menu="true" class="pb-tutorial-slot flex items-center justify-center rounded border-2 border-dashed border-violet-400 p-10 text-center text-sm font-medium text-violet-600">&#8681; The chapter navigation menu renders here (chapter template)</div>`,
+  },
+  {
+    id: "tutorial-content-slot",
+    label: "Chapter Content",
+    category: "Tutorial",
+    icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="16" rx="2"/><line x1="7" y1="9" x2="17" y2="9"/><line x1="7" y1="12" x2="17" y2="12"/><line x1="7" y1="15" x2="13" y2="15"/></svg>`,
+    content: `<div data-pb-name="Chapter Content" data-pb-tutorial-content="true" class="pb-tutorial-slot flex items-center justify-center rounded border-2 border-dashed border-violet-400 p-10 text-center text-sm font-medium text-violet-600">&#8681; The current chapter (breadcrumbs, title, body, prev/next) renders here (chapter template)</div>`,
+  },
 ];

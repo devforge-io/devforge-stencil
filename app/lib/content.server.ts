@@ -27,6 +27,7 @@ import {
 } from "./markdown.server";
 import { parsePage, type ParsedPage } from "./page.server";
 import { parseWikipedia, type ParsedWikipedia } from "./wikipedia.server";
+import { parseTutorial, type ParsedTutorial } from "./tutorial.server";
 import { contentCache } from "./cache.server";
 
 export type { ContentType } from "./github.server";
@@ -58,7 +59,13 @@ export interface WikipediaItem extends ParsedWikipedia {
   contentType: "wikipedia";
 }
 
-export type AnyContentItem = ContentItem | PageItem | WikipediaItem;
+export interface TutorialItem extends ParsedTutorial {
+  slug: string;
+  sha: string;
+  contentType: "tutorial";
+}
+
+export type AnyContentItem = ContentItem | PageItem | WikipediaItem | TutorialItem;
 
 // --- Draft branch (admin UI) ---
 
@@ -131,6 +138,12 @@ export async function getContent(slug: string): Promise<AnyContentItem | null> {
     const parsed = await parseWikipedia(file.content);
     contentCache.setFull(slug, file.sha, parsed);
     return { ...parsed, slug, sha: file.sha, contentType: "wikipedia" };
+  }
+
+  if (type === "tutorial") {
+    const parsed = parseTutorial(file.content);
+    contentCache.setFull(slug, file.sha, parsed);
+    return { ...parsed, slug, sha: file.sha, contentType: "tutorial" };
   }
 
   // markdown + article share the markdown parser; report the real type so
@@ -243,6 +256,9 @@ export async function getContentAtVersion(
   }
   if (type === "wikipedia") {
     return parseWikipedia(raw);
+  }
+  if (type === "tutorial") {
+    return parseTutorial(raw);
   }
   return parseMarkdown(raw);
 }
@@ -392,6 +408,12 @@ export async function getPublishedContent(
     const parsed = await parseWikipedia(file.content);
     contentCache.setFull(cacheKey, file.sha, parsed);
     return { ...parsed, slug, sha: file.sha, contentType: "wikipedia" };
+  }
+
+  if (type === "tutorial") {
+    const parsed = parseTutorial(file.content);
+    contentCache.setFull(cacheKey, file.sha, parsed);
+    return { ...parsed, slug, sha: file.sha, contentType: "tutorial" };
   }
 
   const parsed = await parseMarkdown(file.content);

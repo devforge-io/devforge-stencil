@@ -10,9 +10,11 @@ import { listWhiteboardsForPage } from "~/lib/whiteboard.server";
 import { requireAuth } from "~/lib/auth.server";
 import { upsertArticleIndex } from "~/lib/articles.server";
 import { buildPageRaw } from "~/lib/page.server";
+import { buildTutorialRaw, parseChaptersJson } from "~/lib/tutorial.server";
 import { MarkdownEditor } from "~/components/markdown-editor";
 import { ImageUploadField } from "~/components/image-upload-field";
 import { WikipediaEditor } from "~/components/wikipedia-editor";
+import { TutorialEditor } from "~/components/tutorial-editor";
 import { PageEditor } from "~/components/page-editor-v2";
 import { getSettings } from "~/lib/settings.server";
 import { syncComponentsFromPageProject } from "~/lib/component.server";
@@ -53,6 +55,11 @@ export async function loader({ params }: Route.LoaderArgs) {
     projectData:
       content.contentType === "page" && "projectData" in content
         ? (content.projectData as string)
+        : undefined,
+    // For tutorial type, pass the ordered chapters.
+    chapters:
+      content.contentType === "tutorial" && "chapters" in content
+        ? content.chapters
         : undefined,
     css:
       content.contentType === "page" && "css" in content
@@ -113,6 +120,16 @@ export async function action({ request, params }: Route.ActionArgs) {
     if (draft) fm.draft = true;
 
     raw = buildPageRaw(fm, projectData || "{}", html || "", css || "");
+  } else if (contentType === "tutorial") {
+    const chapters = parseChaptersJson(formData.get("chapters"));
+    const fm: Record<string, unknown> = { title };
+    if (description) fm.description = description;
+    if (tagList.length) fm.tags = tagList;
+    if (headerImage) fm.headerImage = headerImage;
+    if (publishedAt) fm.publishedAt = publishedAt;
+    fm.updatedAt = now;
+    if (draft) fm.draft = true;
+    raw = buildTutorialRaw(fm, chapters);
   } else {
     const body = (formData.get("body") as string) ?? "";
     const frontmatter = [
@@ -263,11 +280,12 @@ export default function EditContent({
   const isPage = loaderData.contentType === "page";
   const isWikipedia = loaderData.contentType === "wikipedia";
   const isArticle = loaderData.contentType === "article";
+  const isTutorial = loaderData.contentType === "tutorial";
 
   return (
     <div>
       {/* Whiteboards panel — only for markdown articles */}
-      {!isPage && !isWikipedia && (
+      {!isPage && !isWikipedia && !isTutorial && (
         <div className="mb-6 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg p-4">
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-sm font-semibold">Whiteboards</h2>
@@ -380,6 +398,58 @@ export default function EditContent({
             saving={isSubmitting}
           />
         </>
+      ) : isTutorial ? (
+        /* Tutorial editor — chapter manager */
+        <Form method="post" className="space-y-4">
+          <input type="hidden" name="sha" value={loaderData.sha} />
+          <input type="hidden" name="contentType" value="tutorial" />
+          <input type="hidden" name="publishedAt" value={loaderData.publishedAt} />
+          <input type="hidden" name="headerImage" value={headerImage} />
+          <input type="hidden" name="ogImage" value={ogImage} />
+          <input type="hidden" name="ogTitle" value={ogTitle} />
+          <input type="hidden" name="ogDescription" value={ogDescription} />
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label htmlFor="title" className="block text-sm font-medium mb-1.5">Title</label>
+              <input id="title" name="title" required defaultValue={loaderData.title} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
+            </div>
+            <div>
+              <label htmlFor="description" className="block text-sm font-medium mb-1.5">Description</label>
+              <input id="description" name="description" defaultValue={loaderData.description} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label htmlFor="tags" className="block text-sm font-medium mb-1.5">Tags (comma-separated)</label>
+              <input id="tags" name="tags" defaultValue={loaderData.tags} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
+            </div>
+            <div className="flex items-end pb-1">
+              <div className="flex items-center gap-2">
+                <input id="draft" name="draft" type="checkbox" defaultChecked={loaderData.draft} className="rounded border-gray-300 dark:border-gray-700" />
+                <label htmlFor="draft" className="text-sm">Draft</label>
+              </div>
+            </div>
+          </div>
+
+          <TutorialEditor
+            initialChapters={loaderData.chapters ?? []}
+            slug={loaderData.slug}
+            name="chapters"
+          />
+
+          {actionData?.error && (
+            <p className="text-sm text-red-600 dark:text-red-400">{actionData.error}</p>
+          )}
+
+          <div className="flex gap-2">
+            <button type="submit" disabled={isSubmitting} className="px-4 py-2 bg-brand-600 text-white rounded-lg hover:bg-brand-700 transition-colors text-sm font-medium disabled:opacity-50">
+              {isSubmitting ? "Saving..." : "Save Changes"}
+            </button>
+            <a href={`/content/${loaderData.slug}`} className="px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-sm">Cancel</a>
+          </div>
+        </Form>
       ) : (
         /* Markdown / Wikipedia editor form */
         <Form method="post" className="space-y-4">

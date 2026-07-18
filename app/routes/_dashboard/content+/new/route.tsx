@@ -8,6 +8,7 @@ import { MarkdownEditor } from "~/components/markdown-editor";
 import { ImageUploadField } from "~/components/image-upload-field";
 import { WikipediaEditor } from "~/components/wikipedia-editor";
 import { buildPageRaw } from "~/lib/page.server";
+import { buildTutorialRaw } from "~/lib/tutorial.server";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
@@ -73,6 +74,14 @@ export async function action({ request }: Route.ActionArgs) {
     fm.publishedAt = now;
     if (draft) fm.draft = true;
     raw = buildPageRaw(fm, "{}", "", "");
+  } else if (contentType === "tutorial") {
+    // Start with one empty chapter; chapters are managed in the editor.
+    const fm: Record<string, unknown> = { title };
+    if (description) fm.description = description;
+    if (tagList.length) fm.tags = tagList;
+    fm.publishedAt = now;
+    if (draft) fm.draft = true;
+    raw = buildTutorialRaw(fm, [{ slug: "introduction", title: "Introduction", body: "" }]);
   } else {
     const frontmatter = [
       "---",
@@ -145,6 +154,7 @@ export default function NewContent({ actionData, loaderData }: Route.ComponentPr
             [
               ["article", "Article"],
               ["page", "Page (Visual Builder)"],
+              ["tutorial", "Tutorial (Chapters)"],
               ...(loaderData.enableMarkdown ? [["markdown", "Markdown"]] : []),
               ...(loaderData.enableWiki ? [["wikipedia", "Wiki (Wikipedia)"]] : []),
             ] as [ContentType, string][]
@@ -245,6 +255,18 @@ export default function NewContent({ actionData, loaderData }: Route.ComponentPr
             <CardContent className="py-4">
               <p className="text-sm text-muted-foreground">
                 The visual page builder will open after you create this page.
+              </p>
+            </CardContent>
+          </Card>
+        )}
+
+        {contentType === "tutorial" && (
+          <Card>
+            <CardContent className="py-4">
+              <p className="text-sm text-muted-foreground">
+                A tutorial is a set of ordered chapters, served with a left-hand
+                chapter menu and breadcrumbs. You'll add and write chapters in the
+                editor after creating it (it starts with one “Introduction” chapter).
               </p>
             </CardContent>
           </Card>

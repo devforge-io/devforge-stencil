@@ -13,6 +13,7 @@ const RESERVED_PREFIXES = [
   "/components",
   "/settings",
   "/articles",
+  "/tutorial",
   "/.well-known",
 ];
 
