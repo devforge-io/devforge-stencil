@@ -20,7 +20,18 @@ export async function loader({ request }: Route.LoaderArgs) {
   const pages = (await listContent())
     .filter((c) => c.contentType === "page")
     .map((c) => ({ slug: c.slug, title: c.meta.title ?? c.slug }));
-  return { settings, sha, pages };
+  // Never send the SMTP password to the client — expose only whether one is set.
+  const hasSmtpPass = !!(settings.contact?.smtp?.pass || process.env.SMTP_PASSWORD);
+  const safeSettings: StencilSettings = {
+    ...settings,
+    contact: settings.contact
+      ? {
+          ...settings.contact,
+          smtp: settings.contact.smtp ? { ...settings.contact.smtp, pass: undefined } : undefined,
+        }
+      : undefined,
+  };
+  return { settings: safeSettings, sha, pages, hasSmtpPass };
 }
 
 export async function action({ request }: Route.ActionArgs) {
@@ -34,12 +45,37 @@ export async function action({ request }: Route.ActionArgs) {
   const tutorialChapterTemplateSlug = (formData.get("tutorialChapterTemplateSlug") as string || "").trim();
   const siteName = (formData.get("siteName") as string || "").trim();
   const favicon = (formData.get("favicon") as string || "").trim();
+  const notFoundPageSlug = (formData.get("notFoundPageSlug") as string || "").trim();
   const enableMarkdown = formData.get("enableMarkdown") === "on";
   const enableWiki = formData.get("enableWiki") === "on";
   const sha = (formData.get("sha") as string) || undefined;
 
   // Merge onto existing settings so other fields (e.g. editorDarkMode) survive.
   const { settings: current } = await getSettings();
+
+  // Contact form + SMTP. A blank password field keeps the stored one.
+  const contactToEmail = (formData.get("contactToEmail") as string || "").trim();
+  const smtpHost = (formData.get("smtpHost") as string || "").trim();
+  const smtpPortRaw = (formData.get("smtpPort") as string || "").trim();
+  const smtpSecure = formData.get("smtpSecure") === "on";
+  const smtpUser = (formData.get("smtpUser") as string || "").trim();
+  const smtpFrom = (formData.get("smtpFrom") as string || "").trim();
+  const smtpPassInput = (formData.get("smtpPass") as string) ?? "";
+  const smtpPass = smtpPassInput || current.contact?.smtp?.pass;
+  const smtp = {
+    host: smtpHost || undefined,
+    port: smtpPortRaw ? Number(smtpPortRaw) : undefined,
+    secure: smtpSecure,
+    user: smtpUser || undefined,
+    pass: smtpPass || undefined,
+    from: smtpFrom || undefined,
+  };
+  const hasSmtp = !!(smtp.host || smtp.user || smtp.from || smtp.pass);
+  const contact =
+    contactToEmail || hasSmtp
+      ? { toEmail: contactToEmail || undefined, smtp: hasSmtp ? smtp : undefined }
+      : undefined;
+
   const settings: StencilSettings = {
     ...current,
     bodyClasses,
@@ -50,8 +86,10 @@ export async function action({ request }: Route.ActionArgs) {
     tutorialChapterTemplateSlug: tutorialChapterTemplateSlug || undefined,
     siteName: siteName || undefined,
     favicon: favicon || undefined,
+    notFoundPageSlug: notFoundPageSlug || undefined,
     enableMarkdown: enableMarkdown || undefined,
     enableWiki: enableWiki || undefined,
+    contact,
   };
   await saveSettings(settings, sha);
   return { saved: true };
@@ -69,8 +107,17 @@ const PRESET_DARK = [
   { group: "Dark Text", options: ["dark:text-gray-900", "dark:text-gray-100", "dark:text-white"] },
 ];
 
+const SECTIONS = [
+  { id: "general", label: "General" },
+  { id: "appearance", label: "Appearance" },
+  { id: "content", label: "Content" },
+  { id: "contact", label: "Contact" },
+] as const;
+
 export default function SettingsPage({ loaderData, actionData }: Route.ComponentProps) {
-  const { settings: initial, sha, pages } = loaderData;
+  const { settings: initial, sha, pages, hasSmtpPass } = loaderData;
+  const contact = initial.contact ?? {};
+  const smtp = contact.smtp ?? {};
   const navigation = useNavigation();
   const isSaving = navigation.state === "submitting";
 
@@ -94,6 +141,11 @@ export default function SettingsPage({ loaderData, actionData }: Route.Component
   const [enableWiki, setEnableWiki] = useState<boolean>(initial.enableWiki === true);
   const [newClass, setNewClass] = useState("");
   const [newDarkClass, setNewDarkClass] = useState("");
+  const [activeSection, setActiveSection] = useState<string>("general");
+  // Inactive sections stay in the DOM (hidden) so the single form submits every
+  // field. Visible cards get a bottom margin instead of relying on space-y
+  // (which misbehaves with hidden siblings).
+  const sectionCls = (id: string) => (activeSection === id ? "mb-6" : "hidden");
 
   const toggleClass = useCallback((list: string[], setList: (v: string[]) => void, cls: string) => {
     if (list.includes(cls)) setList(list.filter((c) => c !== cls));
@@ -117,7 +169,7 @@ export default function SettingsPage({ loaderData, actionData }: Route.Component
         </div>
       )}
 
-      <Form method="post" className="space-y-6">
+      <Form method="post">
         <input type="hidden" name="sha" value={sha} />
         <input type="hidden" name="bodyClasses" value={bodyClasses.join(" ")} />
         <input type="hidden" name="darkBodyClasses" value={darkBodyClasses.join(" ")} />
@@ -126,8 +178,30 @@ export default function SettingsPage({ loaderData, actionData }: Route.Component
         <input type="hidden" name="tutorialRootTemplateSlug" value={tutorialRootTemplateSlug} />
         <input type="hidden" name="tutorialChapterTemplateSlug" value={tutorialChapterTemplateSlug} />
 
+        <div className="flex flex-col gap-6 md:flex-row">
+          {/* Left section menu */}
+          <nav className="flex gap-1 overflow-x-auto pb-1 md:w-44 md:shrink-0 md:flex-col md:overflow-visible md:pb-0">
+            {SECTIONS.map((s) => (
+              <button
+                key={s.id}
+                type="button"
+                onClick={() => setActiveSection(s.id)}
+                className={cn(
+                  "whitespace-nowrap rounded-lg px-3 py-2 text-left text-sm transition-colors cursor-pointer",
+                  activeSection === s.id
+                    ? "bg-primary/10 text-primary font-medium"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                )}
+              >
+                {s.label}
+              </button>
+            ))}
+          </nav>
+
+          {/* Active section */}
+          <div className="min-w-0 flex-1">
         {/* Site */}
-        <Card>
+        <Card className={sectionCls("general")}>
           <CardContent className="pt-6 space-y-2">
             <Label className="text-sm font-semibold">Site Name</Label>
             <Input
@@ -155,7 +229,7 @@ export default function SettingsPage({ loaderData, actionData }: Route.Component
         </Card>
 
         {/* Content Types */}
-        <Card>
+        <Card className={sectionCls("content")}>
           <CardContent className="pt-6 space-y-3">
             <div>
               <Label className="text-sm font-semibold">Content Types</Label>
@@ -189,7 +263,7 @@ export default function SettingsPage({ loaderData, actionData }: Route.Component
         </Card>
 
         {/* Body Classes */}
-        <Card>
+        <Card className={sectionCls("appearance")}>
           <CardContent className="pt-6 space-y-4">
             <div>
               <Label className="text-sm font-semibold">Body Classes (Light Mode)</Label>
@@ -235,7 +309,7 @@ export default function SettingsPage({ loaderData, actionData }: Route.Component
         </Card>
 
         {/* Dark Body Classes */}
-        <Card>
+        <Card className={sectionCls("appearance")}>
           <CardContent className="pt-6 space-y-4">
             <div>
               <Label className="text-sm font-semibold">Dark Mode Classes</Label>
@@ -281,7 +355,7 @@ export default function SettingsPage({ loaderData, actionData }: Route.Component
         </Card>
 
         {/* Google Fonts */}
-        <Card>
+        <Card className={sectionCls("appearance")}>
           <CardContent className="pt-6 space-y-4">
             <div>
               <Label className="text-sm font-semibold">Google Fonts</Label>
@@ -300,7 +374,7 @@ export default function SettingsPage({ loaderData, actionData }: Route.Component
         </Card>
 
         {/* Article Template */}
-        <Card>
+        <Card className={sectionCls("content")}>
           <CardContent className="pt-6 space-y-4">
             <div>
               <Label className="text-sm font-semibold">Article Template</Label>
@@ -330,8 +404,30 @@ export default function SettingsPage({ loaderData, actionData }: Route.Component
           </CardContent>
         </Card>
 
+        {/* 404 Page */}
+        <Card className={sectionCls("general")}>
+          <CardContent className="pt-6 space-y-2">
+            <Label className="text-sm font-semibold">Not Found (404) Page</Label>
+            <p className="text-xs text-muted-foreground">
+              A published <strong>page</strong> served (with HTTP 404) for any unmatched public URL —
+              missing pages, articles, or tutorials. Build it in the page editor and publish it, then
+              select it here. Without one, a plain “Not Found” is returned.
+            </p>
+            <select
+              name="notFoundPageSlug"
+              defaultValue={typeof initial.notFoundPageSlug === "string" ? initial.notFoundPageSlug : ""}
+              className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-background focus:outline-none focus:ring-2 focus:ring-ring"
+            >
+              <option value="">— Plain 404 (default) —</option>
+              {pages.map((p) => (
+                <option key={p.slug} value={p.slug}>{p.title} ({p.slug})</option>
+              ))}
+            </select>
+          </CardContent>
+        </Card>
+
         {/* Tutorial Templates */}
-        <Card>
+        <Card className={sectionCls("content")}>
           <CardContent className="pt-6 space-y-4">
             <div>
               <Label className="text-sm font-semibold">Tutorial Templates</Label>
@@ -383,9 +479,70 @@ export default function SettingsPage({ loaderData, actionData }: Route.Component
           </CardContent>
         </Card>
 
-        <Button type="submit" disabled={isSaving}>
-          {isSaving ? "Saving..." : "Save Settings"}
-        </Button>
+        {/* Contact Form (POST /contact) */}
+        <Card className={sectionCls("contact")}>
+          <CardContent className="pt-6 space-y-4">
+            <div>
+              <Label className="text-sm font-semibold">Contact Form</Label>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                A <code className="text-xs bg-muted px-1 py-0.5 rounded">POST /contact</code> endpoint emails
+                submissions (fields <code className="text-xs bg-muted px-1 rounded">name</code>,{" "}
+                <code className="text-xs bg-muted px-1 rounded">email</code>,{" "}
+                <code className="text-xs bg-muted px-1 rounded">subject</code>,{" "}
+                <code className="text-xs bg-muted px-1 rounded">message</code>) to the recipient below via SMTP.
+              </p>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium">Send submissions to</Label>
+              <Input name="contactToEmail" type="email" defaultValue={contact.toEmail ?? ""} placeholder="you@example.com" className="max-w-sm" />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 max-w-xl">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium">SMTP Host</Label>
+                <Input name="smtpHost" defaultValue={smtp.host ?? ""} placeholder="smtp.example.com" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium">Port</Label>
+                <Input name="smtpPort" type="number" defaultValue={smtp.port != null ? String(smtp.port) : ""} placeholder="587" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium">Username</Label>
+                <Input name="smtpUser" defaultValue={smtp.user ?? ""} placeholder="apikey / user" autoComplete="off" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium">Password</Label>
+                <Input name="smtpPass" type="password" defaultValue="" placeholder={hasSmtpPass ? "•••••••• (unchanged)" : ""} autoComplete="new-password" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium">From address</Label>
+                <Input name="smtpFrom" type="email" defaultValue={smtp.from ?? ""} placeholder="site@example.com" />
+              </div>
+              <div className="flex items-end pb-1.5">
+                <label className="flex items-center gap-2 text-sm">
+                  <Checkbox name="smtpSecure" value="on" defaultChecked={smtp.secure === true} />
+                  Use TLS (port 465)
+                </label>
+              </div>
+            </div>
+
+            <p className="text-xs text-muted-foreground">
+              The password is stored in <code className="text-xs bg-muted px-1 rounded">settings.json</code> in your
+              repo. To keep it out of the repo, leave it blank and set the{" "}
+              <code className="text-xs bg-muted px-1 rounded">SMTP_PASSWORD</code> environment variable instead
+              (<code className="text-xs bg-muted px-1 rounded">SMTP_HOST/PORT/USER/FROM</code> env vars also override).
+            </p>
+          </CardContent>
+        </Card>
+
+            <div className="mt-2 border-t pt-4">
+              <Button type="submit" disabled={isSaving}>
+                {isSaving ? "Saving..." : "Save Settings"}
+              </Button>
+            </div>
+          </div>
+        </div>
       </Form>
     </div>
   );

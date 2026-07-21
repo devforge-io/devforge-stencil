@@ -458,6 +458,31 @@ export async function renderPublicPageResponse(
   });
 }
 
+/**
+ * The response for an unmatched public URL. If a 404 page is configured
+ * (Settings) and published, it's rendered with HTTP 404; otherwise a plain
+ * "Not Found" response. Never cached (per‑URL 404s shouldn't be shared).
+ */
+export async function renderNotFoundResponse(request?: Request): Promise<Response> {
+  const { settings } = await getSettings();
+  const slug = typeof settings.notFoundPageSlug === "string" ? settings.notFoundPageSlug : "";
+  if (slug) {
+    const page = await getPublishedContent(slug);
+    if (page) {
+      const res = await renderPublicPageResponse(page, request);
+      const body = await res.text();
+      return new Response(body, {
+        status: 404,
+        headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": PRIVATE_CACHE },
+      });
+    }
+  }
+  return new Response("Not Found", {
+    status: 404,
+    headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": PRIVATE_CACHE },
+  });
+}
+
 // Posts the document height to the parent so an embedding page (via /embed.js)
 // can auto-size the iframe.
 const EMBED_RESIZE_SCRIPT =

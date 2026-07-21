@@ -16,10 +16,28 @@ export interface StencilSettings {
   siteName?: string;
   /** Favicon URL (asset path or absolute), emitted as <link rel="icon">. */
   favicon?: string;
+  /** Slug of a published page served (with HTTP 404) for unmatched public URLs. */
+  notFoundPageSlug?: string;
   /** Show the Markdown content type in the "New Content" picker. Off by default. */
   enableMarkdown?: boolean;
   /** Show the Wiki (Wikitext) content type in the "New Content" picker. Off by default. */
   enableWiki?: boolean;
+  /** Contact form (POST /contact) — recipient + SMTP transport. */
+  contact?: {
+    /** Where contact-form submissions are emailed. */
+    toEmail?: string;
+    smtp?: {
+      host?: string;
+      port?: number;
+      /** true for implicit TLS (port 465); false for STARTTLS (587/25). */
+      secure?: boolean;
+      user?: string;
+      /** SMTP password. Stored in settings.json; the SMTP_PASSWORD env var overrides it. */
+      pass?: string;
+      /** From address (defaults to the SMTP user). */
+      from?: string;
+    };
+  };
   [key: string]: unknown;
 }
 
