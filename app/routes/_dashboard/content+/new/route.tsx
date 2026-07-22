@@ -3,7 +3,6 @@ import { useState } from "react";
 import { saveContent, type ContentType } from "~/lib/content.server";
 import { requireAuth } from "~/lib/auth.server";
 import { getSettings } from "~/lib/settings.server";
-import { upsertArticleIndex } from "~/lib/articles.server";
 import { MarkdownEditor } from "~/components/markdown-editor";
 import { ImageUploadField } from "~/components/image-upload-field";
 import { WikipediaEditor } from "~/components/wikipedia-editor";
@@ -102,21 +101,8 @@ export async function action({ request }: Route.ActionArgs) {
     raw = `${frontmatter}\n\n${body}`;
   }
 
+  // saveContent maintains the articles/pages/tutorial index for its type.
   await saveContent(slug, raw, undefined, contentType);
-
-  // Articles are also tracked in articles.json for quick listing.
-  if (contentType === "article") {
-    await upsertArticleIndex({
-      slug,
-      title,
-      description: description || undefined,
-      tags: tagList.length ? tagList : undefined,
-      headerImage: headerImage || undefined,
-      publishedAt: now,
-      draft: draft || undefined,
-      updatedAt: now,
-    });
-  }
 
   return redirect(`/content/${slug}`);
 }

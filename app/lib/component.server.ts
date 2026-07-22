@@ -1,6 +1,13 @@
 import { getGitHubConfig } from "./github.server";
 import { Octokit } from "octokit";
 import type { ConditionalSpec } from "./conditional/types";
+import {
+  componentIndexExists,
+  listComponentIndex,
+  saveComponentIndex,
+  upsertComponentIndex,
+  removeFromComponentIndex,
+} from "./component-index.server";
 
 /** Static components are fixed markup; conditional components store a rule set. */
 export type ComponentType = "static" | "conditional";
@@ -68,9 +75,45 @@ function cssFilePath(componentPath: string, slug: string): string {
 }
 
 /**
- * List all custom components.
+ * List all components. Reads `components.json` in a single request. If the index
+ * doesn't exist yet, it falls back to scanning the directory (slow) and
+ * backfills the index so subsequent lists are fast.
  */
 export async function listComponents(): Promise<ComponentMeta[]> {
+  if (await componentIndexExists()) {
+    const idx = await listComponentIndex();
+    return idx.map((e) => ({
+      slug: e.slug,
+      name: e.name,
+      category: e.category,
+      icon: e.icon,
+      description: e.description,
+      type: e.type,
+    }));
+  }
+  const scanned = await scanComponents();
+  if (scanned.length > 0) {
+    try {
+      await saveComponentIndex(
+        scanned.map((m) => ({
+          slug: m.slug,
+          name: m.name,
+          category: m.category,
+          icon: m.icon,
+          description: m.description,
+          type: m.type,
+          updatedAt: new Date().toISOString(),
+        }))
+      );
+    } catch (err) {
+      console.error("[component] index backfill failed:", err);
+    }
+  }
+  return scanned;
+}
+
+/** Directory scan of every component file (1 + N API calls) — the slow path. */
+async function scanComponents(): Promise<ComponentMeta[]> {
   const config = getGitHubConfig();
   const octokit = getOctokit(config.token);
 
@@ -85,7 +128,7 @@ export async function listComponents(): Promise<ComponentMeta[]> {
     if (!Array.isArray(data)) return [];
 
     const jsonFiles = data.filter(
-      (f) => f.type === "file" && f.name.endsWith(".json")
+      (f) => f.type === "file" && f.name.endsWith(".json") && f.name !== "components.json"
     );
 
     const components: ComponentMeta[] = [];
@@ -100,7 +143,7 @@ export async function listComponents(): Promise<ComponentMeta[]> {
         if (Array.isArray(fileData) || fileData.type !== "file") continue;
         const content = Buffer.from(fileData.content, "base64").toString("utf-8");
         const parsed: ComponentFile = JSON.parse(content);
-        components.push(parsed.meta);
+        if (parsed?.meta?.slug) components.push(parsed.meta);
       } catch {
         // skip invalid files
       }
@@ -255,6 +298,21 @@ export async function saveComponent(
     existingSha ? `Update component ${slug}` : `Create component ${slug}`
   );
 
+  // Keep components.json in sync for fast listing (best-effort).
+  try {
+    await upsertComponentIndex({
+      slug,
+      name: data.name,
+      category: data.category,
+      icon: data.icon,
+      description: data.description,
+      type,
+      updatedAt: new Date().toISOString(),
+    });
+  } catch (err) {
+    console.error(`[component] index upsert failed for ${slug}:`, err);
+  }
+
   // Best-effort cleanup of legacy <slug>.css file from the era when CSS
   // was stored separately. Safe to run repeatedly — once it's gone, this
   // is a no-op.
@@ -290,6 +348,13 @@ export async function deleteComponent(slug: string, sha: string): Promise<void> 
     sha,
     branch: config.branch,
   });
+
+  // Keep components.json in sync (best-effort).
+  try {
+    await removeFromComponentIndex(slug);
+  } catch (err) {
+    console.error(`[component] index remove failed for ${slug}:`, err);
+  }
 
   // Clean up legacy sidecar CSS file if present (from older saves)
   await deleteLegacyComponentCss(slug).catch(() => {});

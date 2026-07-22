@@ -1,7 +1,7 @@
 import { Form, useNavigation } from "react-router";
 import { useState, useCallback } from "react";
 import { getSettings, saveSettings, type StencilSettings } from "~/lib/settings.server";
-import { listContent } from "~/lib/content.server";
+import { listPages } from "~/lib/content.server";
 import { requireRole } from "~/lib/auth.server";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
@@ -17,9 +17,7 @@ import type { Route } from "./+types/route";
 export async function loader({ request }: Route.LoaderArgs) {
   await requireRole(request, "admin");
   const { settings, sha } = await getSettings();
-  const pages = (await listContent())
-    .filter((c) => c.contentType === "page")
-    .map((c) => ({ slug: c.slug, title: c.meta.title ?? c.slug }));
+  const pages = (await listPages()).map((p) => ({ slug: p.slug, title: p.title || p.slug }));
   // Never send the SMTP password to the client — expose only whether one is set.
   const hasSmtpPass = !!(settings.contact?.smtp?.pass || process.env.SMTP_PASSWORD);
   const safeSettings: StencilSettings = {

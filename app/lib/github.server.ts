@@ -347,6 +347,61 @@ export async function saveArticlesIndexRaw(json: string, branch?: string): Promi
   });
 }
 
+// --- Generic repo JSON (used by the components/pages/tutorial indexes) ---
+
+/** Read a text/JSON file at an arbitrary repo path, or null if it's missing. */
+export async function getRepoFileRaw(path: string, branch?: string): Promise<string | null> {
+  const config = getConfig();
+  const octokit = getOctokit(config.token);
+  try {
+    const { data } = await octokit.rest.repos.getContent({
+      owner: config.owner,
+      repo: config.repo,
+      path,
+      ref: branch ?? config.branch,
+    });
+    if (Array.isArray(data) || data.type !== "file") return null;
+    return Buffer.from(data.content, "base64").toString("utf-8");
+  } catch {
+    return null;
+  }
+}
+
+/** Create or update a text/JSON file at an arbitrary repo path. */
+export async function saveRepoFileRaw(
+  path: string,
+  content: string,
+  message: string,
+  branch?: string
+): Promise<void> {
+  const config = getConfig();
+  const octokit = getOctokit(config.token);
+  const targetBranch = branch ?? config.branch;
+
+  let existingSha: string | undefined;
+  try {
+    const { data } = await octokit.rest.repos.getContent({
+      owner: config.owner,
+      repo: config.repo,
+      path,
+      ref: targetBranch,
+    });
+    if (!Array.isArray(data) && data.type === "file") existingSha = data.sha;
+  } catch {
+    // doesn't exist yet
+  }
+
+  await octokit.rest.repos.createOrUpdateFileContents({
+    owner: config.owner,
+    repo: config.repo,
+    path,
+    message,
+    content: Buffer.from(content).toString("base64"),
+    branch: targetBranch,
+    ...(existingSha ? { sha: existingSha } : {}),
+  });
+}
+
 export async function deleteFile(
   slug: string,
   sha: string,

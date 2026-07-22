@@ -29,6 +29,9 @@ import { parsePage, type ParsedPage } from "./page.server";
 import { parseWikipedia, type ParsedWikipedia } from "./wikipedia.server";
 import { parseTutorial, type ParsedTutorial } from "./tutorial.server";
 import { contentCache } from "./cache.server";
+import { listArticleIndex, upsertArticleIndex, removeFromArticleIndex } from "./articles.server";
+import { listPageIndex, upsertPageIndex, removeFromPageIndex, pageIndexExists, savePageIndex, type PageIndexEntry } from "./page-index.server";
+import { listTutorialIndex, upsertTutorialIndex, removeFromTutorialIndex, tutorialIndexExists, saveTutorialIndex, type TutorialIndexEntry } from "./tutorial-index.server";
 
 export type { ContentType } from "./github.server";
 
@@ -69,24 +72,58 @@ export type AnyContentItem = ContentItem | PageItem | WikipediaItem | TutorialIt
 
 // --- Draft branch (admin UI) ---
 
+/**
+ * Fast page list from `pages.json` (one read). If the index is missing,
+ * `listContent()` seeds it from a scan, then we read it back.
+ */
+export async function listPages(): Promise<PageIndexEntry[]> {
+  if (await pageIndexExists()) return listPageIndex();
+  await listContent();
+  return listPageIndex();
+}
+
+/** Fast tutorial list from `tutorial.json` (one read), with the same backfill. */
+export async function listTutorials(): Promise<TutorialIndexEntry[]> {
+  if (await tutorialIndexExists()) return listTutorialIndex();
+  await listContent();
+  return listTutorialIndex();
+}
+
 export async function listContent(): Promise<ContentListItem[]> {
-  const [draftFiles, publishedFiles] = await Promise.all([
+  // The indexes let us read each item's meta from a few JSON files instead of
+  // reading every content file's frontmatter over the API.
+  const [draftFiles, publishedFiles, articleIdx, pageIdx, tutorialIdx] = await Promise.all([
     listContentFiles(),
     listPublishedFiles(),
+    listArticleIndex(),
+    listPageIndex(),
+    listTutorialIndex(),
   ]);
 
   const publishedMap = new Map(
     publishedFiles.map((f) => [slugFromFilename(f.name), f.sha])
   );
 
+  // slug -> lightweight frontmatter from the indexes.
+  const indexMeta = new Map<string, ContentFrontmatter>();
+  for (const e of articleIdx) {
+    indexMeta.set(e.slug, { title: e.title, description: e.description, tags: e.tags, headerImage: e.headerImage, publishedAt: e.publishedAt, draft: e.draft });
+  }
+  for (const e of pageIdx) {
+    indexMeta.set(e.slug, { title: e.title, description: e.description, tags: e.tags, path: e.path, publishedAt: e.publishedAt, draft: e.draft });
+  }
+  for (const e of tutorialIdx) {
+    indexMeta.set(e.slug, { title: e.title, description: e.description, tags: e.tags, publishedAt: e.publishedAt, draft: e.draft });
+  }
+
   const items = await Promise.all(
     draftFiles.map(async (file) => {
       const slug = slugFromFilename(file.name);
-      const cached = contentCache.getMeta(slug, file.sha);
-      let meta: ContentFrontmatter;
-      if (cached) {
-        meta = cached;
-      } else {
+      // Prefer the sha-keyed cache (version-correct), then the index (avoids an
+      // API read), then fall back to reading the file (markdown/wiki, index gaps).
+      let meta: ContentFrontmatter | undefined =
+        contentCache.getMeta(slug, file.sha) ?? indexMeta.get(slug);
+      if (!meta) {
         const content = await getFileContent(slug, file.contentType);
         if (!content) return null;
         meta = parseFrontmatterOnly(content.content);
@@ -105,13 +142,39 @@ export async function listContent(): Promise<ContentListItem[]> {
     })
   );
 
-  return items
+  const result = items
     .filter((item): item is ContentListItem => item !== null)
     .sort((a, b) => {
       const dateA = a.meta.publishedAt ?? "";
       const dateB = b.meta.publishedAt ?? "";
       return dateB.localeCompare(dateA);
     });
+
+  // One-time backfill: seed a page/tutorial index that's empty while items of
+  // that type exist. Awaited so `listPages`/`listTutorials` can read it back.
+  const now = new Date().toISOString();
+  const backfills: Promise<void>[] = [];
+  const pagesR = result.filter((i) => i.contentType === "page");
+  if (pageIdx.length === 0 && pagesR.length > 0) {
+    backfills.push(
+      savePageIndex(pagesR.map((i) => ({ slug: i.slug, title: i.meta.title, description: i.meta.description, tags: i.meta.tags, path: typeof i.meta.path === "string" ? i.meta.path : undefined, publishedAt: i.meta.publishedAt, draft: i.meta.draft, updatedAt: now })))
+    );
+  }
+  const tutR = result.filter((i) => i.contentType === "tutorial");
+  if (tutorialIdx.length === 0 && tutR.length > 0) {
+    backfills.push(
+      saveTutorialIndex(tutR.map((i) => ({ slug: i.slug, title: i.meta.title, description: i.meta.description, tags: i.meta.tags, publishedAt: i.meta.publishedAt, draft: i.meta.draft, updatedAt: now })))
+    );
+  }
+  if (backfills.length) {
+    try {
+      await Promise.all(backfills);
+    } catch (err) {
+      console.error("[index] listContent backfill failed:", err);
+    }
+  }
+
+  return result;
 }
 
 export async function getContent(slug: string): Promise<AnyContentItem | null> {
@@ -153,6 +216,37 @@ export async function getContent(slug: string): Promise<AnyContentItem | null> {
   return { ...parsed, slug, sha: file.sha, contentType: type };
 }
 
+/** Update the draft-branch index (articles/pages/tutorial) after a save. */
+async function syncDraftIndex(slug: string, raw: string, type: ContentType): Promise<void> {
+  const now = new Date().toISOString();
+  try {
+    if (type === "article") {
+      const fm = parseFrontmatterOnly(raw);
+      await upsertArticleIndex({ slug, title: fm.title, description: fm.description, tags: fm.tags, headerImage: fm.headerImage, publishedAt: fm.publishedAt, draft: fm.draft, updatedAt: now });
+    } else if (type === "page") {
+      const fm = parseFrontmatterOnly(raw);
+      await upsertPageIndex({ slug, title: fm.title, description: fm.description, tags: fm.tags, path: typeof fm.path === "string" ? fm.path : undefined, publishedAt: fm.publishedAt, draft: fm.draft, updatedAt: now });
+    } else if (type === "tutorial") {
+      const parsed = parseTutorial(raw);
+      const fm = parsed.frontmatter;
+      await upsertTutorialIndex({ slug, title: fm.title, description: fm.description, tags: fm.tags, publishedAt: fm.publishedAt, draft: fm.draft, chapters: parsed.chapters.map((c) => ({ slug: c.slug, title: c.title })), updatedAt: now });
+    }
+  } catch (err) {
+    console.error(`[index] draft update failed for ${type} ${slug}:`, err);
+  }
+}
+
+/** Remove a slug from its type's draft index after a delete. */
+async function removeDraftIndex(slug: string, type: ContentType): Promise<void> {
+  try {
+    if (type === "article") await removeFromArticleIndex(slug);
+    else if (type === "page") await removeFromPageIndex(slug);
+    else if (type === "tutorial") await removeFromTutorialIndex(slug);
+  } catch (err) {
+    console.error(`[index] draft remove failed for ${type} ${slug}:`, err);
+  }
+}
+
 export async function saveContent(
   slug: string,
   raw: string,
@@ -169,6 +263,9 @@ export async function saveContent(
   if (type === "page" && compiledCss != null) {
     await saveCompiledCss(slug, compiledCss);
   }
+
+  // Keep the draft index in sync so listings don't need to read every file.
+  await syncDraftIndex(slug, raw, type);
 
   contentCache.invalidate(slug);
   return result;
@@ -187,6 +284,7 @@ export async function removeContent(
   type: ContentType = "markdown"
 ): Promise<void> {
   await deleteFile(slug, sha, `Delete ${slug}`, type);
+  await removeDraftIndex(slug, type);
   contentCache.invalidate(slug);
 }
 
@@ -303,25 +401,24 @@ export async function publishContent(slug: string, type: ContentType = "markdown
     );
   }
 
-  // Maintain the live articles index on the publish branch so the public site
-  // (article blocks) reads exactly what's published. Marked not-draft — being
-  // published is the signal, regardless of the frontmatter "draft" flag.
-  if (type === "article" && content) {
-    const { upsertArticleIndex } = await import("./articles.server");
+  // Maintain the publish-branch index so public listings read exactly what's
+  // published. Marked not-draft — being published is the signal, regardless of
+  // the frontmatter "draft" flag. Best-effort (never block a publish).
+  if (content) {
     const fm = content.frontmatter;
-    await upsertArticleIndex(
-      {
-        slug,
-        title: fm.title,
-        description: fm.description,
-        tags: fm.tags,
-        headerImage: fm.headerImage,
-        publishedAt: fm.publishedAt,
-        draft: false,
-        updatedAt: new Date().toISOString(),
-      },
-      config.publishBranch
-    );
+    const now = new Date().toISOString();
+    try {
+      if (type === "article") {
+        await upsertArticleIndex({ slug, title: fm.title, description: fm.description, tags: fm.tags, headerImage: fm.headerImage, publishedAt: fm.publishedAt, draft: false, updatedAt: now }, config.publishBranch);
+      } else if (type === "page") {
+        await upsertPageIndex({ slug, title: fm.title, description: fm.description, tags: fm.tags, path: typeof fm.path === "string" ? fm.path : undefined, publishedAt: fm.publishedAt, draft: false, updatedAt: now }, config.publishBranch);
+      } else if (type === "tutorial") {
+        const chapters = "chapters" in content ? (content.chapters as { slug: string; title: string }[]).map((c) => ({ slug: c.slug, title: c.title })) : [];
+        await upsertTutorialIndex({ slug, title: fm.title, description: fm.description, tags: fm.tags, publishedAt: fm.publishedAt, draft: false, chapters, updatedAt: now }, config.publishBranch);
+      }
+    } catch (err) {
+      console.error(`[index] publish update failed for ${type} ${slug}:`, err);
+    }
   }
 
   contentCache.invalidate(slug);
@@ -330,10 +427,15 @@ export async function publishContent(slug: string, type: ContentType = "markdown
 export async function unpublishContent(slug: string, type: ContentType = "markdown"): Promise<void> {
   await unpublishFile(slug, type);
 
-  if (type === "article") {
-    const { getGitHubConfig } = await import("./github.server");
-    const { removeFromArticleIndex } = await import("./articles.server");
-    await removeFromArticleIndex(slug, getGitHubConfig().publishBranch);
+  // Drop it from the publish-branch index (best-effort).
+  const { getGitHubConfig } = await import("./github.server");
+  const publishBranch = getGitHubConfig().publishBranch;
+  try {
+    if (type === "article") await removeFromArticleIndex(slug, publishBranch);
+    else if (type === "page") await removeFromPageIndex(slug, publishBranch);
+    else if (type === "tutorial") await removeFromTutorialIndex(slug, publishBranch);
+  } catch (err) {
+    console.error(`[index] unpublish remove failed for ${type} ${slug}:`, err);
   }
 
   contentCache.invalidate(slug);
