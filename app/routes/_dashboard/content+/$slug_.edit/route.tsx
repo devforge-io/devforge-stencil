@@ -8,7 +8,6 @@ import {
 } from "~/lib/content.server";
 import { listWhiteboardsForPage } from "~/lib/whiteboard.server";
 import { requireAuth } from "~/lib/auth.server";
-import { upsertArticleIndex } from "~/lib/articles.server";
 import { buildPageRaw } from "~/lib/page.server";
 import { buildTutorialRaw, parseChaptersJson } from "~/lib/tutorial.server";
 import { MarkdownEditor } from "~/components/markdown-editor";
@@ -158,6 +157,7 @@ export async function action({ request, params }: Route.ActionArgs) {
       ? ((formData.get("pageCss") as string) ?? "")
       : undefined;
 
+  // saveContent maintains the articles/pages/tutorial index for its type.
   await saveContent(
     params.slug,
     raw,
@@ -165,20 +165,6 @@ export async function action({ request, params }: Route.ActionArgs) {
     contentType,
     compiledCss,
   );
-
-  // Keep the articles index in sync on edit.
-  if (contentType === "article") {
-    await upsertArticleIndex({
-      slug: params.slug,
-      title,
-      description: description || undefined,
-      tags: tagList.length ? tagList : undefined,
-      headerImage: headerImage || undefined,
-      publishedAt: publishedAt || now,
-      draft: draft || undefined,
-      updatedAt: now,
-    });
-  }
 
   if (contentType === "page") {
     const projectData = formData.get("projectData") as string;
@@ -383,6 +369,7 @@ export default function EditContent({
             projectData={loaderData.projectData}
             defaultBodyClasses={loaderData.defaultBodyClasses}
             initialDarkMode={loaderData.editorDarkMode}
+            initialCss={loaderData.css}
             meta={{
               title: loaderData.title,
               description: loaderData.description,

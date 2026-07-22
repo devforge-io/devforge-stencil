@@ -31,6 +31,10 @@ function canDropAt(
 interface CanvasProps {
   store: PBStore;
   externalStyles?: string[];
+  /** Aggregated CSS of all custom components, injected so their styles render. */
+  componentCss?: string;
+  /** The page's hand-written custom CSS, injected so custom classes render in the canvas. */
+  pageCss?: string;
   initialDarkMode?: boolean;
 }
 
@@ -41,7 +45,7 @@ interface DropTarget {
   position: DropPosition;
 }
 
-export const Canvas = memo(function Canvas({ store, externalStyles = [], initialDarkMode = false }: CanvasProps) {
+export const Canvas = memo(function Canvas({ store, externalStyles = [], componentCss = "", pageCss = "", initialDarkMode = false }: CanvasProps) {
   const wrapperRef = useRef<HTMLDivElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const storeRef = useRef(store);
@@ -122,11 +126,32 @@ export const Canvas = memo(function Canvas({ store, externalStyles = [], initial
     .pb-toolbar button:hover { background: #333; color: white; }
     .pb-toolbar button.danger:hover { background: #dc2626; color: white; }
     .pb-toolbar .sep { width: 1px; height: 14px; background: #444; margin: 0 1px; }
+    /* Custom CSS/JS code placeholder (the real code is injected/run separately) */
+    .pb-code-node {
+      display: block; margin: 6px 0; padding: 6px 8px 8px;
+      border: 1px dashed #a78bfa; border-radius: 6px;
+      background: repeating-linear-gradient(-45deg, rgba(167,139,250,0.05) 0 8px, transparent 8px 16px), #faf5ff;
+      cursor: pointer; overflow: hidden;
+    }
+    .dark .pb-code-node { background: repeating-linear-gradient(-45deg, rgba(167,139,250,0.08) 0 8px, transparent 8px 16px), #1e1b2e; border-color: #7c3aed; }
+    .pb-code-node .pb-code-badge {
+      display: inline-block; font: 600 9px ui-monospace, monospace; letter-spacing: .04em;
+      color: #fff; background: #7c3aed; padding: 1px 5px; border-radius: 3px; vertical-align: middle;
+    }
+    .pb-code-node .pb-code-label { margin-left: 6px; font: 600 11px system-ui, sans-serif; color: #6d28d9; }
+    .dark .pb-code-node .pb-code-label { color: #c4b5fd; }
+    .pb-code-node .pb-code-preview {
+      margin: 5px 0 0; max-height: 72px; overflow: hidden;
+      font: 11px/1.5 ui-monospace, monospace; color: #6b7280; white-space: pre-wrap; word-break: break-word;
+    }
+    .dark .pb-code-node .pb-code-preview { color: #9ca3af; }
   </style>
+  <style data-pb-component-css>${componentCss}</style>
+  <style data-pb-page-css>${pageCss}</style>
 </head>
 <body></body>
 </html>`;
-  }, [externalStyles]);
+  }, [externalStyles, componentCss, pageCss]);
 
   const render = useCallback(() => {
     const iframe = iframeRef.current;
@@ -197,6 +222,10 @@ export const Canvas = memo(function Canvas({ store, externalStyles = [], initial
       // Only auto-remove if dark wasn't set manually via the toggle button
       htmlEl.classList.remove("dark");
     }
+
+    // Materialise custom CSS/JS (rendered above as placeholders) so styles apply
+    // and reveal-style scripts run live in the preview.
+    applyRuntimeCode(doc, root);
 
   }, []);
 
@@ -429,6 +458,8 @@ export const Canvas = memo(function Canvas({ store, externalStyles = [], initial
         const target = (e.target as HTMLElement).closest("[data-pb-id]") as HTMLElement | null;
         if (!target) return;
         const id = target.getAttribute("data-pb-id")!;
+        // Custom CSS/JS placeholders are edited in the properties panel, not inline.
+        if (target.hasAttribute("data-pb-code")) return;
         const node = findNode(storeRef.current.getRoot(), id);
         if (!node?.editable) return;
         e.preventDefault();
@@ -826,8 +857,17 @@ function renderNode(node: PBNode, selectedId: string | null): string {
 
   if (node.type === "text") {
     const tag = node.tag || "span";
-    const classAttr = node.classes.length > 0 ? ` class="${encodeClasses(node.classes)}"` : "";
     const sel = node.id === selectedId ? ' data-pb-selected="true"' : "";
+    // <style>/<script> render as a labelled, selectable placeholder. The real
+    // CSS/JS is injected & executed separately (applyRuntimeCode) so styles apply
+    // and scripts run; editing happens in the properties panel's code editor.
+    if (tag === "style" || tag === "script") {
+      const lang = tag === "style" ? "CSS" : "JS";
+      const label = tag === "style" ? "Custom CSS" : "Custom JavaScript";
+      const preview = escapeHtml((node.text ?? "").trim().slice(0, 240)) || "(empty)";
+      return `<div data-pb-id="${node.id}" data-pb-name="${escapeHtml(name)}" data-pb-code="${tag}" class="pb-code-node"${sel}><span class="pb-code-badge">${lang}</span><span class="pb-code-label">${label}</span><pre class="pb-code-preview">${preview}</pre></div>`;
+    }
+    const classAttr = node.classes.length > 0 ? ` class="${encodeClasses(node.classes)}"` : "";
     return `<${tag} data-pb-id="${node.id}" data-pb-name="${name}"${classAttr}${sel}>${escapeHtml(node.text ?? "")}</${tag}>`;
   }
 
@@ -879,6 +919,43 @@ function renderNode(node: PBNode, selectedId: string | null): string {
 
   const childrenHtml = node.children.map((c) => renderNode(c, selectedId)).join("");
   return `<${tag} ${attrs.join(" ")}>${childrenHtml}</${tag}>`;
+}
+
+/**
+ * Inject and run the page's custom <style>/<script> code inside the canvas.
+ * These nodes render as inert placeholders (renderNode), so here we materialise
+ * the real elements from the tree: <style> text is appended to <head> (applies
+ * CSS) and <script> text is appended to <body> (executes — scripts inserted via
+ * innerHTML never run, so they must be re-created as fresh <script> elements).
+ * Called on every full re-render; prior runtime elements are cleared first.
+ */
+function applyRuntimeCode(doc: Document, root: PBNode): void {
+  doc.querySelectorAll("[data-pb-runtime-code]").forEach((el) => el.remove());
+
+  const styles: string[] = [];
+  const scripts: string[] = [];
+  const walk = (n: PBNode) => {
+    if (n.type === "text" && (n.tag === "style" || n.tag === "script")) {
+      (n.tag === "style" ? styles : scripts).push(n.text ?? "");
+    }
+    n.children?.forEach(walk);
+  };
+  root.children.forEach(walk);
+
+  for (const css of styles) {
+    if (!css.trim()) continue;
+    const el = doc.createElement("style");
+    el.setAttribute("data-pb-runtime-code", "style");
+    el.textContent = css;
+    doc.head.appendChild(el);
+  }
+  for (const js of scripts) {
+    if (!js.trim()) continue;
+    const el = doc.createElement("script");
+    el.setAttribute("data-pb-runtime-code", "script");
+    el.textContent = js;
+    doc.body.appendChild(el);
+  }
 }
 
 function encodeClasses(classes: string[]): string {

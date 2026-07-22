@@ -17,7 +17,11 @@ export function renderToHtml(node: PBNode): string {
       attrs.push(`${k}="${escapeAttr(v)}"`);
     }
     const attrStr = attrs.length > 0 ? " " + attrs.join(" ") : "";
-    return `<${tag}${attrStr}>${escapeHtml(node.text ?? "")}</${tag}>`;
+    // <style>/<script> hold raw CSS/JS — escaping their text (e.g. `>` in a CSS
+    // child selector) corrupts it, since entities aren't decoded inside them.
+    const text = node.text ?? "";
+    const body = tag === "style" || tag === "script" ? text : escapeHtml(text);
+    return `<${tag}${attrStr}>${body}</${tag}>`;
   }
 
   const tag = node.tag;
@@ -178,6 +182,8 @@ function getDefaultName(tag: string): string {
     svg: "SVG",
     figure: "Figure",
     figcaption: "Caption",
+    style: "Custom CSS",
+    script: "Custom JavaScript",
     table: "Table",
     tr: "Row",
     td: "Cell",

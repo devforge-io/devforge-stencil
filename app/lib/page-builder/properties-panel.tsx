@@ -100,8 +100,17 @@ export function PropertiesPanel({ store, node, slug }: PropertiesPanelProps) {
         </>
       )}
 
-      {/* Text content — but not for icons */}
-      {!iconLib && (node.type === "text" || (!node.children.length && node.editable)) && (
+      {/* Custom CSS / JavaScript code */}
+      {node.type === "text" && (node.tag === "style" || node.tag === "script") && (
+        <>
+          <CodeEditor store={store} node={node} />
+          <Separator />
+        </>
+      )}
+
+      {/* Text content — but not for icons or code nodes */}
+      {!iconLib && node.tag !== "style" && node.tag !== "script" &&
+        (node.type === "text" || (!node.children.length && node.editable)) && (
         <>
           <TextEditor store={store} node={node} />
           <Separator />
@@ -538,6 +547,35 @@ function IconPicker({
           )}
         </div>
       </ScrollArea>
+    </div>
+  );
+}
+
+function CodeEditor({ store, node }: { store: PBStore; node: PBNode }) {
+  const [value, setValue] = useState(node.text ?? "");
+
+  // Sync when a different node is selected
+  useEffect(() => {
+    setValue(node.text ?? "");
+  }, [node.id, node.text]);
+
+  const lang = node.tag === "style" ? "CSS" : "JavaScript";
+
+  return (
+    <div className="space-y-1.5">
+      <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">{lang}</Label>
+      <textarea
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onBlur={() => store.updateNode(node.id, { text: value })}
+        spellCheck={false}
+        rows={14}
+        className="w-full resize-y rounded border border-input bg-muted/40 p-2 font-mono text-[11px] leading-relaxed outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        placeholder={node.tag === "style" ? ".my-class { color: red; }" : "document.querySelectorAll('.reveal')…"}
+      />
+      <p className="text-[10px] text-muted-foreground">
+        Runs live in the canvas preview and on the published page.
+      </p>
     </div>
   );
 }
