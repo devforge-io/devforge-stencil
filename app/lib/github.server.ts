@@ -402,6 +402,99 @@ export async function saveRepoFileRaw(
   });
 }
 
+/** Read the raw bytes of a file at an arbitrary repo path (binary-safe, handles >1MB). */
+export async function getRepoFileBytes(
+  path: string,
+  branch?: string
+): Promise<{ content: Buffer; sha: string } | null> {
+  const config = getConfig();
+  const octokit = getOctokit(config.token);
+  try {
+    const { data } = await octokit.rest.repos.getContent({
+      owner: config.owner,
+      repo: config.repo,
+      path,
+      ref: branch ?? config.publishBranch,
+    });
+    if (Array.isArray(data) || data.type !== "file") return null;
+    // GitHub returns empty content for files >1MB — fetch the blob directly.
+    if (!data.content && data.sha) return getAssetViaBlob(data.sha);
+    return { content: Buffer.from(data.content, "base64"), sha: data.sha };
+  } catch (error: unknown) {
+    if (isNotFoundError(error)) return null;
+    throw error;
+  }
+}
+
+/** Create or update a binary file (content already base64-encoded) at an arbitrary path. */
+export async function saveRepoFileBase64(
+  path: string,
+  base64Content: string,
+  message: string,
+  branch?: string
+): Promise<void> {
+  const config = getConfig();
+  const octokit = getOctokit(config.token);
+  const targetBranch = branch ?? config.publishBranch;
+
+  let existingSha: string | undefined;
+  try {
+    const { data } = await octokit.rest.repos.getContent({
+      owner: config.owner,
+      repo: config.repo,
+      path,
+      ref: targetBranch,
+    });
+    if (!Array.isArray(data) && data.type === "file") existingSha = data.sha;
+  } catch {
+    // doesn't exist yet
+  }
+
+  await octokit.rest.repos.createOrUpdateFileContents({
+    owner: config.owner,
+    repo: config.repo,
+    path,
+    message,
+    content: base64Content,
+    branch: targetBranch,
+    ...(existingSha ? { sha: existingSha } : {}),
+  });
+}
+
+/** Delete a file at an arbitrary repo path (no-op if it doesn't exist). */
+export async function deleteRepoFile(
+  path: string,
+  message: string,
+  branch?: string
+): Promise<void> {
+  const config = getConfig();
+  const octokit = getOctokit(config.token);
+  const targetBranch = branch ?? config.publishBranch;
+
+  let sha: string | undefined;
+  try {
+    const { data } = await octokit.rest.repos.getContent({
+      owner: config.owner,
+      repo: config.repo,
+      path,
+      ref: targetBranch,
+    });
+    if (!Array.isArray(data) && data.type === "file") sha = data.sha;
+  } catch {
+    return; // already gone
+  }
+  if (!sha) return;
+
+  await octokit.rest.repos.deleteFile({
+    owner: config.owner,
+    repo: config.repo,
+    path,
+    message,
+    sha,
+    branch: targetBranch,
+  });
+}
+
 export async function deleteFile(
   slug: string,
   sha: string,

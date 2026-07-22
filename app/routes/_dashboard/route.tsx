@@ -19,6 +19,7 @@ export default function DashboardLayout({ loaderData }: Route.ComponentProps) {
     { to: "/content", label: "Content", exact: true },
     { to: "/content/new", label: "New", exact: true },
     { to: "/components", label: "Components", exact: false },
+    { to: "/files", label: "Files", exact: false },
     // Settings is admin-only (matches the server-side guard).
     ...(role === "admin"
       ? [{ to: "/content/settings", label: "Settings", exact: true }]
