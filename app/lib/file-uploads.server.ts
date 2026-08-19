@@ -39,6 +39,12 @@ export const RESERVED_PREFIXES = [
   "/tutorial",
   "/files",
   "/.well-known",
+  // Dedicated routes, so an uploaded file must not try to claim them.
+  // NOTE: do not add CMS page paths here (e.g. /tools, /contact) — those are
+  // served through the splat route, which 404s anything isReservedPath() matches.
+  "/robots.txt",
+  "/sitemap.xml",
+  "/llms.txt",
 ];
 
 export function isReservedPath(path: string): boolean {

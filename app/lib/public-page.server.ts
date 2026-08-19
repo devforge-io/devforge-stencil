@@ -151,14 +151,33 @@ async function fillArticleSlot(templateHtml: string, articleBody: string): Promi
  */
 function renderSocialMeta(
   content: AnyContentItem,
-  opts: { request?: Request; siteName?: string; description?: string }
+  opts: {
+    request?: Request;
+    siteName?: string;
+    description?: string;
+    siteUrl?: string;
+    defaultOgImage?: string;
+    twitterSite?: string;
+    locale?: string;
+    organisationName?: string;
+  }
 ): string {
-  const { request, siteName, description } = opts;
+  const {
+    request,
+    siteName,
+    description,
+    siteUrl,
+    defaultOgImage,
+    twitterSite,
+    locale,
+    organisationName,
+  } = opts;
   const fm = content.frontmatter;
   const type = content.contentType === "article" ? "article" : "website";
   const tags: string[] = [`<meta property="og:type" content="${type}">`];
 
   if (siteName) tags.push(`<meta property="og:site_name" content="${escapeHtml(siteName)}">`);
+  if (locale) tags.push(`<meta property="og:locale" content="${escapeHtml(locale)}">`);
 
   // Social overrides, falling back to the page title / meta description.
   const ogTitle = (typeof fm.ogTitle === "string" && fm.ogTitle.trim()) || fm.title;
@@ -173,8 +192,10 @@ function renderSocialMeta(
     tags.push(`<meta name="twitter:description" content="${escapeHtml(ogDescription)}">`);
   }
 
-  // Dedicated OpenGraph image, falling back to the header image.
-  const rawImage = fm.ogImage || fm.headerImage;
+  // Dedicated OpenGraph image, falling back to the header image, then to the
+  // site-wide default. Without that last fallback a page that simply forgot the
+  // frontmatter field shares as a bare text link.
+  const rawImage = fm.ogImage || fm.headerImage || defaultOgImage;
   let image = "";
   if (rawImage) {
     try {
@@ -186,19 +207,56 @@ function renderSocialMeta(
   if (image) {
     tags.push(`<meta property="og:image" content="${escapeHtml(image)}">`);
     tags.push(`<meta name="twitter:image" content="${escapeHtml(image)}">`);
+    // Dimensions let a scraper reserve the card slot before the image loads.
+    tags.push(`<meta property="og:image:width" content="1200">`);
+    tags.push(`<meta property="og:image:height" content="630">`);
     if (fm.title) tags.push(`<meta property="og:image:alt" content="${escapeHtml(fm.title)}">`);
   }
 
+  // Canonical URL. Prefer the configured origin so a proxy that rewrites Host
+  // cannot publish a canonical pointing at an internal hostname.
+  let canonical = "";
   if (request) {
     try {
       const u = new URL(request.url);
-      tags.push(`<meta property="og:url" content="${escapeHtml(u.origin + u.pathname)}">`);
+      canonical = (siteUrl ? siteUrl.replace(/\/+$/, "") : u.origin) + u.pathname;
+      tags.push(`<meta property="og:url" content="${escapeHtml(canonical)}">`);
+      tags.push(`<link rel="canonical" href="${escapeHtml(canonical)}">`);
     } catch {
       /* ignore malformed URL */
     }
   }
 
   tags.push(`<meta name="twitter:card" content="${image ? "summary_large_image" : "summary"}">`);
+  if (twitterSite) tags.push(`<meta name="twitter:site" content="${escapeHtml(twitterSite)}">`);
+
+  // JSON-LD. Gives crawlers and language models the page's facts as data rather
+  // than leaving them to be inferred from prose.
+  const ld: Record<string, unknown> = {
+    "@context": "https://schema.org",
+    "@type": content.contentType === "article" ? "Article" : "WebPage",
+    name: fm.title,
+    headline: fm.title,
+    ...(ogDescription ? { description: ogDescription } : {}),
+    ...(canonical ? { url: canonical } : {}),
+    ...(image ? { image } : {}),
+    ...(typeof fm.publishedAt === "string" ? { datePublished: fm.publishedAt } : {}),
+    ...(typeof fm.updatedAt === "string" ? { dateModified: fm.updatedAt } : {}),
+    ...(organisationName || siteName
+      ? {
+          publisher: {
+            "@type": "Organization",
+            name: organisationName || siteName,
+            ...(siteUrl ? { url: siteUrl } : {}),
+          },
+        }
+      : {}),
+  };
+  // escapeHtml would corrupt the JSON, so neutralise only the sequence that could
+  // close the script element early.
+  const ldJson = JSON.stringify(ld).replace(/</g, "\\u003c");
+  tags.push(`<script type="application/ld+json">${ldJson}</script>`);
+
   return tags.join("\n  ");
 }
 
@@ -303,6 +361,23 @@ const EDIT_REVEAL_SCRIPT =
  * context. Such pages are served `private, no-store` so per-visitor markup is
  * never cached or shared.
  */
+/**
+ * Head extras every public document gets.
+ *
+ * `preconnect` opens the font connections early: the page CSS starts with an
+ * @import to Google Fonts, which otherwise serialises two round trips before
+ * anything paints.
+ *
+ * The <noscript> block matters more than it looks. Scroll-reveal sets
+ * `.reveal{opacity:0}` and only JavaScript adds `.in`, so with scripting off the
+ * page renders almost blank even though the content is all server-rendered.
+ * Restoring those elements makes the document readable without JS, which is also
+ * what crawlers that do not execute scripts see.
+ */
+const HEAD_EXTRAS = `<link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <noscript><style>.reveal{opacity:1 !important;transform:none !important}.code-panel{display:block !important}</style></noscript>`;
+
 export async function renderPublicPageResponse(
   content: AnyContentItem,
   request?: Request
@@ -322,6 +397,13 @@ export async function renderPublicPageResponse(
   const socialMeta = renderSocialMeta(content, {
     request,
     siteName: typeof settings.siteName === "string" ? settings.siteName : undefined,
+    siteUrl: typeof settings.siteUrl === "string" ? settings.siteUrl : undefined,
+    defaultOgImage:
+      typeof settings.defaultOgImage === "string" ? settings.defaultOgImage : undefined,
+    twitterSite: typeof settings.twitterSite === "string" ? settings.twitterSite : undefined,
+    locale: typeof settings.locale === "string" ? settings.locale : undefined,
+    organisationName:
+      typeof settings.organisationName === "string" ? settings.organisationName : undefined,
     description,
   });
 
@@ -442,6 +524,7 @@ export async function renderPublicPageResponse(
   <title>${title}</title>
   ${descTag}
   ${renderFaviconLink(settings.favicon)}
+  ${HEAD_EXTRAS}
   ${socialMeta}
   ${head}
 </head>
@@ -706,6 +789,7 @@ function tutorialDocument(opts: {
   <title>${opts.title}</title>
   ${opts.descTag}
   ${renderFaviconLink(opts.favicon)}
+  ${HEAD_EXTRAS}
   ${opts.socialMeta}
   ${opts.head}
 </head>
@@ -748,6 +832,13 @@ export async function renderTutorialChapterResponse(
   const socialMeta = renderSocialMeta(content, {
     request,
     siteName: typeof settings.siteName === "string" ? settings.siteName : undefined,
+    siteUrl: typeof settings.siteUrl === "string" ? settings.siteUrl : undefined,
+    defaultOgImage:
+      typeof settings.defaultOgImage === "string" ? settings.defaultOgImage : undefined,
+    twitterSite: typeof settings.twitterSite === "string" ? settings.twitterSite : undefined,
+    locale: typeof settings.locale === "string" ? settings.locale : undefined,
+    organisationName:
+      typeof settings.organisationName === "string" ? settings.organisationName : undefined,
     description,
   });
 
@@ -826,6 +917,13 @@ export async function renderTutorialRootResponse(
   const socialMeta = renderSocialMeta(content, {
     request,
     siteName: typeof settings.siteName === "string" ? settings.siteName : undefined,
+    siteUrl: typeof settings.siteUrl === "string" ? settings.siteUrl : undefined,
+    defaultOgImage:
+      typeof settings.defaultOgImage === "string" ? settings.defaultOgImage : undefined,
+    twitterSite: typeof settings.twitterSite === "string" ? settings.twitterSite : undefined,
+    locale: typeof settings.locale === "string" ? settings.locale : undefined,
+    organisationName:
+      typeof settings.organisationName === "string" ? settings.organisationName : undefined,
     description,
   });
 

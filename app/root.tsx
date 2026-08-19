@@ -14,6 +14,48 @@ import { resolveRequestToken } from "./lib/session-token.server";
 import "./app.css";
 
 /**
+ * Baseline security headers for every response.
+ *
+ * Applied here rather than in each route because the public pages are served by
+ * resource-route loaders returning raw Responses, which never pass through an
+ * entry.server handler. `set` is used only when a route has not already spoken
+ * for the header, so a route can still opt out.
+ *
+ * Framing is the exception: /embed/* is deliberately iframe-embeddable, so it
+ * must not be sent frame-ancestors 'none' or the embeds break.
+ */
+function applySecurityHeaders(request: Request, response: Response): void {
+  const h = response.headers;
+  const setIfAbsent = (key: string, value: string) => {
+    if (!h.has(key)) h.set(key, value);
+  };
+
+  setIfAbsent("X-Content-Type-Options", "nosniff");
+  setIfAbsent("Referrer-Policy", "strict-origin-when-cross-origin");
+  setIfAbsent("Permissions-Policy", "camera=(), microphone=(), geolocation=(), interest-cohort=()");
+  setIfAbsent("Cross-Origin-Opener-Policy", "same-origin");
+  setIfAbsent(
+    "Strict-Transport-Security",
+    "max-age=63072000; includeSubDomains; preload",
+  );
+
+  let pathname = "/";
+  try {
+    pathname = new URL(request.url).pathname;
+  } catch {
+    /* keep the default and stay conservative */
+  }
+  const embeddable = pathname.startsWith("/embed");
+  if (!embeddable) {
+    setIfAbsent("X-Frame-Options", "DENY");
+    // The pages inline their own <style>/<script> and load the Tailwind CDN, so a
+    // strict script-src would break them. frame-ancestors is the part that has to
+    // be a header (a <meta> CSP cannot express it) and is the clickjacking control.
+    setIfAbsent("Content-Security-Policy", "frame-ancestors 'none'");
+  }
+}
+
+/**
  * Resolve the GitHub token for every request (service token, else the signed-in
  * user's) and expose it via AsyncLocalStorage for git operations. Server-only —
  * stripped from the client bundle like loaders/actions.
@@ -24,6 +66,7 @@ export const middleware: Route.MiddlewareFunction[] = [
     return runWithRequestToken(token, async () => {
       const response = await next();
       if (setCookie) response.headers.append("Set-Cookie", setCookie);
+      applySecurityHeaders(request, response);
       return response;
     });
   },

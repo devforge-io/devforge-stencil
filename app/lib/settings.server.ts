@@ -16,6 +16,20 @@ export interface StencilSettings {
   siteName?: string;
   /** Favicon URL (asset path or absolute), emitted as <link rel="icon">. */
   favicon?: string;
+  /**
+   * Absolute site origin, e.g. "https://devforge.io". Used for og:url and the
+   * canonical link. Falls back to the request origin, which is usually right but
+   * can be an internal host behind some proxies.
+   */
+  siteUrl?: string;
+  /** Share image used when a page declares no ogImage/headerImage. */
+  defaultOgImage?: string;
+  /** @handle for twitter:site, e.g. "@devforge". */
+  twitterSite?: string;
+  /** og:locale value, e.g. "en_AU". Defaults to en_US at the scraper. */
+  locale?: string;
+  /** Organisation name for the JSON-LD emitted on every page. */
+  organisationName?: string;
   /** Slug of a published page served (with HTTP 404) for unmatched public URLs. */
   notFoundPageSlug?: string;
   /** Show the Markdown content type in the "New Content" picker. Off by default. */
