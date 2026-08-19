@@ -9,7 +9,7 @@
  * its own dark shell, so neither root.tsx nor app.css needs changing.
  */
 
-import { Form, Link, useNavigation } from "react-router";
+import { Form, useNavigation } from "react-router";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -24,6 +24,7 @@ import AuditReportView from "~/components/tools/audit/report";
 import { runAudit } from "~/lib/audit/audit.server";
 import type { AuditResult } from "~/lib/audit/types";
 import { ensureCsrfToken, validateCsrf } from "~/lib/csrf.server";
+import { getSiteChrome } from "~/lib/site-chrome.server";
 
 type ActionResult = AuditResult & { requested?: string };
 
@@ -41,12 +42,13 @@ export function meta() {
 
 /** Mints the CSRF token for the form below and sets the matching cookie. */
 export async function loader({ request }: Route.LoaderArgs) {
-  const { token, setCookie } = await ensureCsrfToken(request);
-  if (!setCookie) return { csrfToken: token };
-  return Response.json(
-    { csrfToken: token },
-    { headers: { "Set-Cookie": setCookie } },
-  );
+  const [{ token, setCookie }, chrome] = await Promise.all([
+    ensureCsrfToken(request),
+    getSiteChrome(),
+  ]);
+  const data = { csrfToken: token, chrome };
+  if (!setCookie) return data;
+  return Response.json(data, { headers: { "Set-Cookie": setCookie } });
 }
 
 /* -------------------------------------------------------------------------- */
@@ -144,11 +146,24 @@ export default function WebsiteAuditRoute({
   const navigation = useNavigation();
   const scanning = navigation.state === "submitting";
 
+  const chrome = loaderData.chrome;
+
   return (
     <CsrfProvider token={loaderData.csrfToken}>
-      {/* Own dark shell: this fork's <body> is light by default. */}
-      <main className="min-h-screen bg-[#08060f] font-sans text-white antialiased">
-        <div className="relative overflow-hidden px-5 pt-16 pb-24 sm:px-8">
+      {/* The site's own stylesheet, so the CMS header/footer below look exactly
+          as they do on every other page. It also supplies the dark ground and
+          Geist face this fork's light <body> would otherwise leave unset. */}
+      {chrome.css ? (
+        <style dangerouslySetInnerHTML={{ __html: chrome.css }} />
+      ) : null}
+
+      <div className="min-h-screen bg-[#08060f] font-sans text-white antialiased">
+        {chrome.headerHtml ? (
+          <div dangerouslySetInnerHTML={{ __html: chrome.headerHtml }} />
+        ) : null}
+
+        <main>
+          <div className="relative overflow-hidden px-5 pt-28 pb-24 sm:px-8">
           <div
             className="pointer-events-none absolute inset-0 print:hidden"
             style={{
@@ -157,14 +172,17 @@ export default function WebsiteAuditRoute({
             }}
           />
 
-          <div className="relative mx-auto max-w-5xl">
-            <Link
-              to="/tools"
+          <div className="relative mx-auto max-w-6xl">
+            {/* A plain anchor, not <Link>: /tools is a CMS page served by the
+                splat resource route, which has no component, so a client-side
+                navigation there renders a blank document. */}
+            <a
+              href="/tools"
               className="mb-6 inline-flex w-fit items-center gap-1.5 font-mono text-xs text-white/45 transition-colors hover:text-[#f5a524] print:hidden"
             >
               <ArrowLeft size={14} aria-hidden="true" />
               All tools
-            </Link>
+            </a>
 
             <div className="mb-3 flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.24em] text-[#f5a524]/70">
               <Radar size={13} aria-hidden="true" />
@@ -312,9 +330,14 @@ export default function WebsiteAuditRoute({
             )}
 
             {!result && !scanning && <EmptyState />}
+            </div>
           </div>
-        </div>
-      </main>
+        </main>
+
+        {chrome.footerHtml ? (
+          <div dangerouslySetInnerHTML={{ __html: chrome.footerHtml }} />
+        ) : null}
+      </div>
     </CsrfProvider>
   );
 }
