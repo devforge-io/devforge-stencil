@@ -9,7 +9,8 @@
  * its own dark shell, so neither root.tsx nor app.css needs changing.
  */
 
-import { Form, useNavigation } from "react-router";
+import { useEffect, useRef } from "react";
+import { Form, useNavigation, useSubmit } from "react-router";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -46,7 +47,11 @@ export async function loader({ request }: Route.LoaderArgs) {
     ensureCsrfToken(request),
     getSiteChrome(),
   ]);
-  const data = { csrfToken: token, chrome };
+  // `?url=` lets a CMS page hand a URL over. A static page cannot mint a CSRF
+  // token so it cannot POST here; this carries the intent instead and the scan
+  // still runs as a protected POST once this page has loaded.
+  const prefill = (new URL(request.url).searchParams.get("url") ?? "").trim();
+  const data = { csrfToken: token, chrome, prefill: prefill.slice(0, 2048) };
   if (!setCookie) return data;
   return Response.json(data, { headers: { "Set-Cookie": setCookie } });
 }
@@ -145,6 +150,16 @@ export default function WebsiteAuditRoute({
   const result = actionData as ActionResult | undefined;
   const navigation = useNavigation();
   const scanning = navigation.state === "submitting";
+  const prefill = loaderData.prefill;
+  const formRef = useRef<HTMLFormElement>(null);
+  const submit = useSubmit();
+
+  // Handed a URL from elsewhere on the site: run it rather than making the
+  // visitor press the button again. Without JS the field is simply prefilled.
+  const handedOff = Boolean(prefill) && !actionData;
+  useEffect(() => {
+    if (handedOff && formRef.current) submit(formRef.current, { method: "post" });
+  }, [handedOff, submit]);
 
   const chrome = loaderData.chrome;
 
@@ -228,7 +243,7 @@ export default function WebsiteAuditRoute({
                 }}
               />
 
-              <Form method="post" className="flex flex-col gap-3 sm:flex-row">
+              <Form ref={formRef} method="post" className="flex flex-col gap-3 sm:flex-row">
                 <CsrfInput />
 
                 <label className="sr-only" htmlFor="url">
@@ -248,7 +263,7 @@ export default function WebsiteAuditRoute({
                     autoCapitalize="off"
                     spellCheck={false}
                     required
-                    defaultValue={result?.requested}
+                    defaultValue={result?.requested ?? prefill}
                     placeholder="example.com"
                     className="w-full rounded-full border border-white/10 bg-white/[0.03] py-3 pl-10 pr-4 text-sm text-white outline-none transition-colors placeholder:text-white/30 focus:border-[#f5a524]/45 focus:bg-white/[0.05]"
                   />
@@ -317,7 +332,7 @@ export default function WebsiteAuditRoute({
               </p>
             </div>
 
-            {scanning && <ScanningState />}
+            {(scanning || handedOff) && <ScanningState />}
 
             {!scanning && result && !result.ok && (
               <FailureCard message={result.message} code={result.code} />
@@ -329,7 +344,7 @@ export default function WebsiteAuditRoute({
               </div>
             )}
 
-            {!result && !scanning && <EmptyState />}
+            {!result && !scanning && !handedOff && <EmptyState />}
             </div>
           </div>
         </main>
