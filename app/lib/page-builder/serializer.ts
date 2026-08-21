@@ -14,7 +14,9 @@ export function renderToHtml(node: PBNode): string {
     const styleStr = Object.entries(node.styles).map(([k, v]) => `${k}:${v}`).join(";");
     if (styleStr) attrs.push(`style="${styleStr}"`);
     for (const [k, v] of Object.entries(node.attributes)) {
-      attrs.push(`${k}="${escapeAttr(v)}"`);
+      const value = attrValue(v);
+      if (value === null) continue;
+      attrs.push(value === "" ? k : `${k}="${escapeAttr(value)}"`);
     }
     const attrStr = attrs.length > 0 ? " " + attrs.join(" ") : "";
     // <style>/<script> hold raw CSS/JS — escaping their text (e.g. `>` in a CSS
@@ -39,10 +41,12 @@ export function renderToHtml(node: PBNode): string {
   }
 
   for (const [k, v] of Object.entries(node.attributes)) {
-    if (v === "") {
+    const value = attrValue(v);
+    if (value === null) continue;
+    if (value === "") {
       attrs.push(k);
     } else {
-      attrs.push(`${k}="${escapeAttr(v)}"`);
+      attrs.push(`${k}="${escapeAttr(value)}"`);
     }
   }
 
@@ -192,15 +196,29 @@ function getDefaultName(tag: string): string {
   return names[tag] ?? tag.toUpperCase();
 }
 
+/**
+ * Normalise a stored attribute value to the string the serializer emits.
+ * Trees saved or edited outside the builder (scripts, hand edits, older
+ * versions) can hold booleans or numbers, e.g. `required: true`, and calling
+ * `.replace` on those crashed the whole render. `true` becomes a bare
+ * attribute, `false`/`null`/`undefined` drop the attribute, anything else is
+ * stringified.
+ */
+function attrValue(v: unknown): string | null {
+  if (v === true) return "";
+  if (v === false || v === null || v === undefined) return null;
+  return typeof v === "string" ? v : String(v);
+}
+
 function escapeHtml(str: string): string {
-  return str
+  return String(str)
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");
 }
 
 function escapeAttr(str: string): string {
-  return str.replace(/"/g, "&quot;");
+  return String(str).replace(/"/g, "&quot;");
 }
 
 // Encode special chars in Tailwind arbitrary selector classes for safe HTML output
