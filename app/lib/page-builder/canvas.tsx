@@ -166,8 +166,14 @@ export const Canvas = memo(function Canvas({ store, externalStyles = [], compone
       .map((c) => renderNode(c, null))
       .join("");
 
-    if (treeHtml === lastRenderedTreeHtml.current) {
-      // Tree hasn't changed — just update selection in-place
+    // A srcdoc change (component CSS arriving, an external stylesheet added)
+    // reloads the iframe with an empty body. The tree html is unchanged in that
+    // case, so the in-place path below would leave the canvas blank; detect the
+    // fresh document and fall through to a full render instead.
+    const hasRenderedContent = body.querySelector("[data-pb-id]") !== null;
+
+    if (treeHtml === lastRenderedTreeHtml.current && hasRenderedContent) {
+      // Tree hasn't changed, just update selection in-place
       doc.querySelectorAll("[data-pb-selected]").forEach((el) =>
         el.removeAttribute("data-pb-selected")
       );
@@ -258,6 +264,8 @@ export const Canvas = memo(function Canvas({ store, externalStyles = [], compone
         doc.documentElement.classList.add("dark");
         doc.documentElement.dataset.pbDarkManual = "true";
       }
+      // New document: nothing is rendered in it yet, whatever was rendered before.
+      lastRenderedTreeHtml.current = "";
       setTimeout(render, 300);
     };
     iframe.addEventListener("load", handleLoad);
