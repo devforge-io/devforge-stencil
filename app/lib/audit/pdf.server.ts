@@ -93,6 +93,17 @@ const NO_IMPLICIT_BREAK = 1e6;
 
 const TOOL_URL = "https://purphoros.com/tools/website-audit";
 
+/**
+ * The contact form, for readers who want help acting on the report.
+ *
+ * Resolved against the same origin every other Devforge link in the document
+ * already uses, so the PDF can never point at a different site than its own
+ * byline does. `CONTACT_DISPLAY` is the short printable form for the footer; the
+ * two main blocks print the full URL so it survives paper.
+ */
+const CONTACT_URL = new URL("/contact", DEVFORGE.url).href;
+const CONTACT_DISPLAY = `${DEVFORGE.displayUrl}/contact`;
+
 /** Goes in `Creator` and `Producer`, and reads as a product name in Acrobat. */
 const PRODUCER = `Devforge Website Audit (${DEVFORGE.displayUrl})`;
 
@@ -1855,6 +1866,75 @@ function drawTopFixes(layout: Layout, top: { finding: Finding; label: string }[]
   });
 }
 
+/* -------------------------------------------------------------------------- */
+/* Get help                                                                    */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * A panel closing the summary: who to talk to about acting on the report.
+ *
+ * It sits directly under the priority list, which is the point in the document
+ * where a reader has just been told what is wrong and is deciding what to do
+ * about it. The panel borrows the code panel's treatment (the `PANEL_BG` field
+ * with a 2pt spine) so it reads as part of the document rather than an advert
+ * pasted into it; the spine is the one place the accent appears as a keyline
+ * here, and the call to action is the one place it appears as a link. The URL
+ * is printed in full as well as being a live link, so it survives printing.
+ *
+ * The copy bends for a clean report: "fixing these issues" is a strange thing
+ * to offer someone who has none, so that case asks about the report instead.
+ */
+const CONTACT_TITLE_FIXES = "Need help fixing these issues?";
+const CONTACT_BODY_FIXES =
+  "Devforge can review the findings with you and help plan the fixes, from the quick wins to the changes that need a developer.";
+const CONTACT_TITLE_CLEAN = "Questions about this report?";
+const CONTACT_BODY_CLEAN =
+  "Devforge can walk through the findings with you and help plan any follow-up work, including the checks a static fetch cannot see.";
+const CONTACT_CTA = `Get in touch: ${CONTACT_URL}`;
+
+function drawContactPanel(layout: Layout, hasIssues: boolean): void {
+  const pad = 14;
+  const textX = CONTENT_LEFT + pad + 3;
+  const textWidth = CONTENT_WIDTH - pad * 2 - 3;
+
+  const titleStyle: TextStyle = { font: "Helvetica-Bold", size: 11.5, color: INK };
+  const ctaStyle: TextStyle = {
+    font: "Helvetica-Bold",
+    size: BODY_SIZE,
+    color: ACCENT,
+    link: CONTACT_URL,
+  };
+
+  const title = hasIssues ? CONTACT_TITLE_FIXES : CONTACT_TITLE_CLEAN;
+  const body = layout.fitTokens(hasIssues ? CONTACT_BODY_FIXES : CONTACT_BODY_CLEAN, textWidth, BODY);
+  const cta = layout.ellipsise(CONTACT_CTA, textWidth, ctaStyle);
+
+  const eyebrowHeight = layout.lineHeight(EYEBROW);
+  const titleHeight = layout.measure(title, textWidth, titleStyle);
+  const bodyHeight = layout.measure(body, textWidth, BODY);
+  const ctaHeight = layout.lineHeight(ctaStyle);
+  const height = pad + eyebrowHeight + 4 + titleHeight + 5 + bodyHeight + 8 + ctaHeight + pad;
+
+  // Never split: it is short, and a call to action torn across a page break is
+  // half an invitation on each side.
+  layout.keep(height);
+  const top = layout.y;
+
+  layout.doc.save().roundedRect(CONTENT_LEFT, top, CONTENT_WIDTH, height, 4).fill(PANEL_BG).restore();
+  layout.doc.save().rect(CONTENT_LEFT, top, 2, height).fill(ACCENT).restore();
+
+  let y = top + pad;
+  layout.at("GET HELP", textX, y, textWidth, EYEBROW);
+  y += eyebrowHeight + 4;
+  layout.at(title, textX, y, textWidth, titleStyle);
+  y += titleHeight + 5;
+  layout.at(body, textX, y, textWidth, BODY);
+  y += bodyHeight + 8;
+  layout.at(cta, textX, y, textWidth, ctaStyle);
+
+  layout.y = top + height;
+}
+
 function drawCategorySection(layout: Layout, category: CategoryResult): void {
   const findings = sortFindings(Array.isArray(category.findings) ? category.findings.filter(Boolean) : []);
   const actionable = findings.filter((f) => f.severity !== "pass");
@@ -1997,6 +2077,14 @@ const METHOD_NOTE =
 const BACK_NOTE_MEASURE = CONTENT_WIDTH * 0.82;
 
 /**
+ * The offer of help, restated on the closing page for anyone who skipped the
+ * summary and read this last. One sentence, centred, and brighter than the
+ * notes around it because it is the one line here that asks for a reply.
+ */
+const BACK_HELP_NOTE =
+  "Need help fixing the issues in this report? Devforge can review the findings with you and help plan the fixes.";
+
+/**
  * One line naming what the document is about, degenerate cases included.
  *
  * `coverSubject` already guarantees a non-empty subject and already knows
@@ -2055,6 +2143,24 @@ function drawBackPage(layout: Layout, report: AuditReport, logo: Logo | null): v
     characterSpacing: 0.7,
     link: DEVFORGE.url,
   };
+  // The offer of help sits between the publisher and the hole: one line of
+  // body in `COVER_TEXT`, then the contact link in the same ember as the URL
+  // above it, so the two links on this page are visibly the same kind of thing.
+  const helpStyle: TextStyle = {
+    font: "Helvetica",
+    size: 9,
+    color: COVER_TEXT,
+    align: "center",
+    lineGap: 2.4,
+  };
+  const contactStyle: TextStyle = {
+    font: "Helvetica-Bold",
+    size: 9,
+    color: COVER_EMBER,
+    align: "center",
+    characterSpacing: 0.7,
+    link: CONTACT_URL,
+  };
   const subjectStyle: TextStyle = {
     font: "Helvetica",
     size: 8.8,
@@ -2079,11 +2185,15 @@ function drawBackPage(layout: Layout, report: AuditReport, logo: Logo | null): v
   };
 
   const subjectText = layout.ellipsise(backSubjectLine(report), CONTENT_WIDTH, subjectStyle);
+  const helpText = layout.fitTokens(BACK_HELP_NOTE, BACK_NOTE_MEASURE, helpStyle);
+  const contactText = layout.ellipsise(`Get in touch: ${CONTACT_URL}`, CONTENT_WIDTH, contactStyle);
   const noteText = layout.fitTokens(METHOD_NOTE, BACK_NOTE_MEASURE, noteStyle);
 
   const markHeight = logoHeight(BACK_LOGO_WIDTH);
   const bylineHeight = layout.lineHeight(bylineStyle);
   const urlHeight = layout.lineHeight(urlStyle);
+  const helpHeight = layout.measure(helpText, BACK_NOTE_MEASURE, helpStyle);
+  const contactHeight = layout.lineHeight(contactStyle);
   const subjectHeight = layout.lineHeight(subjectStyle);
   const toolHeight = layout.lineHeight(toolStyle);
   const noteHeight = layout.measure(noteText, BACK_NOTE_MEASURE, noteStyle);
@@ -2094,6 +2204,10 @@ function drawBackPage(layout: Layout, report: AuditReport, logo: Logo | null): v
     bylineHeight +
     5 +
     urlHeight +
+    28 +
+    helpHeight +
+    6 +
+    contactHeight +
     54 +
     subjectHeight +
     5 +
@@ -2110,7 +2224,13 @@ function drawBackPage(layout: Layout, report: AuditReport, logo: Logo | null): v
   y += bylineHeight + 5;
 
   layout.at(DEVFORGE.url, CONTENT_LEFT, y, CONTENT_WIDTH, urlStyle);
-  y += urlHeight + 54;
+  y += urlHeight + 28;
+
+  layout.at(helpText, CONTENT_LEFT + (CONTENT_WIDTH - BACK_NOTE_MEASURE) / 2, y, BACK_NOTE_MEASURE, helpStyle);
+  y += helpHeight + 6;
+
+  layout.at(contactText, CONTENT_LEFT, y, CONTENT_WIDTH, contactStyle);
+  y += contactHeight + 54;
 
   layout.at(subjectText, CONTENT_LEFT, y, CONTENT_WIDTH, subjectStyle);
   y += subjectHeight + 5;
@@ -2139,15 +2259,15 @@ function drawBackPage(layout: Layout, report: AuditReport, logo: Logo | null): v
  * how thick the thing is rather than renumbering the light body to hide two
  * pages the reader can plainly see.
  *
- * Two slots, not three. The publisher used to hold the right one, and it is on
- * its own page now; repeating it under every finding as well would be the
- * document introducing itself twenty-eight more times than it needs to. What
- * that leaves is the subject and the position, and with the third slot gone a
- * centred page number no longer reads as centred - it reads as a right-hand
- * item that stopped short, because the only other mass on the line is hard
- * against the left margin. So it moves to the right margin: two items, one at
- * each end of the hairline above them, which is the arrangement that keeps the
- * rule looking like it is holding something up.
+ * Three slots. The publisher used to hold the right one, and it is on its own
+ * page now; repeating it under every finding as well would be the document
+ * introducing itself twenty-eight more times than it needs to. The subject
+ * keeps the left, the position takes the right, and the centre carries the
+ * one line of footer that earns its place on every page: where to go for help
+ * with what the page above it says. It is a live link as well as printed text,
+ * and it is set in the same faint grey as its neighbours rather than the
+ * accent, because a footer that shouts on every page stops being read by page
+ * three. The main invitation lives in the summary panel and on the back page.
  *
  * Takes the `Layout` rather than the document only so it can borrow
  * `ellipsise`. `lineBreak: false` is not enough to guarantee one line: it stops
@@ -2171,7 +2291,11 @@ function stampFooters(layout: Layout, host: string): void {
   // produce, so the numbers sit in a fixed column instead of drifting left as
   // the page count gains a digit.
   const stampSlot = layout.widthOf(`Page ${total} of ${total}`, style) + 2;
-  const labelSlot = Math.max(40, CONTENT_WIDTH - stampSlot - 10);
+  // The centre item is measured once too, and the subject slot is whatever is
+  // left on its side of it, so a long hostname clips before it can collide.
+  const contact = `Questions? ${CONTACT_DISPLAY}`;
+  const contactSlot = layout.widthOf(contact, style) + 2;
+  const labelSlot = Math.max(40, (CONTENT_WIDTH - contactSlot) / 2 - 10);
   const label = layout.ellipsise(host.length > 0 ? host : "website audit", labelSlot, style);
 
   for (let index = 1; index < total - 1; index += 1) {
@@ -2191,6 +2315,13 @@ function stampFooters(layout: Layout, host: string): void {
       width: labelSlot,
       height: NO_IMPLICIT_BREAK,
       lineBreak: false,
+    });
+    doc.text(contact, CONTENT_LEFT + (CONTENT_WIDTH - contactSlot) / 2, y, {
+      width: contactSlot,
+      height: NO_IMPLICIT_BREAK,
+      align: "center",
+      lineBreak: false,
+      link: CONTACT_URL,
     });
     doc.text(`Page ${index + 1} of ${total}`, CONTENT_LEFT + CONTENT_WIDTH - stampSlot, y, {
       width: stampSlot,
@@ -2263,7 +2394,12 @@ export async function renderAuditPdf(report: AuditReport): Promise<Buffer> {
   drawRedirects(layout, Array.isArray(report.redirects) ? report.redirects.filter(Boolean) : []);
 
   layout.gap(26);
-  drawTopFixes(layout, pickTopFixes(categories, TOP_FIXES));
+  const topFixes = pickTopFixes(categories, TOP_FIXES);
+  drawTopFixes(layout, topFixes);
+
+  // The summary ends with where to get help, before the full breakdown begins.
+  layout.gap(22);
+  drawContactPanel(layout, topFixes.length > 0);
 
   layout.gap(26);
   sectionHeading(
