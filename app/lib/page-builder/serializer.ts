@@ -80,14 +80,22 @@ export function parseHtml(html: string): PBNode {
     classes: ["min-h-screen"],
   });
   result.children = Array.from(root.childNodes)
-    .map(domToNode)
+    .map((child) => domToNode(child))
     .filter((n): n is PBNode => n !== null);
   return result;
 }
 
-function domToNode(domNode: Node): PBNode | null {
+/** Elements whose whitespace is significant: keep text exactly as written. */
+const WHITESPACE_SENSITIVE_TAGS = new Set(["pre", "textarea"]);
+
+function domToNode(domNode: Node, preserveWhitespace = false): PBNode | null {
   if (domNode.nodeType === 3) {
-    const text = domNode.textContent?.trim();
+    // Inside <pre>/<textarea> every text node matters, including the
+    // newline-only ones between inline children (syntax-highlighted code is
+    // typically <pre><code><span>..</span>\n<span>..</span></code></pre>).
+    // Trimming or dropping them collapsed such blocks onto one line on save.
+    const raw = domNode.textContent ?? "";
+    const text = preserveWhitespace ? raw : raw.trim();
     if (!text) return null;
     return createTextNode(text);
   }
@@ -129,14 +137,17 @@ function domToNode(domNode: Node): PBNode | null {
     parentConstraint,
   });
 
+  const keepWhitespace = preserveWhitespace || WHITESPACE_SENSITIVE_TAGS.has(tag);
+
   // If element only contains text (no child elements), store text directly
   const hasElementChildren = Array.from(el.childNodes).some(
     (n) => n.nodeType === 1
   );
 
-  if (!hasElementChildren && el.textContent?.trim()) {
+  const ownText = el.textContent ?? "";
+  if (!hasElementChildren && (keepWhitespace ? ownText : ownText.trim())) {
     node.type = "text";
-    node.text = el.textContent.trim();
+    node.text = keepWhitespace ? ownText : ownText.trim();
     node.editable = true;
     node.droppable = false;
     node.children = [];
@@ -144,7 +155,7 @@ function domToNode(domNode: Node): PBNode | null {
   }
 
   node.children = Array.from(el.childNodes)
-    .map(domToNode)
+    .map((child) => domToNode(child, keepWhitespace))
     .filter((n): n is PBNode => n !== null);
 
   return node;
