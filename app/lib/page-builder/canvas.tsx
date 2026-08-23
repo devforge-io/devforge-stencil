@@ -99,20 +99,25 @@ export const Canvas = memo(function Canvas({ store, externalStyles = [], compone
     [data-pb-drop-target="true"] { outline: 2px dashed #4c6ef5 !important; outline-offset: -2px; background: rgba(76,110,245,0.06); }
     /* Edit-mode padding on containers */
     [data-pb-container="true"] { padding: max(var(--tw-p, 0px), 6px); }
-    /* Floating labels */
-    [data-pb-hover="true"]::before,
-    [data-pb-selected="true"]::before {
-      content: attr(data-pb-name);
-      position: absolute; top: -16px; left: 0;
+    /* Editor overlays (name labels, toolbar) live at body level and are
+       positioned from the target's bounding box, so they are never trapped in
+       a page element's stacking context or clipped by its overflow. The
+       z-index is the maximum so fixed headers and the like cannot cover them. */
+    .pb-overlay { position: absolute; z-index: 2147483647; }
+    /* Floating name labels */
+    .pb-label {
+      display: none; left: 0; top: 0;
       font-size: 9px; line-height: 14px; padding: 0 5px;
+      font-family: system-ui, sans-serif;
       border-radius: 3px 3px 0 0; white-space: nowrap;
-      pointer-events: none; z-index: 10;
+      pointer-events: none; color: white;
     }
-    [data-pb-hover="true"]:not([data-pb-selected="true"])::before { background: #60a5fa; color: white; }
-    [data-pb-selected="true"]::before { background: #4c6ef5; color: white; }
+    .pb-label.visible { display: block; }
+    .pb-label-hover { background: #60a5fa; }
+    .pb-label-selected { background: #4c6ef5; }
     /* Selection toolbar */
     .pb-toolbar {
-      position: absolute; display: none; z-index: 20;
+      display: none;
       background: #1e1e1e; border-radius: 4px; padding: 1px;
       box-shadow: 0 2px 8px rgba(0,0,0,0.3);
       gap: 0; align-items: center;
@@ -186,9 +191,9 @@ export const Canvas = memo(function Canvas({ store, externalStyles = [], compone
 
     lastRenderedTreeHtml.current = treeHtml;
 
-    // Preserve toolbar before wiping innerHTML
-    const toolbar = body.querySelector(".pb-toolbar");
-    if (toolbar) toolbar.remove();
+    // Preserve the editor overlays (toolbar, name labels) before wiping innerHTML
+    const overlays = Array.from(body.querySelectorAll(".pb-overlay"));
+    overlays.forEach((el) => el.remove());
 
     // Full re-render — build HTML with selection markers
     const html = root.children
@@ -197,8 +202,8 @@ export const Canvas = memo(function Canvas({ store, externalStyles = [], compone
 
     body.innerHTML = html || "";
 
-    // Re-append toolbar
-    if (toolbar) body.appendChild(toolbar);
+    // Re-append overlays
+    overlays.forEach((el) => body.appendChild(el));
 
     // Make all elements draggable
     body.querySelectorAll("[data-pb-id]").forEach((el) => {
@@ -232,6 +237,9 @@ export const Canvas = memo(function Canvas({ store, externalStyles = [], compone
     // Materialise custom CSS/JS (rendered above as placeholders) so styles apply
     // and reveal-style scripts run live in the preview.
     applyRuntimeCode(doc, root);
+
+    // Overlays are positioned from the rendered boxes, so refresh them now.
+    doc.dispatchEvent(new (doc.defaultView as Window & typeof globalThis).Event("pb-rendered"));
 
   }, []);
 
@@ -288,9 +296,38 @@ export const Canvas = memo(function Canvas({ store, externalStyles = [], compone
       const doc = iframe.contentDocument;
       if (!doc) return;
 
+      // Name labels for the hovered and the selected element. Body-level
+      // elements positioned from the target's box (see the .pb-overlay CSS).
+      const hoverLabel = doc.createElement("div");
+      hoverLabel.className = "pb-overlay pb-label pb-label-hover";
+      const selectedLabel = doc.createElement("div");
+      selectedLabel.className = "pb-overlay pb-label pb-label-selected";
+      doc.body.appendChild(hoverLabel);
+      doc.body.appendChild(selectedLabel);
+
+      const placeLabel = (label: HTMLElement, el: HTMLElement | null) => {
+        if (!el) {
+          label.classList.remove("visible");
+          return;
+        }
+        const rect = el.getBoundingClientRect();
+        const scrollTop = doc.documentElement.scrollTop;
+        const scrollLeft = doc.documentElement.scrollLeft;
+        label.textContent = el.getAttribute("data-pb-name") ?? "";
+        label.style.top = `${Math.max(0, rect.top + scrollTop - 16)}px`;
+        label.style.left = `${Math.max(0, rect.left + scrollLeft)}px`;
+        label.classList.add("visible");
+      };
+      const positionLabels = () => {
+        const selected = doc.querySelector('[data-pb-selected="true"]') as HTMLElement | null;
+        const hovered = doc.querySelector('[data-pb-hover="true"]') as HTMLElement | null;
+        placeLabel(selectedLabel, selected);
+        placeLabel(hoverLabel, hovered && hovered !== selected ? hovered : null);
+      };
+
       // Create selection toolbar
       const toolbar = doc.createElement("div");
-      toolbar.className = "pb-toolbar";
+      toolbar.className = "pb-overlay pb-toolbar";
       toolbar.innerHTML = `
         <button data-action="move-up" title="Move up">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
@@ -439,10 +476,16 @@ export const Canvas = memo(function Canvas({ store, externalStyles = [], compone
         }
       };
 
-      // Re-position toolbar on store changes and scroll
-      storeRef.current.subscribe(positionToolbar);
-      doc.addEventListener("scroll", positionToolbar);
-      setTimeout(positionToolbar, 100);
+      // Re-position overlays on store changes, scroll, resize and after renders
+      const positionOverlays = () => {
+        positionToolbar();
+        positionLabels();
+      };
+      storeRef.current.subscribe(positionOverlays);
+      doc.addEventListener("scroll", positionOverlays);
+      doc.addEventListener("pb-rendered", positionOverlays);
+      doc.defaultView?.addEventListener("resize", positionOverlays);
+      setTimeout(positionOverlays, 100);
 
       doc.addEventListener("click", (e) => {
         // Don't deselect when clicking the toolbar
@@ -460,6 +503,13 @@ export const Canvas = memo(function Canvas({ store, externalStyles = [], compone
         lastHoverId = id;
         doc.querySelectorAll("[data-pb-hover]").forEach((h) => h.removeAttribute("data-pb-hover"));
         target?.setAttribute("data-pb-hover", "true");
+        positionLabels();
+      });
+      // Leaving the canvas clears the hover state (and its label).
+      doc.documentElement.addEventListener("mouseleave", () => {
+        lastHoverId = null;
+        doc.querySelectorAll("[data-pb-hover]").forEach((h) => h.removeAttribute("data-pb-hover"));
+        positionLabels();
       });
 
       doc.addEventListener("dblclick", (e) => {
@@ -491,7 +541,8 @@ export const Canvas = memo(function Canvas({ store, externalStyles = [], compone
 
       // Create indicator line inside iframe
       const iLine = doc.createElement("div");
-      iLine.style.cssText = "position:absolute;pointer-events:none;z-index:100;display:none;background:#4c6ef5;border-radius:2px;";
+      iLine.className = "pb-overlay";
+      iLine.style.cssText = "position:absolute;pointer-events:none;z-index:2147483647;display:none;background:#4c6ef5;border-radius:2px;";
       doc.body.appendChild(iLine);
 
       doc.addEventListener("dragstart", (e) => {
