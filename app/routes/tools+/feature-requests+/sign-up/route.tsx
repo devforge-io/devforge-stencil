@@ -55,9 +55,11 @@ export async function action({ request }: ActionFunctionArgs) {
     const message =
       e.status === 503
         ? "The database is not reachable right now. Please try again shortly."
-        : e.status === 401 || e.status === 403
-          ? "Password sign-up is not enabled on the server yet (the app's service key lacks the admin role). Use the emailed code on the sign-in page instead."
-          : "Could not create the account. Please try again.";
+        : e.status === 403
+          ? "Password sign-up is not available: the app's Anvil service key does not have the admin role. Use the emailed code on the sign-in page instead."
+          : e.status === 401
+            ? "Password sign-up is not available: Anvil rejected the app's service key (invalid, revoked, or changed without restarting the app). Use the emailed code on the sign-in page instead."
+            : "Could not create the account. Please try again.";
     return Response.json({ error: message, email } satisfies ActionData, { status: e.status && e.status >= 400 ? e.status : 500 });
   }
   try {
