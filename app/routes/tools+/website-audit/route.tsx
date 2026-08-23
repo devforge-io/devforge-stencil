@@ -26,6 +26,7 @@ import { runAudit } from "~/lib/audit/audit.server";
 import type { AuditResult } from "~/lib/audit/types";
 import { ensureCsrfToken, validateCsrf } from "~/lib/csrf.server";
 import { getSiteChrome } from "~/lib/site-chrome.server";
+import { TailwindCdn } from "~/components/tailwind-cdn";
 
 type ActionResult = AuditResult & { requested?: string };
 
@@ -168,6 +169,10 @@ export default function WebsiteAuditRoute({
       {/* The site's own stylesheet, so the CMS header/footer below look exactly
           as they do on every other page. It also supplies the dark ground and
           Geist face this fork's light <body> would otherwise leave unset. */}
+      {/* The CMS header/footer below are styled with Tailwind utilities that
+          only this runtime generates here (the app's own build scans app
+          source, not CMS content). */}
+      <TailwindCdn />
       {chrome.css ? (
         <style dangerouslySetInnerHTML={{ __html: chrome.css }} />
       ) : null}
