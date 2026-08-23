@@ -10,9 +10,10 @@ import { ChevronUp } from "lucide-react";
 import { getSiteChrome } from "~/lib/site-chrome.server";
 import { ensureCsrfToken, validateCsrf } from "~/lib/csrf.server";
 import { CsrfInput, CsrfProvider } from "~/components/csrf-input";
-import { AnvilError, newId } from "~/lib/feature-requests/anvil.server";
+import { newId, type AnvilError } from "~/lib/feature-requests/anvil.server";
 import { clientIp, rateLimited } from "~/lib/feature-requests/http.server";
-import { LIMITS, createRequest, getProject, isVoterKey, listRequests, publicRequest, toggleVote, votedRequestIds } from "~/lib/feature-requests/store.server";
+import { LIMITS } from "~/lib/feature-requests/shared";
+import { createRequest, getProject, isVoterKey, listRequests, publicRequest, toggleVote, votedRequestIds } from "~/lib/feature-requests/store.server";
 import { Card, Field, Notice, Shell, StatusChip, TOOL_PATH, formatDate, inputClass, primaryBtn } from "~/components/tools/feature-requests/shell";
 
 /** Anonymous voter identity for the hosted board (the widget keeps its own in localStorage). */

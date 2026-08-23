@@ -1,7 +1,7 @@
 /** GET /tools/feature-requests/api/projects/:id/board (CORS): project info + visible requests. */
 
 import type { LoaderFunctionArgs } from "react-router";
-import { AnvilError } from "~/lib/feature-requests/anvil.server";
+import type { AnvilError } from "~/lib/feature-requests/anvil.server";
 import { corsHeaders, json, preflight } from "~/lib/feature-requests/http.server";
 import { getProject, listRequests, publicProject, publicRequest, votedRequestIds } from "~/lib/feature-requests/store.server";
 

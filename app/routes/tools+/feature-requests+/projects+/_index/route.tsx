@@ -8,9 +8,10 @@ import { ArrowRight, Plus } from "lucide-react";
 import { getSiteChrome } from "~/lib/site-chrome.server";
 import { ensureCsrfToken, validateCsrf } from "~/lib/csrf.server";
 import { CsrfInput, CsrfProvider } from "~/components/csrf-input";
-import { AnvilError } from "~/lib/feature-requests/anvil.server";
+import type { AnvilError } from "~/lib/feature-requests/anvil.server";
 import { requireFrUser } from "~/lib/feature-requests/session.server";
-import { LIMITS, createProject, listProjects, parseOriginList } from "~/lib/feature-requests/store.server";
+import { LIMITS } from "~/lib/feature-requests/shared";
+import { createProject, listProjects, parseOriginList } from "~/lib/feature-requests/store.server";
 import { Card, Field, Notice, Shell, TOOL_PATH, formatDate, ghostBtn, inputClass, primaryBtn, primaryBtnStyle } from "~/components/tools/feature-requests/shell";
 
 export function meta() {

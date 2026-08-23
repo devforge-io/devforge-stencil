@@ -1,7 +1,7 @@
 /** POST /tools/feature-requests/api/projects/:id/requests (CORS): submit a feature request. */
 
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
-import { AnvilError } from "~/lib/feature-requests/anvil.server";
+import type { AnvilError } from "~/lib/feature-requests/anvil.server";
 import { clientIp, corsHeaders, json, originBlocked, preflight, rateLimited, readBody } from "~/lib/feature-requests/http.server";
 import { createRequest, getProject, isVoterKey, publicRequest, toggleVote } from "~/lib/feature-requests/store.server";
 

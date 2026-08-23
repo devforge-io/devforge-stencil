@@ -8,22 +8,10 @@ import { ExternalLink, Trash2 } from "lucide-react";
 import { getSiteChrome } from "~/lib/site-chrome.server";
 import { ensureCsrfToken, validateCsrf } from "~/lib/csrf.server";
 import { CsrfInput, CsrfProvider } from "~/components/csrf-input";
-import { AnvilError } from "~/lib/feature-requests/anvil.server";
+import type { AnvilError } from "~/lib/feature-requests/anvil.server";
 import { requireFrUser } from "~/lib/feature-requests/session.server";
-import {
-  LIMITS,
-  STATUSES,
-  STATUS_LABEL,
-  deleteProject,
-  deleteRequest,
-  getOwnedProject,
-  isStatus,
-  listRequests,
-  parseOriginList,
-  setRequestStatus,
-  updateProject,
-  type RequestStatus,
-} from "~/lib/feature-requests/store.server";
+import { LIMITS, STATUSES, STATUS_LABEL, isStatus, type RequestStatus } from "~/lib/feature-requests/shared";
+import { deleteProject, deleteRequest, getOwnedProject, listRequests, parseOriginList, setRequestStatus, updateProject } from "~/lib/feature-requests/store.server";
 import { Card, Field, Notice, Shell, StatusChip, TOOL_PATH, dangerBtn, formatDate, ghostBtn, inputClass, labelClass, primaryBtn, primaryBtnStyle } from "~/components/tools/feature-requests/shell";
 
 export function meta({ data }: { data?: { project?: { name: string } } }) {

@@ -17,15 +17,8 @@
 import { createHash } from "node:crypto";
 import { cypher, ident, lit, mapLit, newId, nodes, scalar, setLit, AnvilError } from "./anvil.server";
 
-export const STATUSES = ["new", "planned", "in_progress", "done", "declined"] as const;
-export type RequestStatus = (typeof STATUSES)[number];
-export const STATUS_LABEL: Record<RequestStatus, string> = {
-  new: "New",
-  planned: "Planned",
-  in_progress: "In progress",
-  done: "Done",
-  declined: "Declined",
-};
+import { DEFAULT_ACCENT, DEFAULT_BUTTON_LABEL, LIMITS, STATUSES, STATUS_LABEL, isStatus, type RequestStatus } from "./shared";
+export { DEFAULT_ACCENT, DEFAULT_BUTTON_LABEL, LIMITS, STATUSES, STATUS_LABEL, isStatus, type RequestStatus };
 
 export type Project = {
   id: string;
@@ -54,20 +47,6 @@ export type FeatureRequest = {
   updatedAt: number;
 };
 
-export const LIMITS = {
-  projectName: 80,
-  intro: 280,
-  origins: 20,
-  title: 120,
-  details: 2000,
-  email: 200,
-  buttonLabel: 40,
-  projectsPerUser: 25,
-  requestsPerProject: 2000,
-};
-
-export const DEFAULT_ACCENT = "#f5a524";
-export const DEFAULT_BUTTON_LABEL = "Feature requests";
 
 /* ---------------------------------------------------------------------- */
 /* Helpers                                                                 */
@@ -117,10 +96,6 @@ function toRequest(r: Record<string, unknown>): FeatureRequest {
     createdAt: num(r.createdAt),
     updatedAt: num(r.updatedAt),
   };
-}
-
-export function isStatus(v: unknown): v is RequestStatus {
-  return typeof v === "string" && (STATUSES as readonly string[]).includes(v);
 }
 
 export function normalizeAccent(v: string | null | undefined): string {
