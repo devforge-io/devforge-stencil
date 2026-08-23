@@ -29,19 +29,15 @@ export function rateLimited(key: string, max: number, windowMs: number): boolean
 }
 
 /**
- * CORS headers for the embed's cross-site calls. With no allow-list the
- * endpoint is public; with one, the request origin must match an entry
- * (exact origin match, scheme included).
+ * CORS headers for the embed's cross-site calls. Always permissive: the
+ * responses carry no credentials and the origin allow-list is enforced by
+ * `originBlocked()` in the handlers, which answer 403 with a message. Sending
+ * the headers on those 403s too is what lets the widget show that message
+ * instead of a bare "could not reach the server" network error.
  */
-export function corsHeaders(request: Request, allowedOrigins: string[] = []): Headers {
-  const origin = request.headers.get("origin") ?? "";
+export function corsHeaders(_request: Request, _allowedOrigins: string[] = []): Headers {
   const h = new Headers();
-  if (allowedOrigins.length === 0) {
-    h.set("Access-Control-Allow-Origin", "*");
-  } else if (origin && allowedOrigins.includes(normalizeOrigin(origin))) {
-    h.set("Access-Control-Allow-Origin", origin);
-    h.set("Vary", "Origin");
-  }
+  h.set("Access-Control-Allow-Origin", "*");
   h.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   h.set("Access-Control-Allow-Headers", "Content-Type");
   h.set("Access-Control-Max-Age", "600");
