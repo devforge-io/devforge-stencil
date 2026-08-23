@@ -100,6 +100,6 @@ Everything renders inside a shadow root.
 ## Tests
 
 - `npm test` covers the literal encoder and the embed script.
-- Integration checks against a running Anvil (local: `anvil start --foreground
-  --data-dir ./data --http-port 7475`, default admin `admin`/`anvil`) are scripts, not
-  part of `npm test`, because they need a server.
+- Integration checks run against the configured Anvil (`ANVIL_URL` + key) as
+  ad-hoc scripts, not as part of `npm test`, because they need the server and
+  they create and delete test nodes.
