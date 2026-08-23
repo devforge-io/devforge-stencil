@@ -54,12 +54,39 @@ export function originBlocked(request: Request, allowedOrigins: string[]): boole
     const ref = request.headers.get("referer");
     if (!ref) return true;
     try {
-      return !allowedOrigins.includes(normalizeOrigin(new URL(ref).origin));
+      return !originAllowed(new URL(ref).origin, allowedOrigins);
     } catch {
       return true;
     }
   }
-  return !allowedOrigins.includes(normalizeOrigin(origin));
+  return !originAllowed(origin, allowedOrigins);
+}
+
+const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
+
+/**
+ * Exact origin match (scheme, host and port), with one convenience: an entry
+ * for a local host without a port (`http://localhost`) matches any port on
+ * that host, since dev servers move ports all the time.
+ */
+export function originAllowed(origin: string, allowedOrigins: string[]): boolean {
+  const o = normalizeOrigin(origin);
+  if (allowedOrigins.includes(o)) return true;
+  let u: URL;
+  try {
+    u = new URL(o);
+  } catch {
+    return false;
+  }
+  if (!LOCAL_HOSTS.has(u.hostname) && !LOCAL_HOSTS.has(`[${u.hostname}]`)) return false;
+  return allowedOrigins.some((a) => {
+    try {
+      const b = new URL(a);
+      return b.protocol === u.protocol && b.hostname === u.hostname && b.port === "";
+    } catch {
+      return false;
+    }
+  });
 }
 
 export function normalizeOrigin(value: string): string {

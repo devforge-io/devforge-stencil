@@ -243,7 +243,7 @@ export default function ProjectDashboard() {
                 <Field label="Intro" htmlFor="intro" hint="Shown at the top of the board.">
                   <input id="intro" name="intro" maxLength={LIMITS.intro} defaultValue={project.intro} className={inputClass} />
                 </Field>
-                <Field label="Allowed origins" htmlFor="origins" hint="One per line. Empty accepts submissions and votes from any site.">
+                <Field label="Allowed origins" htmlFor="origins" hint="One per line, scheme and port included (https://example.com, http://localhost:5176). http://localhost without a port matches any local port. Empty accepts submissions and votes from any site.">
                   <textarea id="origins" name="origins" rows={3} defaultValue={project.origins.join("\n")} className={inputClass} />
                 </Field>
                 <div className="grid gap-4 sm:grid-cols-2">
