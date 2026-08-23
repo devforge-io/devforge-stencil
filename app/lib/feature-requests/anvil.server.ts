@@ -25,7 +25,8 @@ export type AnvilConfig = {
 
 export function getAnvilConfig(): AnvilConfig {
   return {
-    url: (process.env.ANVIL_URL || "http://localhost:7474").replace(/\/+$/, ""),
+    // No default on purpose: the tool only talks to the Anvil you configure.
+    url: (process.env.ANVIL_URL || "").replace(/\/+$/, ""),
     // Only sent when set: on Anvil 0.1.0 naming the database switches the
     // schema context as well, which makes ordinary labels "reserved by public".
     database: process.env.ANVIL_DATABASE || "",
@@ -57,6 +58,7 @@ async function anvilFetch<T = Json>(
   init: { method?: string; body?: unknown; token?: string | null; headers?: Record<string, string> } = {},
 ): Promise<T> {
   const { url } = getAnvilConfig();
+  if (!url) throw new AnvilError("Anvil is not configured (set ANVIL_URL)", 503);
   const headers: Record<string, string> = { accept: "application/json", ...(init.headers ?? {}) };
   if (init.body !== undefined) headers["content-type"] = "application/json";
   if (init.token) headers.authorization = `Bearer ${init.token}`;
