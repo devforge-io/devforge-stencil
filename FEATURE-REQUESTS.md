@@ -38,19 +38,23 @@ curl -s -o /dev/null -w '%{http_code}\n' -X POST $ANVIL_URL/auth/register \
 # 400 = admin (payload rejected), 403 = not admin
 ```
 
-## Data model (flat on purpose)
+## Data model
 
 ```
 (:FRProject {id, ownerId, ownerEmail, name, intro, originsJson, boardEnabled, accent,
              buttonLabel, createdAt, updatedAt})
-(:FRRequest {id, projectId, title, details, email, status, votes, origin, ipHash,
-             createdAt, updatedAt})
-(:FRVote    {id, requestId, projectId, voter, createdAt})
+(:FRRequest {id, projectId, ...})-[:FOR_PROJECT]->(:FRProject)
+(:FRVote    {id, requestId, projectId, voter, createdAt})-[:FOR_REQUEST]->(:FRRequest)
 ```
 
 `ownerId` is the Anvil user id (`sub` of the JWT). Statuses: `new`, `planned`,
 `in_progress`, `done`, `declined` (declined never appears publicly). Sorting and
 capping happen in `store.server.ts`.
+
+The id properties are the source of truth for every query; the edges are written
+as well (MERGE, best-effort) so the graph is a real graph in Hammer. On an Anvil
+server without the MATCH..CREATE relationship fix the edges silently do not
+appear and nothing else changes.
 
 ### Anvil 0.1.0 quirks the code works around
 
@@ -60,9 +64,10 @@ capping happen in `store.server.ts`.
   as a comment by the lexer.
 - List properties do not round-trip; `\uXXXX` escapes are not decoded (other control
   characters are dropped).
-- `CREATE ... RETURN` returns a summary row, `MATCH ... CREATE` chains do not create,
-  relationships do not traverse reliably, `ORDER BY`/`LIMIT` is unreliable: hence
-  flat ids as properties and sorting in the app.
+- `CREATE ... RETURN` returns a summary row, and `ORDER BY`/`LIMIT` is unreliable:
+  hence ids as properties and sorting in the app. Unpatched 0.1.0 servers also
+  dropped relationships created between MATCHed nodes, which is why queries never
+  rely on the edges.
 - Naming the database in the query body changes the schema context; leave
   `ANVIL_DATABASE` empty for the default.
 

@@ -1,8 +1,12 @@
 /**
  * Data access for the feature-requests tool, on Anvil DB.
  *
- * Flat model on purpose (see anvil.server.ts for why): every node carries the
- * ids it relates to as plain properties, and lists are stored as JSON strings.
+ * Every node carries the ids it relates to as plain properties (the source of
+ * truth for queries; see anvil.server.ts for the original reason), and since
+ * the MATCH..CREATE relationship fix landed in Anvil, writes also add the
+ * edges (:FRRequest)-[:FOR_PROJECT]->(:FRProject) and
+ * (:FRVote)-[:FOR_REQUEST]->(:FRRequest) so the graph is a real graph in
+ * Hammer. Lists are stored as JSON strings.
  *
  *   (:FRProject {id, ownerId, ownerEmail, name, intro, originsJson, boardEnabled,
  *                accent, buttonLabel, createdAt, updatedAt})
@@ -126,6 +130,29 @@ export function hashIp(ip: string): string {
 }
 
 const byNewest = <T extends { createdAt: number }>(a: T, b: T) => b.createdAt - a.createdAt;
+
+/**
+ * Links a child node to its parent with a MERGE, e.g.
+ * (:FRRequest)-[:FOR_PROJECT]->(:FRProject). The id properties on the child
+ * stay the source of truth for queries, so this is belt and braces: on an
+ * Anvil without the MATCH..CREATE relationship fix the edge silently does not
+ * appear and nothing else changes. Best-effort by design.
+ */
+async function linkParent(
+  childLabel: string,
+  childId: string,
+  relType: string,
+  parentLabel: string,
+  parentId: string,
+): Promise<void> {
+  try {
+    await cypher(
+      `MATCH (c:${childLabel} {id: ${lit(childId)}}) MATCH (p:${parentLabel} {id: ${lit(parentId)}}) MERGE (c)-[:${relType}]->(p) RETURN c.id`,
+    );
+  } catch {
+    /* the edge is auxiliary; the property keys above are what queries use */
+  }
+}
 
 /* ---------------------------------------------------------------------- */
 /* Projects                                                                */
@@ -290,6 +317,7 @@ export async function createRequest(projectId: string, input: NewRequestInput): 
       updatedAt: now,
     })}) RETURN r`,
   );
+  await linkParent("FRRequest", req.id, "FOR_PROJECT", "FRProject", pid);
   return req;
 }
 
@@ -336,9 +364,11 @@ export async function toggleVote(requestId: string, voter: string): Promise<{ vo
     await cypher(`MATCH (v:FRVote {requestId: ${rid}, voter: ${lit(voter)}}) DETACH DELETE v RETURN count(v)`);
     delta = -1;
   } else {
+    const voteId = newId(16);
     await cypher(
-      `CREATE (v:FRVote ${mapLit({ id: newId(16), requestId: req.id, projectId: req.projectId, voter, createdAt: Date.now() })}) RETURN v`,
+      `CREATE (v:FRVote ${mapLit({ id: voteId, requestId: req.id, projectId: req.projectId, voter, createdAt: Date.now() })}) RETURN v`,
     );
+    await linkParent("FRVote", voteId, "FOR_REQUEST", "FRRequest", req.id);
     delta = 1;
   }
   // Recount from the vote nodes rather than trusting the cached counter.
