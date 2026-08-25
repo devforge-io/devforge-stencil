@@ -1,28 +1,48 @@
 /**
- * Data access for the feature-requests tool, on Anvil DB.
+ * Data access for the feature-requests tool, on Anvil DB's document store.
  *
- * Every node carries the ids it relates to as plain properties (the source of
- * truth for queries; see anvil.server.ts for the original reason), and since
- * the MATCH..CREATE relationship fix landed in Anvil, writes also add the
- * edges (:FRRequest)-[:FOR_PROJECT]->(:FRProject) and
- * (:FRVote)-[:FOR_REQUEST]->(:FRRequest) so the graph is a real graph in
- * Hammer. Lists are stored as JSON strings.
+ *   fr_projects  key = project id   {id, ownerId, ownerEmail, name, intro, origins[],
+ *                                    boardEnabled, accent, buttonLabel, createdAt, updatedAt}
+ *   fr_requests  key = request id   {id, projectId, title, details, email, status, votes,
+ *                                    origin, ipHash, createdAt, updatedAt}
+ *   fr_votes     key = requestId--voter  {id, requestId, projectId, voter, createdAt}
  *
- *   (:FRProject {id, ownerId, ownerEmail, name, intro, originsJson, boardEnabled,
- *                accent, buttonLabel, createdAt, updatedAt})
- *   (:FRRequest {id, projectId, title, details, email, status, votes,
- *                origin, ipHash, createdAt, updatedAt})
- *   (:FRVote    {id, requestId, projectId, voter, createdAt})
- *
- * Sorting and capping happen here rather than in Cypher; a project's request
- * list is small and ORDER BY/LIMIT were not dependable on the target build.
+ * Documents round-trip JSON faithfully (real arrays, no Cypher escaping), and
+ * the graph representation is produced by Anvil's document-graph sync, not by
+ * this code. Queries filter on body fields; sorting and capping happen here.
  */
 
 import { createHash } from "node:crypto";
-import { cypher, ident, lit, mapLit, newId, nodes, scalar, setLit, AnvilError } from "./anvil.server";
-
+import {
+  AnvilError,
+  docDelete,
+  docEnsureCollection,
+  docGet,
+  docPut,
+  docQuery,
+  ident,
+  newId,
+  type AnvilDocument,
+} from "./anvil.server";
 import { DEFAULT_ACCENT, DEFAULT_BUTTON_LABEL, LIMITS, STATUSES, STATUS_LABEL, isStatus, type RequestStatus } from "./shared";
 export { DEFAULT_ACCENT, DEFAULT_BUTTON_LABEL, LIMITS, STATUSES, STATUS_LABEL, isStatus, type RequestStatus };
+
+const PROJECTS = "fr_projects";
+const REQUESTS = "fr_requests";
+const VOTES = "fr_votes";
+
+let collectionsReady: Promise<void> | null = null;
+
+/** Creates the three collections on first use (idempotent, cached). */
+function ensureCollections(): Promise<void> {
+  collectionsReady ??= Promise.all([docEnsureCollection(PROJECTS), docEnsureCollection(REQUESTS), docEnsureCollection(VOTES)])
+    .then(() => undefined)
+    .catch((err) => {
+      collectionsReady = null;
+      throw err;
+    });
+  return collectionsReady;
+}
 
 export type Project = {
   id: string;
@@ -51,7 +71,6 @@ export type FeatureRequest = {
   updatedAt: number;
 };
 
-
 /* ---------------------------------------------------------------------- */
 /* Helpers                                                                 */
 /* ---------------------------------------------------------------------- */
@@ -60,24 +79,29 @@ const str = (v: unknown, fallback = ""): string => (typeof v === "string" ? v : 
 const num = (v: unknown, fallback = 0): number => (typeof v === "number" && Number.isFinite(v) ? v : fallback);
 const bool = (v: unknown, fallback = false): boolean => (typeof v === "boolean" ? v : fallback);
 
-function parseOrigins(v: unknown): string[] {
-  if (typeof v !== "string" || !v) return [];
-  try {
-    const arr = JSON.parse(v) as unknown;
-    return Array.isArray(arr) ? arr.filter((x): x is string => typeof x === "string") : [];
-  } catch {
-    return [];
+function readOrigins(body: Record<string, unknown>): string[] {
+  if (Array.isArray(body.origins)) return body.origins.filter((x): x is string => typeof x === "string");
+  // Graph-era rows stored the list as a JSON string; tolerate them.
+  if (typeof body.originsJson === "string") {
+    try {
+      const arr = JSON.parse(body.originsJson) as unknown;
+      if (Array.isArray(arr)) return arr.filter((x): x is string => typeof x === "string");
+    } catch {
+      /* fall through */
+    }
   }
+  return [];
 }
 
-function toProject(p: Record<string, unknown>): Project {
+function toProject(doc: AnvilDocument): Project {
+  const p = doc.body;
   return {
-    id: str(p.id),
+    id: str(p.id, doc.key),
     ownerId: str(p.ownerId),
     ownerEmail: str(p.ownerEmail),
     name: str(p.name),
     intro: str(p.intro),
-    origins: parseOrigins(p.originsJson),
+    origins: readOrigins(p),
     boardEnabled: bool(p.boardEnabled, true),
     accent: str(p.accent, DEFAULT_ACCENT) || DEFAULT_ACCENT,
     buttonLabel: str(p.buttonLabel, DEFAULT_BUTTON_LABEL) || DEFAULT_BUTTON_LABEL,
@@ -86,19 +110,52 @@ function toProject(p: Record<string, unknown>): Project {
   };
 }
 
-function toRequest(r: Record<string, unknown>): FeatureRequest {
+function projectBody(p: Project): Record<string, unknown> {
+  return {
+    id: p.id,
+    ownerId: p.ownerId,
+    ownerEmail: p.ownerEmail,
+    name: p.name,
+    intro: p.intro,
+    origins: p.origins,
+    boardEnabled: p.boardEnabled,
+    accent: p.accent,
+    buttonLabel: p.buttonLabel,
+    createdAt: p.createdAt,
+    updatedAt: p.updatedAt,
+  };
+}
+
+function toRequest(doc: AnvilDocument): FeatureRequest {
+  const r = doc.body;
   const status = str(r.status, "new");
   return {
-    id: str(r.id),
+    id: str(r.id, doc.key),
     projectId: str(r.projectId),
     title: str(r.title),
     details: str(r.details),
     email: str(r.email),
-    status: (STATUSES as readonly string[]).includes(status) ? (status as RequestStatus) : "new",
+    status: isStatus(status) ? status : "new",
     votes: num(r.votes),
     origin: str(r.origin),
     createdAt: num(r.createdAt),
     updatedAt: num(r.updatedAt),
+  };
+}
+
+function requestBody(r: FeatureRequest, ipHash: string): Record<string, unknown> {
+  return {
+    id: r.id,
+    projectId: r.projectId,
+    title: r.title,
+    details: r.details,
+    email: r.email,
+    status: r.status,
+    votes: r.votes,
+    origin: r.origin,
+    ipHash,
+    createdAt: r.createdAt,
+    updatedAt: r.updatedAt,
   };
 }
 
@@ -131,42 +188,20 @@ export function hashIp(ip: string): string {
 
 const byNewest = <T extends { createdAt: number }>(a: T, b: T) => b.createdAt - a.createdAt;
 
-/**
- * Links a child node to its parent with a MERGE, e.g.
- * (:FRRequest)-[:FOR_PROJECT]->(:FRProject). The id properties on the child
- * stay the source of truth for queries, so this is belt and braces: on an
- * Anvil without the MATCH..CREATE relationship fix the edge silently does not
- * appear and nothing else changes. Best-effort by design.
- */
-async function linkParent(
-  childLabel: string,
-  childId: string,
-  relType: string,
-  parentLabel: string,
-  parentId: string,
-): Promise<void> {
-  try {
-    await cypher(
-      `MATCH (c:${childLabel} {id: ${lit(childId)}}) MATCH (p:${parentLabel} {id: ${lit(parentId)}}) MERGE (c)-[:${relType}]->(p) RETURN c.id`,
-    );
-  } catch {
-    /* the edge is auxiliary; the property keys above are what queries use */
-  }
-}
-
 /* ---------------------------------------------------------------------- */
 /* Projects                                                                */
 /* ---------------------------------------------------------------------- */
 
 export async function listProjects(ownerId: string): Promise<Project[]> {
-  const r = await cypher(`MATCH (p:FRProject {ownerId: ${lit(ident(ownerId, "owner"))}}) RETURN p`);
-  return nodes(r).map(toProject).sort(byNewest);
+  await ensureCollections();
+  const docs = await docQuery(PROJECTS, { op: "eq", field: "ownerId", value: ident(ownerId, "owner") }, LIMITS.projectsPerUser * 2);
+  return docs.map(toProject).sort(byNewest);
 }
 
 export async function getProject(id: string): Promise<Project | null> {
-  const r = await cypher(`MATCH (p:FRProject {id: ${lit(ident(id, "project id"))}}) RETURN p`);
-  const row = nodes(r)[0];
-  return row ? toProject(row) : null;
+  await ensureCollections();
+  const doc = await docGet(PROJECTS, ident(id, "project id"));
+  return doc ? toProject(doc) : null;
 }
 
 /** The project only if `ownerId` owns it. */
@@ -188,28 +223,14 @@ export async function createProject(
     ownerEmail: owner.email,
     name: input.name.trim().slice(0, LIMITS.projectName),
     intro: (input.intro ?? "").trim().slice(0, LIMITS.intro),
-    origins: input.origins ?? [],
+    origins: (input.origins ?? []).slice(0, LIMITS.origins),
     boardEnabled: true,
     accent: DEFAULT_ACCENT,
     buttonLabel: DEFAULT_BUTTON_LABEL,
     createdAt: now,
     updatedAt: now,
   };
-  await cypher(
-    `CREATE (p:FRProject ${mapLit({
-      id: project.id,
-      ownerId: project.ownerId,
-      ownerEmail: project.ownerEmail,
-      name: project.name,
-      intro: project.intro,
-      originsJson: JSON.stringify(project.origins),
-      boardEnabled: true,
-      accent: project.accent,
-      buttonLabel: project.buttonLabel,
-      createdAt: now,
-      updatedAt: now,
-    })}) RETURN p`,
-  );
+  await docPut(PROJECTS, project.id, projectBody(project), { ifNotExists: true });
   return project;
 }
 
@@ -220,25 +241,26 @@ export async function updateProject(
 ): Promise<Project | null> {
   const current = await getOwnedProject(id, ownerId);
   if (!current) return null;
-  const props: Record<string, unknown> = { updatedAt: Date.now() };
-  if (patch.name !== undefined) props.name = patch.name.trim().slice(0, LIMITS.projectName);
-  if (patch.intro !== undefined) props.intro = patch.intro.trim().slice(0, LIMITS.intro);
-  if (patch.origins !== undefined) props.originsJson = JSON.stringify(patch.origins.slice(0, LIMITS.origins));
-  if (patch.boardEnabled !== undefined) props.boardEnabled = patch.boardEnabled;
-  if (patch.accent !== undefined) props.accent = normalizeAccent(patch.accent);
-  if (patch.buttonLabel !== undefined) props.buttonLabel = patch.buttonLabel.trim().slice(0, LIMITS.buttonLabel) || DEFAULT_BUTTON_LABEL;
-  await cypher(`MATCH (p:FRProject {id: ${lit(current.id)}}) ${setLit("p", props)} RETURN p`);
-  return getProject(current.id);
+  const next: Project = { ...current, updatedAt: Date.now() };
+  if (patch.name !== undefined) next.name = patch.name.trim().slice(0, LIMITS.projectName);
+  if (patch.intro !== undefined) next.intro = patch.intro.trim().slice(0, LIMITS.intro);
+  if (patch.origins !== undefined) next.origins = patch.origins.slice(0, LIMITS.origins);
+  if (patch.boardEnabled !== undefined) next.boardEnabled = patch.boardEnabled;
+  if (patch.accent !== undefined) next.accent = normalizeAccent(patch.accent);
+  if (patch.buttonLabel !== undefined) next.buttonLabel = patch.buttonLabel.trim().slice(0, LIMITS.buttonLabel) || DEFAULT_BUTTON_LABEL;
+  await docPut(PROJECTS, current.id, projectBody(next));
+  return next;
 }
 
 /** Removes the project and everything under it. */
 export async function deleteProject(id: string, ownerId: string): Promise<boolean> {
   const current = await getOwnedProject(id, ownerId);
   if (!current) return false;
-  const pid = lit(current.id);
-  await cypher(`MATCH (v:FRVote {projectId: ${pid}}) DETACH DELETE v RETURN count(v)`);
-  await cypher(`MATCH (r:FRRequest {projectId: ${pid}}) DETACH DELETE r RETURN count(r)`);
-  await cypher(`MATCH (p:FRProject {id: ${pid}}) DETACH DELETE p RETURN count(p)`);
+  const votes = await docQuery(VOTES, { op: "eq", field: "projectId", value: current.id }, 100_000);
+  for (const v of votes) await docDelete(VOTES, v.key);
+  const requests = await docQuery(REQUESTS, { op: "eq", field: "projectId", value: current.id }, LIMITS.requestsPerProject * 2);
+  for (const r of requests) await docDelete(REQUESTS, r.key);
+  await docDelete(PROJECTS, current.id);
   return true;
 }
 
@@ -252,8 +274,9 @@ export async function listRequests(
   projectId: string,
   opts: { includeDeclined?: boolean; sort?: RequestSort } = {},
 ): Promise<FeatureRequest[]> {
-  const r = await cypher(`MATCH (r:FRRequest {projectId: ${lit(ident(projectId, "project id"))}}) RETURN r`);
-  let list = nodes(r).map(toRequest);
+  await ensureCollections();
+  const docs = await docQuery(REQUESTS, { op: "eq", field: "projectId", value: ident(projectId, "project id") }, LIMITS.requestsPerProject * 2);
+  let list = docs.map(toRequest);
   if (!opts.includeDeclined) list = list.filter((x) => x.status !== "declined");
   if (opts.sort === "newest") list.sort(byNewest);
   else list.sort((a, b) => b.votes - a.votes || b.createdAt - a.createdAt);
@@ -261,19 +284,20 @@ export async function listRequests(
 }
 
 export async function getRequest(id: string): Promise<FeatureRequest | null> {
-  const r = await cypher(`MATCH (r:FRRequest {id: ${lit(ident(id, "request id"))}}) RETURN r`);
-  const row = nodes(r)[0];
-  return row ? toRequest(row) : null;
+  await ensureCollections();
+  const doc = await docGet(REQUESTS, ident(id, "request id"));
+  return doc ? toRequest(doc) : null;
 }
 
 export async function countRequests(projectId: string): Promise<number> {
-  const r = await cypher(`MATCH (r:FRRequest {projectId: ${lit(ident(projectId, "project id"))}}) RETURN count(r)`);
-  return num(scalar(r));
+  return (await listRequests(projectId, { includeDeclined: true })).length;
 }
 
 export type NewRequestInput = { title: string; details?: string; email?: string; origin?: string; ip?: string };
 
-export function validateRequestInput(input: NewRequestInput): { ok: true; value: Required<Pick<NewRequestInput, "title" | "details" | "email">> } | { ok: false; error: string } {
+export function validateRequestInput(
+  input: NewRequestInput,
+): { ok: true; value: Required<Pick<NewRequestInput, "title" | "details" | "email">> } | { ok: false; error: string } {
   const title = (input.title ?? "").replace(/\s+/g, " ").trim();
   const details = (input.details ?? "").trim();
   const email = (input.email ?? "").trim();
@@ -302,38 +326,33 @@ export async function createRequest(projectId: string, input: NewRequestInput): 
     createdAt: now,
     updatedAt: now,
   };
-  await cypher(
-    `CREATE (r:FRRequest ${mapLit({
-      id: req.id,
-      projectId: req.projectId,
-      title: req.title,
-      details: req.details,
-      email: req.email,
-      status: req.status,
-      votes: 0,
-      origin: req.origin,
-      ipHash: input.ip ? hashIp(input.ip) : "",
-      createdAt: now,
-      updatedAt: now,
-    })}) RETURN r`,
-  );
-  await linkParent("FRRequest", req.id, "FOR_PROJECT", "FRProject", pid);
+  await docPut(REQUESTS, req.id, requestBody(req, input.ip ? hashIp(input.ip) : ""), { ifNotExists: true });
   return req;
+}
+
+async function putRequest(req: FeatureRequest): Promise<void> {
+  const doc = await docGet(REQUESTS, req.id);
+  await docPut(REQUESTS, req.id, { ...(doc?.body ?? {}), ...requestBody(req, str(doc?.body.ipHash)) });
 }
 
 export async function setRequestStatus(projectId: string, requestId: string, status: RequestStatus): Promise<FeatureRequest | null> {
   if (!isStatus(status)) throw new AnvilError("Unknown status", 400);
-  const pid = lit(ident(projectId, "project id"));
-  const rid = lit(ident(requestId, "request id"));
-  await cypher(`MATCH (r:FRRequest {id: ${rid}, projectId: ${pid}}) ${setLit("r", { status, updatedAt: Date.now() })} RETURN r`);
-  return getRequest(requestId);
+  const pid = ident(projectId, "project id");
+  const req = await getRequest(requestId);
+  if (!req || req.projectId !== pid) return null;
+  const next = { ...req, status, updatedAt: Date.now() };
+  await putRequest(next);
+  return next;
 }
 
 export async function deleteRequest(projectId: string, requestId: string): Promise<void> {
-  const pid = lit(ident(projectId, "project id"));
-  const rid = lit(ident(requestId, "request id"));
-  await cypher(`MATCH (v:FRVote {requestId: ${rid}, projectId: ${pid}}) DETACH DELETE v RETURN count(v)`);
-  await cypher(`MATCH (r:FRRequest {id: ${rid}, projectId: ${pid}}) DETACH DELETE r RETURN count(r)`);
+  const pid = ident(projectId, "project id");
+  const rid = ident(requestId, "request id");
+  const req = await getRequest(rid);
+  if (!req || req.projectId !== pid) return;
+  const votes = await docQuery(VOTES, { op: "eq", field: "requestId", value: rid }, 100_000);
+  for (const v of votes) await docDelete(VOTES, v.key);
+  await docDelete(REQUESTS, rid);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -346,10 +365,20 @@ export function isVoterKey(v: unknown): v is string {
   return typeof v === "string" && VOTER.test(v);
 }
 
+/** One document per (request, voter); the key makes the pair unique by construction. */
+function voteKey(requestId: string, voter: string): string {
+  return `${requestId}--${voter}`;
+}
+
 export async function votedRequestIds(projectId: string, voter: string): Promise<Set<string>> {
   if (!isVoterKey(voter)) return new Set();
-  const r = await cypher(`MATCH (v:FRVote {projectId: ${lit(ident(projectId, "project id"))}, voter: ${lit(voter)}}) RETURN v`);
-  return new Set(nodes(r).map((v) => str(v.requestId)));
+  await ensureCollections();
+  const docs = await docQuery(
+    VOTES,
+    { op: "and", conditions: [{ op: "eq", field: "projectId", value: ident(projectId, "project id") }, { op: "eq", field: "voter", value: voter }] },
+    LIMITS.requestsPerProject * 2,
+  );
+  return new Set(docs.map((d) => str(d.body.requestId)));
 }
 
 /** Adds or removes this voter's vote; returns the new count and state. */
@@ -357,24 +386,17 @@ export async function toggleVote(requestId: string, voter: string): Promise<{ vo
   if (!isVoterKey(voter)) throw new AnvilError("Invalid voter key", 400);
   const req = await getRequest(requestId);
   if (!req || req.status === "declined") return null;
-  const rid = lit(req.id);
-  const existing = nodes(await cypher(`MATCH (v:FRVote {requestId: ${rid}, voter: ${lit(voter)}}) RETURN v`));
-  let delta: number;
-  if (existing.length) {
-    await cypher(`MATCH (v:FRVote {requestId: ${rid}, voter: ${lit(voter)}}) DETACH DELETE v RETURN count(v)`);
-    delta = -1;
+  const key = voteKey(req.id, voter);
+  const existing = await docGet(VOTES, key);
+  if (existing) {
+    await docDelete(VOTES, key);
   } else {
-    const voteId = newId(16);
-    await cypher(
-      `CREATE (v:FRVote ${mapLit({ id: voteId, requestId: req.id, projectId: req.projectId, voter, createdAt: Date.now() })}) RETURN v`,
-    );
-    await linkParent("FRVote", voteId, "FOR_REQUEST", "FRRequest", req.id);
-    delta = 1;
+    await docPut(VOTES, key, { id: key, requestId: req.id, projectId: req.projectId, voter, createdAt: Date.now() });
   }
-  // Recount from the vote nodes rather than trusting the cached counter.
-  const count = num(scalar(await cypher(`MATCH (v:FRVote {requestId: ${rid}}) RETURN count(v)`)));
-  await cypher(`MATCH (r:FRRequest {id: ${rid}}) ${setLit("r", { votes: count, updatedAt: Date.now() })} RETURN r`);
-  return { votes: count, voted: delta > 0 };
+  // Recount from the vote documents rather than trusting the cached counter.
+  const count = (await docQuery(VOTES, { op: "eq", field: "requestId", value: req.id }, 100_000)).length;
+  await putRequest({ ...req, votes: count, updatedAt: Date.now() });
+  return { votes: count, voted: !existing };
 }
 
 /* ---------------------------------------------------------------------- */

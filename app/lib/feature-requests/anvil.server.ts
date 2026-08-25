@@ -126,6 +126,93 @@ export async function cypher(query: string): Promise<CypherResult> {
   }
 }
 
+/* ---------------------------------------------------------------------- */
+/* Document store                                                          */
+/* ---------------------------------------------------------------------- */
+
+export type AnvilDocument = {
+  key: string;
+  body: Record<string, unknown>;
+  created_at: number;
+  updated_at: number;
+  version: number;
+};
+
+export type DocFilter =
+  | { op: "eq" | "neq" | "lt" | "gt" | "contains"; field: string; value: unknown }
+  | { op: "begins_with"; field: string; prefix: string }
+  | { op: "between"; field: string; low: unknown; high: unknown }
+  | { op: "in"; field: string; values: unknown[] }
+  | { op: "exists"; field: string }
+  | { op: "and" | "or"; conditions: DocFilter[] };
+
+/** Runs a document-store call as the service principal, retrying a stale admin token once. */
+async function serviceFetch<T>(path: string, init: { method?: string; body?: unknown } = {}): Promise<T> {
+  try {
+    return await anvilFetch<T>(path, { ...init, token: await serviceToken() });
+  } catch (err) {
+    if (err instanceof AnvilError && err.status === 401 && !getAnvilConfig().serviceKey) {
+      return anvilFetch<T>(path, { ...init, token: await serviceToken(true) });
+    }
+    throw err;
+  }
+}
+
+const COLLECTION_NAME = /^[a-z][a-z0-9_.]{0,63}$/;
+
+function collectionPath(collection: string, key?: string): string {
+  if (!COLLECTION_NAME.test(collection)) throw new AnvilError(`Invalid collection name ${collection}`, 500);
+  return `/docs/${collection}` + (key !== undefined ? `/${encodeURIComponent(key)}` : "");
+}
+
+/** Creates a collection if it does not exist yet; safe to call repeatedly. */
+export async function docEnsureCollection(collection: string): Promise<void> {
+  try {
+    await serviceFetch(collectionPath(collection), { method: "POST", body: { composite_keys: false } });
+  } catch (err) {
+    if (err instanceof AnvilError && (err.status === 409 || /exist/i.test(err.message))) return;
+    throw err;
+  }
+}
+
+export async function docPut(
+  collection: string,
+  key: string,
+  body: Record<string, unknown>,
+  opts: { ifNotExists?: boolean } = {},
+): Promise<AnvilDocument> {
+  return serviceFetch<AnvilDocument>(collectionPath(collection, key), {
+    method: "PUT",
+    body: { body, if_not_exists: opts.ifNotExists ?? false },
+  });
+}
+
+export async function docGet(collection: string, key: string): Promise<AnvilDocument | null> {
+  try {
+    return await serviceFetch<AnvilDocument>(collectionPath(collection, key));
+  } catch (err) {
+    if (err instanceof AnvilError && err.status === 404) return null;
+    throw err;
+  }
+}
+
+export async function docDelete(collection: string, key: string): Promise<void> {
+  try {
+    await serviceFetch(collectionPath(collection, key), { method: "DELETE" });
+  } catch (err) {
+    if (err instanceof AnvilError && err.status === 404) return;
+    throw err;
+  }
+}
+
+export async function docQuery(collection: string, filter: DocFilter | null, limit = 1000): Promise<AnvilDocument[]> {
+  const res = await serviceFetch<{ documents: AnvilDocument[] }>(`${collectionPath(collection)}/query`, {
+    method: "POST",
+    body: { filter: filter ?? undefined, limit },
+  });
+  return Array.isArray(res.documents) ? res.documents : [];
+}
+
 /** Node values come back as `{_id, _labels, ...props}`; this strips the internals. */
 export function nodeProps(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object") return null;

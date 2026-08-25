@@ -40,36 +40,34 @@ curl -s -o /dev/null -w '%{http_code}\n' -X POST $ANVIL_URL/auth/register \
 
 ## Data model
 
+Documents in Anvil's document store (`/docs/*` REST API), one collection per type:
+
 ```
-(:FRProject {id, ownerId, ownerEmail, name, intro, originsJson, boardEnabled, accent,
-             buttonLabel, createdAt, updatedAt})
-(:FRRequest {id, projectId, ...})-[:FOR_PROJECT]->(:FRProject)
-(:FRVote    {id, requestId, projectId, voter, createdAt})-[:FOR_REQUEST]->(:FRRequest)
+fr_projects  key = project id        {id, ownerId, ownerEmail, name, intro, origins[],
+                                      boardEnabled, accent, buttonLabel, createdAt, updatedAt}
+fr_requests  key = request id        {id, projectId, title, details, email, status, votes,
+                                      origin, ipHash, createdAt, updatedAt}
+fr_votes     key = requestId--voter  {id, requestId, projectId, voter, createdAt}
 ```
 
 `ownerId` is the Anvil user id (`sub` of the JWT). Statuses: `new`, `planned`,
-`in_progress`, `done`, `declined` (declined never appears publicly). Sorting and
-capping happen in `store.server.ts`.
+`in_progress`, `done`, `declined` (declined never appears publicly). Queries use
+the document query endpoint with `eq`/`and` filters on body fields; sorting and
+capping happen in `store.server.ts`. The vote key makes one vote per
+(request, voter) true by construction. The graph representation comes from
+Anvil's document-graph sync, configured on the server, not from this code.
+The collections are created automatically on first use.
 
-The id properties are the source of truth for every query; the edges are written
-as well (MERGE, best-effort) so the graph is a real graph in Hammer. On an Anvil
-server without the MATCH..CREATE relationship fix the edges silently do not
-appear and nothing else changes.
+### Anvil notes
 
-### Anvil 0.1.0 quirks the code works around
-
-- Query parameters only bind inside MATCH map patterns: values are inlined through
-  `lit()` (strict literal encoder) and ids through `ident()`. `lit()` also picks the
-  quote delimiter per value because an escaped quote followed by `//` or `/*` is read
-  as a comment by the lexer.
-- List properties do not round-trip; `\uXXXX` escapes are not decoded (other control
-  characters are dropped).
-- `CREATE ... RETURN` returns a summary row, and `ORDER BY`/`LIMIT` is unreliable:
-  hence ids as properties and sorting in the app. Unpatched 0.1.0 servers also
-  dropped relationships created between MATCHed nodes, which is why queries never
-  rely on the edges.
-- Naming the database in the query body changes the schema context; leave
-  `ANVIL_DATABASE` empty for the default.
+- The Cypher client (`cypher()`, `lit()`, `ident()`) remains in
+  `anvil.server.ts` for auth flows, migrations and tooling. If you write
+  Cypher against Anvil 0.1.0, mind the old quirks recorded in git history:
+  parameters only bind in MATCH map patterns, `ORDER BY`/`LIMIT` was
+  unreliable, and unpatched servers dropped relationships created between
+  MATCHed nodes.
+- Setting `ANVIL_DATABASE` switches the schema context on 0.1.0; leave it
+  empty for the default.
 
 ## HTTP surface
 
