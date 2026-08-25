@@ -11,7 +11,7 @@ import { CsrfInput, CsrfProvider } from "~/components/csrf-input";
 import type { AnvilError } from "~/lib/feature-requests/anvil.server";
 import { requireFrUser } from "~/lib/feature-requests/session.server";
 import { LIMITS } from "~/lib/feature-requests/shared";
-import { createProject, listProjects, parseOriginList } from "~/lib/feature-requests/store.server";
+import { createProject, listManagedProjects, parseOriginList } from "~/lib/feature-requests/store.server";
 import { Card, Field, Notice, Shell, TOOL_PATH, formatDate, ghostBtn, inputClass, primaryBtn, primaryBtnStyle } from "~/components/tools/feature-requests/shell";
 
 export function meta() {
@@ -20,7 +20,7 @@ export function meta() {
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const user = await requireFrUser(request);
-  const [{ token, setCookie }, chrome, projects] = await Promise.all([ensureCsrfToken(request), getSiteChrome(), listProjects(user.id)]);
+  const [{ token, setCookie }, chrome, projects] = await Promise.all([ensureCsrfToken(request), getSiteChrome(), listManagedProjects({ id: user.id, email: user.email })]);
   const data = { csrfToken: token, chrome, user: { email: user.email }, projects };
   return setCookie ? Response.json(data, { headers: { "Set-Cookie": setCookie } }) : data;
 }

@@ -26,6 +26,9 @@ Never commit the key; it belongs in `.env` locally and in the deployment's envir
 - For the emailed-code path: Anvil must have email configured (`/auth/otp/request`
   returns 503 otherwise) and `allow_otp_registration = true` so a code can create an
   account that does not exist yet. Existing accounts can always use the code.
+  `/project` relies on this entirely: a person whose email is set as a project's
+  `ownerEmail` but who has no Anvil account yet can only get in if
+  `allow_otp_registration` is on.
 
 Quick check from a shell:
 
@@ -50,7 +53,9 @@ fr_requests  key = request id        {id, projectId, title, details, email, stat
 fr_votes     key = requestId--voter  {id, requestId, projectId, voter, createdAt}
 ```
 
-`ownerId` is the Anvil user id (`sub` of the JWT). Statuses: `new`, `planned`,
+`ownerId` is the Anvil user id (`sub` of the JWT) captured at creation time; it
+stops matching when accounts move to a fresh Anvil server, so `ownerEmail` is
+the durable ownership claim and access checks accept either. Statuses: `new`, `planned`,
 `in_progress`, `done`, `declined` (declined never appears publicly). Queries use
 the document query endpoint with `eq`/`and` filters on body fields; sorting and
 capping happen in `store.server.ts`. The vote key makes one vote per
@@ -108,6 +113,7 @@ should appear in the graph too, the same pattern applies to `fr_votes`
 | `/projects`, `/projects/:id` | Project list + create; dashboard with triage, embed snippets, settings, delete. |
 | `/p/:id` | Hosted public board; works without JavaScript. |
 | `/embed.js` | The widget (see `app/lib/feature-requests/embed-script.ts`). |
+| `/project`, `/project/:id` | Owner self-serve area: emailed-code sign-in only, then every project whose `ownerEmail` matches the address (or whose `ownerId` matches the account). Same dashboard as the tools area (shared component). |
 | `GET /api/projects/:id/board?voter=` | Public JSON: project info + visible requests. |
 | `POST /api/projects/:id/requests` | Submit `{title, details, email, voter, website}`; `website` is a honeypot. |
 | `POST /api/requests/:rid/vote` | Toggle `{voter}`'s vote. |

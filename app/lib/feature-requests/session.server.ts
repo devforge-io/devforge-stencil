@@ -33,7 +33,8 @@ function cookie() {
     httpOnly: true,
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
-    path: "/tools/feature-requests",
+    // Site-wide: the same session serves /tools/feature-requests and /project.
+    path: "/",
     maxAge: SESSION_MAX_AGE,
     secrets: secrets(),
   });
@@ -56,13 +57,13 @@ export async function getFrUser(request: Request): Promise<FrUser | null> {
   return { id: p.id, email: typeof p.email === "string" ? p.email : "", username: typeof p.username === "string" ? p.username : "", iat: p.iat };
 }
 
-/** Loader/action guard: returns the user or redirects to sign-in with a return path. */
-export async function requireFrUser(request: Request): Promise<FrUser> {
+/** Loader/action guard: returns the user or redirects to a sign-in page with a return path. */
+export async function requireFrUser(request: Request, signInPath: string = SIGN_IN_PATH): Promise<FrUser> {
   const user = await getFrUser(request);
   if (user) return user;
   const url = new URL(request.url);
   const next = url.pathname + url.search;
-  throw redirect(`${SIGN_IN_PATH}?next=${encodeURIComponent(next)}`);
+  throw redirect(`${signInPath}?next=${encodeURIComponent(next)}`);
 }
 
 /** Set-Cookie value for a freshly authenticated identity. */
@@ -81,10 +82,10 @@ export async function destroyFrSession(): Promise<string> {
   return cookie().serialize("", { maxAge: 0 });
 }
 
-/** Only allow same-site relative `next` targets. */
+/** Only allow same-site relative `next` targets inside the tool's areas. */
 export function safeNext(value: string | null | undefined, fallback = PROJECTS_PATH): string {
   if (!value) return fallback;
-  if (!value.startsWith("/tools/feature-requests")) return fallback;
+  if (!value.startsWith("/tools/feature-requests") && !value.startsWith("/project")) return fallback;
   if (value.startsWith("//")) return fallback;
   return value;
 }

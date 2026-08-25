@@ -210,6 +210,40 @@ export async function getOwnedProject(id: string, ownerId: string): Promise<Proj
   return p && p.ownerId === ownerId ? p : null;
 }
 
+export type Manager = { id: string; email: string };
+
+const sameEmail = (a: string, b: string) => Boolean(a) && a.trim().toLowerCase() === b.trim().toLowerCase();
+
+/**
+ * The project if this person manages it: matching Anvil user id, or matching
+ * ownerEmail. Email is the durable claim; ids stop matching when accounts move
+ * between Anvil servers while the project documents survive.
+ */
+export async function getManagedProject(id: string, manager: Manager): Promise<Project | null> {
+  const p = await getProject(id);
+  if (!p) return null;
+  if (p.ownerId === manager.id) return p;
+  return sameEmail(p.ownerEmail, manager.email) ? p : null;
+}
+
+/** Every project this person manages, by user id or ownerEmail, deduplicated. */
+export async function listManagedProjects(manager: Manager): Promise<Project[]> {
+  await ensureCollections();
+  const byId = manager.id ? await docQuery(PROJECTS, { op: "eq", field: "ownerId", value: manager.id }, LIMITS.projectsPerUser * 2) : [];
+  const byEmail = manager.email
+    ? (await docQuery(PROJECTS, null, 10_000)).filter((d) => sameEmail(String(d.body.ownerEmail ?? ""), manager.email))
+    : [];
+  const seen = new Set<string>();
+  const out: Project[] = [];
+  for (const doc of [...byId, ...byEmail]) {
+    const project = toProject(doc);
+    if (seen.has(project.id)) continue;
+    seen.add(project.id);
+    out.push(project);
+  }
+  return out.sort(byNewest);
+}
+
 export async function createProject(
   owner: { id: string; email: string },
   input: { name: string; intro?: string; origins?: string[] },
@@ -236,10 +270,10 @@ export async function createProject(
 
 export async function updateProject(
   id: string,
-  ownerId: string,
+  manager: Manager,
   patch: Partial<Pick<Project, "name" | "intro" | "origins" | "boardEnabled" | "accent" | "buttonLabel">>,
 ): Promise<Project | null> {
-  const current = await getOwnedProject(id, ownerId);
+  const current = await getManagedProject(id, manager);
   if (!current) return null;
   const next: Project = { ...current, updatedAt: Date.now() };
   if (patch.name !== undefined) next.name = patch.name.trim().slice(0, LIMITS.projectName);
@@ -253,8 +287,8 @@ export async function updateProject(
 }
 
 /** Removes the project and everything under it. */
-export async function deleteProject(id: string, ownerId: string): Promise<boolean> {
-  const current = await getOwnedProject(id, ownerId);
+export async function deleteProject(id: string, manager: Manager): Promise<boolean> {
+  const current = await getManagedProject(id, manager);
   if (!current) return false;
   const votes = await docQuery(VOTES, { op: "eq", field: "projectId", value: current.id }, 100_000);
   for (const v of votes) await docDelete(VOTES, v.key);

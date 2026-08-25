@@ -1,27 +1,25 @@
 /**
- * /tools/feature-requests/projects/:id: a project's dashboard. Thin wrapper
- * around the shared dashboard logic, which /project/:id mounts as well.
+ * /project/:id: the owner-facing dashboard for one project, matched by the
+ * signed-in email (or account id). Same shared dashboard as the tools area.
  */
 
 import { useActionData, useLoaderData, useNavigation, type ActionFunctionArgs, type LoaderFunctionArgs } from "react-router";
 import { actOnProjectDashboard, loadProjectDashboard, type DashboardData } from "~/lib/feature-requests/dashboard.server";
-import { SIGN_IN_PATH } from "~/lib/feature-requests/session.server";
 import { ProjectDashboardView, type DashboardActionData } from "~/components/tools/feature-requests/project-dashboard";
-import { TOOL_PATH } from "~/components/tools/feature-requests/shell";
 
 export function meta({ data }: { data?: { project?: { name: string } } }) {
-  return [{ title: `${data?.project?.name ?? "Project"} · Feature requests · Devforge` }, { name: "robots", content: "noindex" }];
+  return [{ title: `${data?.project?.name ?? "Project"} · Devforge` }, { name: "robots", content: "noindex" }];
 }
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
-  return loadProjectDashboard(request, params.id ?? "", SIGN_IN_PATH);
+  return loadProjectDashboard(request, params.id ?? "", "/project");
 }
 
 export async function action({ request, params }: ActionFunctionArgs) {
-  return actOnProjectDashboard(request, params.id ?? "", SIGN_IN_PATH, `${TOOL_PATH}/projects`);
+  return actOnProjectDashboard(request, params.id ?? "", "/project", "/project");
 }
 
-export default function ProjectDashboard() {
+export default function OwnerProjectDashboard() {
   const data = useLoaderData<typeof loader>() as DashboardData;
   const actionData = (useActionData() ?? {}) as DashboardActionData;
   const busy = useNavigation().state === "submitting";
@@ -30,10 +28,10 @@ export default function ProjectDashboard() {
       data={data}
       actionData={actionData}
       busy={busy}
-      base={`${TOOL_PATH}/projects/${data.project.id}`}
-      listHref={`${TOOL_PATH}/projects`}
+      base={`/project/${data.project.id}`}
+      listHref="/project"
       listLabel="Your projects"
-      signOutAction={`${TOOL_PATH}/sign-out`}
+      signOutAction="/project"
     />
   );
 }
