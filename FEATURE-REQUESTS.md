@@ -69,6 +69,36 @@ The collections are created automatically on first use.
 - Setting `ANVIL_DATABASE` switches the schema context on 0.1.0; leave it
   empty for the default.
 
+## Graph sync
+
+The app writes documents only. On the Anvil server, sync rules mirror the
+collections into graph nodes and triggers add the relationship, so Hammer shows
+a real graph. This is server configuration (run once per Anvil instance, as
+admin; applied to the hosted instance on 2026-08-25):
+
+```cypher
+SYNC LABEL FRProject TO COLLECTION fr_projects KEY id
+SYNC LABEL FRRequest TO COLLECTION fr_requests KEY id
+
+CREATE OR REPLACE TRIGGER fr_request_link_insert
+  AFTER INSERT ON COLLECTION fr_requests
+  FOR EACH ROW AS { MERGE RELATIONSHIP (:FRRequest {id: NEW.id})-[:FOR_PROJECT]->(:FRProject {id: NEW.projectId}) }
+
+CREATE OR REPLACE TRIGGER fr_request_link_update
+  AFTER UPDATE ON COLLECTION fr_requests
+  FOR EACH ROW AS { MERGE RELATIONSHIP (:FRRequest {id: NEW.id})-[:FOR_PROJECT]->(:FRProject {id: NEW.projectId}) }
+```
+
+Rule creation backfills existing rows in both directions; `SHOW SYNC RULES` and
+`SHOW TRIGGERS` list what is active, `DROP SYNC RULE <id>` / `DROP TRIGGER <name>`
+remove them. Deleting a document detach-deletes its node, so the edge goes with
+it. Verified end to end: a request created through the app produces the
+document, the synced :FRRequest node, and the FOR_PROJECT edge; a status change
+syncs to the node; deleting the project removes nodes and edges. If votes
+should appear in the graph too, the same pattern applies to `fr_votes`
+(`SYNC LABEL FRVote TO COLLECTION fr_votes KEY id` plus a trigger to
+`:FRRequest` via `NEW.requestId`).
+
 ## HTTP surface
 
 | Route | What |
