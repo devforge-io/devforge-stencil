@@ -372,19 +372,45 @@ export async function anvilLogin(username: string, password: string): Promise<An
   return anvilFetch<AnvilTokens>("/auth/login", { body: { username, password } });
 }
 
-/** Creates an Anvil user through the admin-only register endpoint; email doubles as username. */
+/**
+ * Creates an Anvil user through the admin-only register endpoint. No username
+ * is sent on purpose: Anvil assigns one server-side (email local part, hex
+ * suffix only on collision) and rejects duplicate emails with a 409. Sign-in
+ * uses the email; Anvil's login resolves it to the stored username.
+ */
 export async function anvilRegister(email: string, password: string): Promise<{ id: string }> {
   const token = await serviceToken();
   try {
-    return await anvilFetch<{ id: string }>("/auth/register", { body: { username: email, email, password }, token });
+    return await anvilFetch<{ id: string }>("/auth/register", { body: { email, password }, token });
   } catch (err) {
     if (err instanceof AnvilError && err.status === 401 && !getAnvilConfig().serviceKey) {
       return anvilFetch<{ id: string }>("/auth/register", {
-        body: { username: email, email, password },
+        body: { email, password },
         token: await serviceToken(true),
       });
     }
     throw err;
+  }
+}
+
+/**
+ * Registers a board visitor by email, best-effort. Anvil assigns the username
+ * and, when its email sending is configured, mails a verification token as
+ * part of registration. The password is random and never shown: these
+ * accounts sign in with an emailed code. An existing account (409) is fine;
+ * any other failure is reported but must never sink the caller's write.
+ */
+export async function registerVisitor(
+  email: string,
+): Promise<{ account: "created" | "existing" | "failed"; verificationSent: boolean }> {
+  try {
+    const res = await anvilRegister(email, newId(32));
+    const sent = (res as { verification_sent?: unknown }).verification_sent === true;
+    return { account: "created", verificationSent: sent };
+  } catch (err) {
+    if (err instanceof AnvilError && err.status === 409) return { account: "existing", verificationSent: false };
+    console.error("[feature-requests] visitor registration failed:", (err as Error).message);
+    return { account: "failed", verificationSent: false };
   }
 }
 

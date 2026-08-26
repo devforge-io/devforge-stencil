@@ -3,7 +3,7 @@
 // dependencies; everything renders inside a Shadow DOM root so host-page CSS cannot leak
 // in or out. Do not use backticks or "${" inside the script: it is a String.raw template.
 
-export const EMBED_SCRIPT_VERSION = "1";
+export const EMBED_SCRIPT_VERSION = "2";
 
 export const EMBED_SCRIPT: string = String.raw`(function () {
   "use strict";
@@ -287,7 +287,7 @@ export const EMBED_SCRIPT: string = String.raw`(function () {
   function createForm(onCreated) {
     var titleIn = el("input", { className: "fr-input", type: "text", maxlength: "120", placeholder: "Short summary of the idea", autocomplete: "off" });
     var detailsIn = el("textarea", { className: "fr-input", maxlength: "2000", placeholder: "What problem would it solve? Any context helps." });
-    var emailIn = el("input", { className: "fr-input", type: "email", placeholder: "you@example.com", autocomplete: "email" });
+    var emailIn = el("input", { className: "fr-input", type: "email", placeholder: "you@example.com", autocomplete: "email", required: "" });
     // Honeypot: visually hidden, never prefilled, always sent.
     var hp = el("input", { type: "text", name: "website", tabindex: "-1", autocomplete: "off", "aria-hidden": "true" });
     var msg = el("p", { className: "fr-msg", role: "status", "aria-live": "polite" });
@@ -302,7 +302,7 @@ export const EMBED_SCRIPT: string = String.raw`(function () {
     var form = el("form", { novalidate: "" }, [
       field("Title", titleIn),
       field("Details (optional)", detailsIn),
-      field("Email (optional, if you want updates)", emailIn),
+      field("Email (required, we send a verification code)", emailIn),
       el("div", { className: "fr-hp", "aria-hidden": "true" }, [hp]),
       submit,
       msg
@@ -317,18 +317,28 @@ export const EMBED_SCRIPT: string = String.raw`(function () {
         titleIn.focus();
         return;
       }
+      var email = emailIn.value.trim();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        setMsg(msg, "Enter your email address so we can verify it.", "err");
+        emailIn.focus();
+        return;
+      }
       busy = true;
       submit.disabled = true;
       setMsg(msg, "Sending...", "");
       api("POST", "/api/projects/" + encodeURIComponent(projectId) + "/requests", {
         title: title,
         details: detailsIn.value.trim(),
-        email: emailIn.value.trim(),
+        email: email,
         voter: voterKey(),
         website: hp.value
       }).then(function (data) {
         form.reset();
-        setMsg(msg, "Thanks, your request has been added.", "ok");
+        if (data.verificationSent) {
+          setMsg(msg, "Thanks, your request has been added. We emailed " + email + " a verification code.", "ok");
+        } else {
+          setMsg(msg, "Thanks, your request has been added.", "ok");
+        }
         if (data.request) onCreated(data.request);
       }, function (err) {
         setMsg(msg, err.message, "err");

@@ -2,6 +2,7 @@
 
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import type { AnvilError } from "~/lib/feature-requests/anvil.server";
+import { registerVisitor } from "~/lib/feature-requests/anvil.server";
 import { clientIp, corsHeaders, json, originBlocked, preflight, rateLimited, readBody } from "~/lib/feature-requests/http.server";
 import { createRequest, getProject, isVoterKey, publicRequest, toggleVote } from "~/lib/feature-requests/store.server";
 
@@ -25,8 +26,16 @@ export async function action({ request, params }: ActionFunctionArgs) {
     if (rateLimited(`fr:submit:${ip}`, 10, 10 * 60_000) || rateLimited(`fr:submit:project:${project.id}`, 120, 60 * 60_000)) {
       return json({ ok: false, error: "Too many requests, try again in a minute" }, { status: 429, headers });
     }
+    const email = (body.email ?? "").trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return json({ ok: false, error: "Enter your email address so we can verify it" }, { status: 400, headers });
+    }
     const origin = request.headers.get("origin") ?? (request.headers.get("referer") ? new URL(request.headers.get("referer")!).origin : "");
-    const created = await createRequest(project.id, { title: body.title ?? "", details: body.details ?? "", email: body.email ?? "", origin, ip });
+    const created = await createRequest(project.id, { title: body.title ?? "", details: body.details ?? "", email, origin, ip });
+    // Register the visitor in Anvil; registration also sends the verification
+    // email when the server's mailer is configured. Best-effort by design: an
+    // existing account or a mail hiccup must not lose the idea.
+    const visitor = await registerVisitor(email);
     let voted = false;
     let votes = 0;
     if (project.boardEnabled && isVoterKey(body.voter)) {
@@ -36,7 +45,10 @@ export async function action({ request, params }: ActionFunctionArgs) {
         votes = v.votes;
       }
     }
-    return json({ ok: true, request: { ...publicRequest(created, voted), votes } }, { status: 201, headers });
+    return json(
+      { ok: true, request: { ...publicRequest(created, voted), votes }, account: visitor.account, verificationSent: visitor.verificationSent },
+      { status: 201, headers },
+    );
   } catch (err) {
     const e = err as AnvilError;
     const status = e.status && e.status >= 400 && e.status < 600 ? e.status : 500;
