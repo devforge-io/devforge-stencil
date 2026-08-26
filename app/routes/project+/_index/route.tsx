@@ -11,7 +11,7 @@ import { getSiteChrome } from "~/lib/site-chrome.server";
 import { ensureCsrfToken, validateCsrf } from "~/lib/csrf.server";
 import { CsrfInput, CsrfProvider } from "~/components/csrf-input";
 import { AnvilError, anvilOtpRequest, anvilOtpVerify, identityFromToken } from "~/lib/feature-requests/anvil.server";
-import { createFrSession, destroyFrSession, getFrUser } from "~/lib/feature-requests/session.server";
+import { frSignInHeaders, frSignOutHeaders, getFrUser } from "~/lib/feature-requests/session.server";
 import { listManagedProjects, type Project } from "~/lib/feature-requests/store.server";
 import { clientIp, rateLimited } from "~/lib/feature-requests/http.server";
 import { Card, Field, Notice, Shell, TOOL_PATH, formatDate, ghostBtn, inputClass, molten, primaryBtn, primaryBtnStyle } from "~/components/tools/feature-requests/shell";
@@ -40,7 +40,7 @@ export async function action({ request }: ActionFunctionArgs) {
   await validateCsrf(request, form);
   const intent = String(form.get("intent") ?? "");
   if (intent === "sign-out") {
-    return redirect("/project", { headers: { "Set-Cookie": await destroyFrSession() } });
+    return redirect("/project", { headers: await frSignOutHeaders() });
   }
   const email = String(form.get("email") ?? "").trim().toLowerCase();
   const ip = clientIp(request);
@@ -61,7 +61,7 @@ export async function action({ request }: ActionFunctionArgs) {
       const tokens = await anvilOtpVerify(email, code);
       const identity = identityFromToken(tokens.accessToken);
       if (!identity) throw new AnvilError("Anvil returned an unreadable token", 502);
-      return redirect("/project", { headers: { "Set-Cookie": await createFrSession(identity, tokens) } });
+      return redirect("/project", { headers: await frSignInHeaders(identity, tokens) });
     }
     return Response.json({ error: "Unknown action." } satisfies ActionData, { status: 400 });
   } catch (err) {

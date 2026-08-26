@@ -40,6 +40,23 @@ function cookie() {
   });
 }
 
+/**
+ * The cookie as it was scoped before /project existed. Browsers only delete a
+ * cookie when the clearing Set-Cookie matches its path, and an old cookie at
+ * the narrower path also shadows the site-wide one under /tools, so every
+ * sign-in and sign-out clears this scope as well.
+ */
+function legacyCookie() {
+  return createCookie("_fr_session", {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/tools/feature-requests",
+    maxAge: SESSION_MAX_AGE,
+    secrets: secrets(),
+  });
+}
+
 export const SIGN_IN_PATH = "/tools/feature-requests/sign-in";
 export const PROJECTS_PATH = "/tools/feature-requests/projects";
 
@@ -66,8 +83,8 @@ export async function requireFrUser(request: Request, signInPath: string = SIGN_
   throw redirect(`${signInPath}?next=${encodeURIComponent(next)}`);
 }
 
-/** Set-Cookie value for a freshly authenticated identity. */
-export async function createFrSession(identity: AnvilIdentity, tokens: AnvilTokens): Promise<string> {
+/** Headers that set the session for a freshly authenticated identity (and clear the legacy-path cookie). */
+export async function frSignInHeaders(identity: AnvilIdentity, tokens: AnvilTokens): Promise<Headers> {
   const payload: SessionPayload = {
     id: identity.sub,
     email: identity.email || identity.username,
@@ -75,11 +92,18 @@ export async function createFrSession(identity: AnvilIdentity, tokens: AnvilToke
     iat: Date.now(),
     rt: tokens.refreshToken,
   };
-  return cookie().serialize(payload);
+  const headers = new Headers();
+  headers.append("Set-Cookie", await cookie().serialize(payload));
+  headers.append("Set-Cookie", await legacyCookie().serialize("", { maxAge: 0 }));
+  return headers;
 }
 
-export async function destroyFrSession(): Promise<string> {
-  return cookie().serialize("", { maxAge: 0 });
+/** Headers that clear the session at both cookie scopes. */
+export async function frSignOutHeaders(): Promise<Headers> {
+  const headers = new Headers();
+  headers.append("Set-Cookie", await cookie().serialize("", { maxAge: 0 }));
+  headers.append("Set-Cookie", await legacyCookie().serialize("", { maxAge: 0 }));
+  return headers;
 }
 
 /** Only allow same-site relative `next` targets inside the tool's areas. */
