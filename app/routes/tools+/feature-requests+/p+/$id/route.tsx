@@ -46,7 +46,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   if (!project) throw new Response("Not found", { status: 404 });
   const [{ token, setCookie: csrfCookie }, chrome, { voter, setCookie: vCookie }] = await Promise.all([ensureCsrfToken(request), getSiteChrome(), voterFrom(request)]);
   const [requests, voted] = project.boardEnabled
-    ? await Promise.all([listRequests(project.id), votedRequestIds(project.id, voter)])
+    ? await Promise.all([listRequests(project.id), votedRequestIds(project.id, { voter })])
     : [[], new Set<string>()];
   const data = {
     csrfToken: token,
@@ -76,7 +76,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
     if (intent === "vote") {
       if (!project.boardEnabled) return Response.json({ error: "Voting is off for this project." } satisfies ActionData, { status: 403, headers });
       if (rateLimited(`fr:vote:${ip}`, 60, 10 * 60_000)) return Response.json({ error: "Too many votes from this connection. Try again shortly." } satisfies ActionData, { status: 429, headers });
-      await toggleVote(String(form.get("requestId") ?? ""), voter);
+      await toggleVote(String(form.get("requestId") ?? ""), { voter });
       return Response.json({ ok: "vote" } satisfies ActionData, { headers });
     }
     if (intent === "submit") {
@@ -91,7 +91,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
         origin: "hosted-board",
         ip,
       });
-      if (project.boardEnabled) await toggleVote(created.id, voter).catch(() => null);
+      if (project.boardEnabled) await toggleVote(created.id, { email: String(form.get("email") ?? "").trim() || undefined, voter }).catch(() => null);
       return Response.json({ ok: "Thanks, your request is in." } satisfies ActionData, { headers });
     }
     return Response.json({ error: "Unknown action." } satisfies ActionData, { status: 400, headers });

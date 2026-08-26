@@ -13,8 +13,9 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     // Reads are public (the board is public); the origin allow-list only
     // gates writes (submissions and votes).
     const headers = corsHeaders(request);
-    const voter = new URL(request.url).searchParams.get("voter") ?? "";
-    const [requests, voted] = project.boardEnabled ? await Promise.all([listRequests(project.id), votedRequestIds(project.id, voter)]) : [[], new Set<string>()];
+    const search = new URL(request.url).searchParams;
+    const identity = { email: search.get("email") ?? undefined, voter: search.get("voter") ?? undefined };
+    const [requests, voted] = project.boardEnabled ? await Promise.all([listRequests(project.id), votedRequestIds(project.id, identity)]) : [[], new Set<string>()];
     return json({ ok: true, project: publicProject(project), requests: requests.map((r) => publicRequest(r, voted.has(r.id))) }, { headers });
   } catch (err) {
     const e = err as AnvilError;

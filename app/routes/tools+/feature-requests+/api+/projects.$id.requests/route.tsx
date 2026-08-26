@@ -4,7 +4,7 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import type { AnvilError } from "~/lib/feature-requests/anvil.server";
 import { registerVisitor } from "~/lib/feature-requests/anvil.server";
 import { clientIp, corsHeaders, json, originBlocked, preflight, rateLimited, readBody } from "~/lib/feature-requests/http.server";
-import { createRequest, getProject, isVoterKey, publicRequest, toggleVote } from "~/lib/feature-requests/store.server";
+import { createRequest, getProject, publicRequest, toggleVote } from "~/lib/feature-requests/store.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   if (request.method === "OPTIONS") return preflight(request);
@@ -31,15 +31,16 @@ export async function action({ request, params }: ActionFunctionArgs) {
       return json({ ok: false, error: "Enter your email address so we can verify it" }, { status: 400, headers });
     }
     const origin = request.headers.get("origin") ?? (request.headers.get("referer") ? new URL(request.headers.get("referer")!).origin : "");
-    const created = await createRequest(project.id, { title: body.title ?? "", details: body.details ?? "", email, origin, ip });
-    // Register the visitor in Anvil; registration also sends the verification
-    // email when the server's mailer is configured. Best-effort by design: an
-    // existing account or a mail hiccup must not lose the idea.
+    // Register the visitor in Anvil first so the request can carry their user
+    // id; registration also sends the verification email when the server's
+    // mailer is configured. Best-effort by design: an existing account or a
+    // mail hiccup must not lose the idea.
     const visitor = await registerVisitor(email);
+    const created = await createRequest(project.id, { title: body.title ?? "", details: body.details ?? "", email, submitterId: visitor.userId, origin, ip });
     let voted = false;
     let votes = 0;
-    if (project.boardEnabled && isVoterKey(body.voter)) {
-      const v = await toggleVote(created.id, body.voter).catch(() => null);
+    if (project.boardEnabled) {
+      const v = await toggleVote(created.id, { email, userId: visitor.userId, voter: body.voter }).catch(() => null);
       if (v) {
         voted = v.voted;
         votes = v.votes;

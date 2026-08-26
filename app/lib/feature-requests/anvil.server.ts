@@ -402,16 +402,36 @@ export async function anvilRegister(email: string, password: string): Promise<{ 
  */
 export async function registerVisitor(
   email: string,
-): Promise<{ account: "created" | "existing" | "failed"; verificationSent: boolean }> {
+): Promise<{ account: "created" | "existing" | "failed"; verificationSent: boolean; userId: string }> {
   try {
     const res = await anvilRegister(email, newId(32));
     const sent = (res as { verification_sent?: unknown }).verification_sent === true;
-    return { account: "created", verificationSent: sent };
+    const userId = typeof (res as { id?: unknown }).id === "string" ? (res as { id: string }).id : "";
+    return { account: "created", verificationSent: sent, userId };
   } catch (err) {
-    if (err instanceof AnvilError && err.status === 409) return { account: "existing", verificationSent: false };
+    if (err instanceof AnvilError && err.status === 409) {
+      return { account: "existing", verificationSent: false, userId: await lookupUserIdByEmail(email) };
+    }
     console.error("[feature-requests] visitor registration failed:", (err as Error).message);
-    return { account: "failed", verificationSent: false };
+    return { account: "failed", verificationSent: false, userId: "" };
   }
+}
+
+/** The Anvil user id for an email, or "" when no account matches. */
+export async function lookupUserIdByEmail(email: string): Promise<string> {
+  try {
+    const needle = email.trim().toLowerCase();
+    const docs = await docQuery("auth.users", null, 100_000);
+    for (const d of docs) {
+      const e = d.body.email;
+      if (typeof e === "string" && e.toLowerCase() === needle) {
+        return typeof d.body.id === "string" ? d.body.id : "";
+      }
+    }
+  } catch (err) {
+    console.error("[feature-requests] user lookup failed:", (err as Error).message);
+  }
+  return "";
 }
 
 export async function anvilOtpRequest(email: string): Promise<{ message: string; expires_in_seconds?: number }> {

@@ -13,6 +13,7 @@
  */
 
 import { createHash } from "node:crypto";
+import type { DocFilter } from "./anvil.server";
 import {
   AnvilError,
   docDelete,
@@ -327,7 +328,7 @@ export async function countRequests(projectId: string): Promise<number> {
   return (await listRequests(projectId, { includeDeclined: true })).length;
 }
 
-export type NewRequestInput = { title: string; details?: string; email?: string; origin?: string; ip?: string };
+export type NewRequestInput = { title: string; details?: string; email?: string; submitterId?: string; origin?: string; ip?: string };
 
 export function validateRequestInput(
   input: NewRequestInput,
@@ -360,7 +361,12 @@ export async function createRequest(projectId: string, input: NewRequestInput): 
     createdAt: now,
     updatedAt: now,
   };
-  await docPut(REQUESTS, req.id, requestBody(req, input.ip ? hashIp(input.ip) : ""), { ifNotExists: true });
+  await docPut(
+    REQUESTS,
+    req.id,
+    { ...requestBody(req, input.ip ? hashIp(input.ip) : ""), submitterId: input.submitterId ?? "" },
+    { ifNotExists: true },
+  );
   return req;
 }
 
@@ -399,33 +405,64 @@ export function isVoterKey(v: unknown): v is string {
   return typeof v === "string" && VOTER.test(v);
 }
 
-/** One document per (request, voter); the key makes the pair unique by construction. */
-function voteKey(requestId: string, voter: string): string {
-  return `${requestId}--${voter}`;
+export const isEmail = (v: unknown): v is string => typeof v === "string" && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v) && v.length <= LIMITS.email;
+
+/**
+ * Who is voting. Email is the person-level identity (one vote per address,
+ * whatever the browser); the anonymous voter key remains as a fallback for
+ * surfaces that have not collected an email.
+ */
+export type VoterIdentity = { email?: string; userId?: string; voter?: string };
+
+/** One document per (request, person). The key encodes the identity, so uniqueness holds by construction. */
+function voteKey(requestId: string, identity: VoterIdentity): string {
+  if (identity.email) {
+    const hash = createHash("sha256").update(identity.email.trim().toLowerCase()).digest("hex").slice(0, 20);
+    return `${requestId}--e${hash}`;
+  }
+  return `${requestId}--${identity.voter}`;
 }
 
-export async function votedRequestIds(projectId: string, voter: string): Promise<Set<string>> {
-  if (!isVoterKey(voter)) return new Set();
+function validIdentity(identity: VoterIdentity): boolean {
+  return isEmail(identity.email) || isVoterKey(identity.voter);
+}
+
+export async function votedRequestIds(projectId: string, identity: VoterIdentity): Promise<Set<string>> {
+  if (!validIdentity(identity)) return new Set();
   await ensureCollections();
+  const pid = ident(projectId, "project id");
+  const who: DocFilter = isEmail(identity.email)
+    ? { op: "eq", field: "emailLower", value: identity.email.trim().toLowerCase() }
+    : { op: "eq", field: "voter", value: identity.voter };
   const docs = await docQuery(
     VOTES,
-    { op: "and", conditions: [{ op: "eq", field: "projectId", value: ident(projectId, "project id") }, { op: "eq", field: "voter", value: voter }] },
+    { op: "and", conditions: [{ op: "eq", field: "projectId", value: pid }, who] },
     LIMITS.requestsPerProject * 2,
   );
   return new Set(docs.map((d) => str(d.body.requestId)));
 }
 
-/** Adds or removes this voter's vote; returns the new count and state. */
-export async function toggleVote(requestId: string, voter: string): Promise<{ votes: number; voted: boolean } | null> {
-  if (!isVoterKey(voter)) throw new AnvilError("Invalid voter key", 400);
+/** Adds or removes this person's vote; returns the new count and state. */
+export async function toggleVote(requestId: string, identity: VoterIdentity): Promise<{ votes: number; voted: boolean } | null> {
+  if (!validIdentity(identity)) throw new AnvilError("Invalid voter identity", 400);
   const req = await getRequest(requestId);
   if (!req || req.status === "declined") return null;
-  const key = voteKey(req.id, voter);
+  const key = voteKey(req.id, identity);
   const existing = await docGet(VOTES, key);
   if (existing) {
     await docDelete(VOTES, key);
   } else {
-    await docPut(VOTES, key, { id: key, requestId: req.id, projectId: req.projectId, voter, createdAt: Date.now() });
+    const email = isEmail(identity.email) ? identity.email.trim() : "";
+    await docPut(VOTES, key, {
+      id: key,
+      requestId: req.id,
+      projectId: req.projectId,
+      email,
+      emailLower: email.toLowerCase(),
+      userId: identity.userId ?? "",
+      voter: identity.voter ?? "",
+      createdAt: Date.now(),
+    });
   }
   // Recount from the vote documents rather than trusting the cached counter.
   const count = (await docQuery(VOTES, { op: "eq", field: "requestId", value: req.id }, 100_000)).length;

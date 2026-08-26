@@ -135,8 +135,15 @@ resolves for app-written data.
 
 API responses are CORS-enabled. Reads are public; writes honour the project's origin
 allow-list (exact origin match), and are rate limited per IP and per project in
-memory (one instance). The widget identifies voters with a random key kept in
-`localStorage`; the hosted board uses an HttpOnly cookie.
+memory (one instance). Submitting an idea and voting through the widget both
+require an email address (since 2026-08-26): the address is registered in Anvil
+(verification email included when the mailer is configured), requests carry the
+submitter's email and Anvil user id, votes are keyed per person (a hash of the
+email, so one vote per address across browsers) and carry the same identity. The
+widget remembers the address in `localStorage` after first entry and asks inline
+when someone votes before giving it. The hosted board still falls back to its
+anonymous HttpOnly cookie voter; align it the same way if anonymous votes there
+become a problem.
 
 ## Embed
 

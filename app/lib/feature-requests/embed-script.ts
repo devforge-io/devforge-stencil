@@ -3,7 +3,7 @@
 // dependencies; everything renders inside a Shadow DOM root so host-page CSS cannot leak
 // in or out. Do not use backticks or "${" inside the script: it is a String.raw template.
 
-export const EMBED_SCRIPT_VERSION = "2";
+export const EMBED_SCRIPT_VERSION = "3";
 
 export const EMBED_SCRIPT: string = String.raw`(function () {
   "use strict";
@@ -63,6 +63,14 @@ export const EMBED_SCRIPT: string = String.raw`(function () {
     else for (var i = 0; i < bytes.length; i++) bytes[i] = Math.random() * 256;
     return Array.prototype.map.call(bytes, function (b) { return (b % 36).toString(36); }).join("");
   }
+  var EMAIL_KEY = "devforge-fr-email";
+  function storedEmail() {
+    try { return (localStorage.getItem(EMAIL_KEY) || "").trim(); } catch (e) { return ""; }
+  }
+  function rememberEmail(v) {
+    try { localStorage.setItem(EMAIL_KEY, v); } catch (e) { /* private mode */ }
+  }
+
   function voterKey() {
     var key = "";
     try { key = window.localStorage.getItem(STORAGE_KEY) || ""; } catch (e) {}
@@ -164,6 +172,7 @@ export const EMBED_SCRIPT: string = String.raw`(function () {
     ".fr-primary[disabled]{opacity:.6;cursor:default}",
     ".fr-ghost{margin-top:10px;padding:7px 12px;border-radius:8px;border:1px solid var(--border);color:var(--fg);font-weight:500}",
     ".fr-msg{margin-top:10px;font-size:13px;color:var(--muted)}.fr-msg.err{color:#f87171}.fr-msg.ok{color:#3fb950}",
+    ".fr-email-ask{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:10px 0;font-size:13px;color:var(--muted)}.fr-email-ask .fr-input{flex:1;min-width:140px}",
     ".fr-state{padding:24px 0;text-align:center;color:var(--muted);font-size:13px}",
     ".fr-hp{position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden;opacity:0}",
     ".fr-section{margin-bottom:24px}",
@@ -180,7 +189,37 @@ export const EMBED_SCRIPT: string = String.raw`(function () {
     var notice = el("p", { className: "fr-msg err", role: "alert" });
     notice.hidden = true;
     var list = el("ul", { className: "fr-list" });
-    var wrap = el("div", {}, [intro, stateEl, notice, list]);
+    // Votes belong to a person: this one-line form appears the first time
+    // someone votes without a remembered email, then stays out of the way.
+    var emailAskInput = el("input", { className: "fr-input", type: "email", placeholder: "you@example.com", autocomplete: "email" });
+    var emailAskSave = el("button", { className: "fr-primary", type: "submit", text: "Save" });
+    var emailAsk = el("form", { className: "fr-email-ask", novalidate: "" }, [
+      el("span", { text: "Enter your email to vote" }),
+      emailAskInput,
+      emailAskSave
+    ]);
+    emailAsk.hidden = true;
+    var emailAskPending = null;
+    emailAsk.addEventListener("submit", function (e) {
+      e.preventDefault();
+      var value = emailAskInput.value.trim();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
+        flash("Enter your email address to vote.");
+        emailAskInput.focus();
+        return;
+      }
+      rememberEmail(value);
+      emailAsk.hidden = true;
+      var run = emailAskPending;
+      emailAskPending = null;
+      if (run) run();
+    });
+    function askEmailInline(pending) {
+      emailAskPending = pending;
+      emailAsk.hidden = false;
+      emailAskInput.focus();
+    }
+    var wrap = el("div", {}, [intro, stateEl, notice, emailAsk, list]);
     var noticeTimer;
 
     function flash(text) {
@@ -204,12 +243,16 @@ export const EMBED_SCRIPT: string = String.raw`(function () {
 
     function toggleVote(r, btn) {
       if (r.pending) return;
+      if (!storedEmail()) {
+        askEmailInline(function () { toggleVote(r, btn); });
+        return;
+      }
       r.pending = true;
       var wasVoted = !!r.voted, wasVotes = Number(r.votes) || 0;
       r.voted = !wasVoted;
       r.votes = wasVotes + (r.voted ? 1 : -1);
       paintVote(btn, r);
-      api("POST", "/api/requests/" + encodeURIComponent(r.id) + "/vote", { voter: voterKey() })
+      api("POST", "/api/requests/" + encodeURIComponent(r.id) + "/vote", { voter: voterKey(), email: storedEmail() })
         .then(function (d) {
           if (typeof d.votes === "number") r.votes = d.votes;
           if (typeof d.voted === "boolean") r.voted = d.voted;
@@ -262,7 +305,7 @@ export const EMBED_SCRIPT: string = String.raw`(function () {
       showState("Loading requests...");
       list.textContent = "";
       notice.hidden = true;
-      api("GET", "/api/projects/" + encodeURIComponent(projectId) + "/board?voter=" + encodeURIComponent(voterKey()))
+      api("GET", "/api/projects/" + encodeURIComponent(projectId) + "/board?voter=" + encodeURIComponent(voterKey()) + (storedEmail() ? "&email=" + encodeURIComponent(storedEmail()) : ""))
         .then(function (data) {
           state.project = data.project || {};
           state.requests = Array.isArray(data.requests) ? data.requests : [];
@@ -333,6 +376,7 @@ export const EMBED_SCRIPT: string = String.raw`(function () {
         voter: voterKey(),
         website: hp.value
       }).then(function (data) {
+        rememberEmail(email);
         form.reset();
         if (data.verificationSent) {
           setMsg(msg, "Thanks, your request has been added. We emailed " + email + " a verification code.", "ok");

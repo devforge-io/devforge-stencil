@@ -5,7 +5,7 @@ import { EMBED_SCRIPT, EMBED_SCRIPT_VERSION } from "./embed-script";
 test("embed script is valid JavaScript", () => {
   assert.doesNotThrow(() => new Function(EMBED_SCRIPT));
   assert.ok(EMBED_SCRIPT.trim().startsWith("(function ()"), "wrapped in an IIFE");
-  assert.equal(EMBED_SCRIPT_VERSION, "2");
+  assert.equal(EMBED_SCRIPT_VERSION, "3");
 });
 
 test("embed script contains no em dashes", () => {
@@ -28,5 +28,5 @@ test("embed script keeps the contract details", () => {
 });
 
 test("embed script stays small", () => {
-  assert.ok(EMBED_SCRIPT.length < 24000, "script is " + EMBED_SCRIPT.length + " chars");
+  assert.ok(EMBED_SCRIPT.length < 28000, "script is " + EMBED_SCRIPT.length + " chars");
 });
