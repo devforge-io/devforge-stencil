@@ -23,6 +23,13 @@ Never commit the key; it belongs in `.env` locally and in the deployment's envir
   roles are enough for the data itself).
 - **Admin role** for password sign-up: `/auth/register` is admin-only in Anvil. With a
   non-admin key the sign-up page explains that and points people to the emailed code.
+- **Usernames are Anvil's business** (since 2026-08-26): the app registers with
+  `{email, password}` only and Anvil assigns the username (email local part, hex
+  suffix only on collision, in a single call). A caller-provided username that is
+  taken is a hard 409; clients must not probe for free names. Duplicate emails are
+  rejected. Password login accepts the email; Anvil resolves it to the stored
+  username. Requires an Anvil build with this contract: deploy Anvil before
+  deploying the app change, or sign-up fails with a missing-username 422.
 - For the emailed-code path: Anvil must have email configured (`/auth/otp/request`
   returns 503 otherwise) and `allow_otp_registration = true` so a code can create an
   account that does not exist yet. Existing accounts can always use the code.
@@ -94,15 +101,23 @@ CREATE OR REPLACE TRIGGER fr_request_link_update
   FOR EACH ROW AS { MERGE RELATIONSHIP (:FRRequest {id: NEW.id})-[:FOR_PROJECT]->(:FRProject {id: NEW.projectId}) }
 ```
 
+Votes are synced the same way (applied 2026-08-26); no update trigger is needed
+because vote documents are only ever created and deleted:
+
+```cypher
+SYNC LABEL FRVote TO COLLECTION fr_votes KEY id
+
+CREATE OR REPLACE TRIGGER fr_vote_link_insert
+  AFTER INSERT ON COLLECTION fr_votes
+  FOR EACH ROW AS { MERGE RELATIONSHIP (:FRVote {id: NEW.id})-[:FOR_REQUEST]->(:FRRequest {id: NEW.requestId}) }
+```
+
 Rule creation backfills existing rows in both directions; `SHOW SYNC RULES` and
 `SHOW TRIGGERS` list what is active, `DROP SYNC RULE <id>` / `DROP TRIGGER <name>`
-remove them. Deleting a document detach-deletes its node, so the edge goes with
-it. Verified end to end: a request created through the app produces the
-document, the synced :FRRequest node, and the FOR_PROJECT edge; a status change
-syncs to the node; deleting the project removes nodes and edges. If votes
-should appear in the graph too, the same pattern applies to `fr_votes`
-(`SYNC LABEL FRVote TO COLLECTION fr_votes KEY id` plus a trigger to
-`:FRRequest` via `NEW.requestId`).
+remove them. Deleting a document detach-deletes its node, so edges go with it,
+which is also what removes a :FRVote when someone un-votes. Verified end to end:
+the full chain (:FRVote)-[:FOR_REQUEST]->(:FRRequest)-[:FOR_PROJECT]->(:FRProject)
+resolves for app-written data.
 
 ## HTTP surface
 
