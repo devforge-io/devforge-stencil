@@ -8,7 +8,7 @@ import { getSiteChrome } from "~/lib/site-chrome.server";
 import { ensureCsrfToken, validateCsrf } from "~/lib/csrf.server";
 import { CsrfInput, CsrfProvider } from "~/components/csrf-input";
 import { AnvilError, anvilLogin, anvilOtpRequest, anvilOtpVerify, identityFromToken } from "~/lib/feature-requests/anvil.server";
-import { createFrSession, getFrUser, safeNext } from "~/lib/feature-requests/session.server";
+import { frSignInHeaders, getFrUser, safeNext } from "~/lib/feature-requests/session.server";
 import { clientIp, rateLimited } from "~/lib/feature-requests/http.server";
 import { Card, Field, Notice, Shell, TOOL_PATH, ghostBtn, inputClass, primaryBtn, primaryBtnStyle } from "~/components/tools/feature-requests/shell";
 
@@ -25,7 +25,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   return setCookie ? Response.json(data, { headers: { "Set-Cookie": setCookie } }) : data;
 }
 
-type ActionData = { error?: string; stage?: "code"; email?: string; notice?: string };
+type ActionData = { error?: string; stage?: "code"; email?: string; notice?: string; source?: "password" | "otp" };
 
 export async function action({ request }: ActionFunctionArgs) {
   const form = await request.formData();
@@ -33,41 +33,42 @@ export async function action({ request }: ActionFunctionArgs) {
   const intent = String(form.get("intent") ?? "password");
   const email = String(form.get("email") ?? "").trim().toLowerCase();
   const next = safeNext(String(form.get("next") ?? ""));
+  const source: "password" | "otp" = intent.startsWith("otp") ? "otp" : "password";
   const ip = clientIp(request);
   if (rateLimited(`fr:signin:${ip}`, 12, 10 * 60_000)) {
-    return Response.json({ error: "Too many attempts. Try again in a few minutes." } satisfies ActionData, { status: 429 });
+    return Response.json({ error: "Too many attempts. Try again in a few minutes.", source } satisfies ActionData, { status: 429 });
   }
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    return Response.json({ error: "Enter the email address you signed up with." } satisfies ActionData, { status: 400 });
+    return Response.json({ error: "Enter the email address you signed up with.", source } satisfies ActionData, { status: 400 });
   }
 
   try {
     if (intent === "otp-request") {
       await anvilOtpRequest(email);
-      return { stage: "code", email, notice: "If that address has an account, a sign-in code is on its way. Enter it below." } satisfies ActionData;
+      return { stage: "code", email, source, notice: "If that address has an account, a sign-in code is on its way. Enter it below." } satisfies ActionData;
     }
     if (intent === "otp-verify") {
       const code = String(form.get("code") ?? "").trim();
-      if (!code) return Response.json({ error: "Enter the code from the email.", stage: "code", email } satisfies ActionData, { status: 400 });
+      if (!code) return Response.json({ error: "Enter the code from the email.", stage: "code", email, source } satisfies ActionData, { status: 400 });
       const tokens = await anvilOtpVerify(email, code);
       const identity = identityFromToken(tokens.accessToken);
       if (!identity) throw new AnvilError("Anvil returned an unreadable token", 502);
-      return redirect(next, { headers: { "Set-Cookie": await createFrSession(identity, tokens) } });
+      return redirect(next, { headers: await frSignInHeaders(identity, tokens) });
     }
     const password = String(form.get("password") ?? "");
     if (!password) return Response.json({ error: "Enter your password." } satisfies ActionData, { status: 400 });
     const tokens = await anvilLogin(email, password);
     const identity = identityFromToken(tokens.accessToken);
     if (!identity) throw new AnvilError("Anvil returned an unreadable token", 502);
-    return redirect(next, { headers: { "Set-Cookie": await createFrSession(identity, tokens) } });
+    return redirect(next, { headers: await frSignInHeaders(identity, tokens) });
   } catch (err) {
     const e = err as AnvilError;
     const status = typeof e.status === "number" ? e.status : 500;
     let message = "Sign-in failed. Please try again.";
     if (status === 401 || status === 403) message = intent === "otp-verify" ? "That code is not valid or has expired." : "Email or password is wrong.";
-    else if (status === 503) message = intent.startsWith("otp") ? "Email codes are not available right now. Use your password instead." : "The database is not reachable right now. Please try again shortly.";
+    else if (status === 503) message = intent.startsWith("otp") ? "Email sending is not configured on the Anvil server, so codes cannot go out. Use your password instead." : "The database is not reachable right now. Please try again shortly.";
     else if (status === 429) message = "Too many attempts. Try again in a few minutes.";
-    const body: ActionData = { error: message, email };
+    const body: ActionData = { error: message, email, source };
     if (intent === "otp-verify") body.stage = "code";
     return Response.json(body, { status: status >= 400 && status < 600 ? status : 500 });
   }
@@ -106,7 +107,7 @@ export default function SignIn() {
               <Field label="Password" htmlFor="password">
                 <input id="password" name="password" type="password" autoComplete="current-password" required className={inputClass} />
               </Field>
-              {data.error && !codeStage ? <Notice>{data.error}</Notice> : null}
+              {data.error && data.source !== "otp" ? <Notice>{data.error}</Notice> : null}
               <button type="submit" disabled={busy} className={primaryBtn} style={primaryBtnStyle}>
                 Sign in
               </button>
@@ -143,6 +144,7 @@ export default function SignIn() {
                 <Field label="Email" htmlFor="otp-email" hint="We email you a one-time code. No password needed.">
                   <input id="otp-email" name="email" type="email" autoComplete="email" required defaultValue={email} className={inputClass} />
                 </Field>
+                {data.error && data.source === "otp" ? <Notice>{data.error}</Notice> : null}
                 <button type="submit" disabled={busy} className={ghostBtn}>
                   Email me a code
                 </button>
