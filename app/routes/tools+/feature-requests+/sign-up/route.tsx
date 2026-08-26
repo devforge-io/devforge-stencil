@@ -8,7 +8,7 @@ import { getSiteChrome } from "~/lib/site-chrome.server";
 import { ensureCsrfToken, validateCsrf } from "~/lib/csrf.server";
 import { CsrfInput, CsrfProvider } from "~/components/csrf-input";
 import { AnvilError, anvilLogin, anvilRegister, identityFromToken } from "~/lib/feature-requests/anvil.server";
-import { createFrSession, getFrUser, PROJECTS_PATH, safeNext } from "~/lib/feature-requests/session.server";
+import { frSignInHeaders, getFrUser, PROJECTS_PATH, safeNext } from "~/lib/feature-requests/session.server";
 import { clientIp, rateLimited } from "~/lib/feature-requests/http.server";
 import { Card, Field, Notice, Shell, TOOL_PATH, inputClass, primaryBtn, primaryBtnStyle } from "~/components/tools/feature-requests/shell";
 
@@ -66,7 +66,7 @@ export async function action({ request }: ActionFunctionArgs) {
     const tokens = await anvilLogin(email, password);
     const identity = identityFromToken(tokens.accessToken);
     if (!identity) throw new AnvilError("Anvil returned an unreadable token", 502);
-    return redirect(next, { headers: { "Set-Cookie": await createFrSession(identity, tokens) } });
+    return redirect(next, { headers: await frSignInHeaders(identity, tokens) });
   } catch {
     return redirect(`${TOOL_PATH}/sign-in?email=${encodeURIComponent(email)}&next=${encodeURIComponent(next)}`);
   }
