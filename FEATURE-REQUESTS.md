@@ -185,9 +185,10 @@ when someone votes before giving it. The hosted board still falls back to its
 anonymous HttpOnly cookie voter; align it the same way if anonymous votes there
 become a problem.
 
-Since 2026-08-27 (widget v4) each request in the widget's list opens an
-in-widget detail view: full title, date, details, vote button, a link to the
-hosted `/p/:id/r/:rid` page, and, when the visitor's remembered email matches
+Since 2026-08-27 (widget v5) each request in the widget's list opens an
+in-widget detail view, entirely inside the embed (Ben's call: no links out to
+devforge.io): full title, date, details, vote button, a back link to the list,
+and, when the visitor's remembered email matches
 the submitter's, an edit box for rewriting the details (`LIMITS.details` grew
 to 5000 for that). The edit claim is the same trust level as voting: a claimed
 email, checked server-side against the request's stored submitter email.

@@ -3,7 +3,7 @@
 // dependencies; everything renders inside a Shadow DOM root so host-page CSS cannot leak
 // in or out. Do not use backticks or "${" inside the script: it is a String.raw template.
 
-export const EMBED_SCRIPT_VERSION = "4";
+export const EMBED_SCRIPT_VERSION = "5";
 
 export const EMBED_SCRIPT: string = String.raw`(function () {
   "use strict";
@@ -182,7 +182,6 @@ export const EMBED_SCRIPT: string = String.raw`(function () {
     ".fr-detail-title{font-size:17px;font-weight:600;overflow-wrap:anywhere}",
     ".fr-detail-meta{color:var(--muted);font-size:12px;margin:2px 0 10px}",
     ".fr-detail-body{display:flex;gap:12px}",
-    ".fr-open{display:inline-block;margin-top:10px;color:var(--accent);font-size:12px;font-weight:500;text-decoration:none}.fr-open:hover{text-decoration:underline}",
     ".fr-edit-actions{display:flex;gap:8px;margin-top:8px}",
     ".fr-editor textarea.fr-input{min-height:140px;margin-top:10px}"
   ].join("\n");
@@ -277,10 +276,6 @@ export const EMBED_SCRIPT: string = String.raw`(function () {
     }
 
     // ---- Detail view: one request, full page style, inside the widget ----
-    function detailUrl(r) {
-      return base + "/p/" + encodeURIComponent(projectId) + "/r/" + encodeURIComponent(r.id);
-    }
-
     function showList() {
       detailWrap.hidden = true;
       detailWrap.textContent = "";
@@ -324,7 +319,6 @@ export const EMBED_SCRIPT: string = String.raw`(function () {
       var main = el("div", { className: "fr-main" }, [title]);
       if (r.createdAt) main.appendChild(el("p", { className: "fr-detail-meta", text: new Date(r.createdAt).toLocaleDateString() }));
       if (r.details) main.appendChild(el("p", { className: "fr-details", text: r.details }));
-      main.appendChild(el("a", { className: "fr-open", href: detailUrl(r), target: "_blank", rel: "noopener", text: "Open full page" }));
       if (canEdit) {
         var editBtn = el("button", { className: "fr-ghost", type: "button", text: "Edit details" });
         var editor = el("div", { className: "fr-editor" });
