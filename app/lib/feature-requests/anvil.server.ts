@@ -158,6 +158,15 @@ async function serviceFetch<T>(path: string, init: { method?: string; body?: unk
   }
 }
 
+/** Reserve a fresh server-minted UUID (POST /db/uuid, locked for 5 minutes). */
+export async function reserveUuid(): Promise<string> {
+  const res = await serviceFetch<{ uuid?: unknown }>("/db/uuid", { method: "POST" });
+  if (typeof res.uuid !== "string" || res.uuid.length === 0) {
+    throw new AnvilError("Anvil did not return a uuid", 502);
+  }
+  return res.uuid;
+}
+
 const COLLECTION_NAME = /^[a-z][a-z0-9_.]{0,63}$/;
 
 function collectionPath(collection: string, key?: string): string {

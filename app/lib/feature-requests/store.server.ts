@@ -5,7 +5,14 @@
  *                                    boardEnabled, accent, buttonLabel, createdAt, updatedAt}
  *   fr_requests  key = request id   {id, projectId, title, details, email, status, votes,
  *                                    origin, ipHash, createdAt, updatedAt}
- *   fr_votes     key = requestId--voter  {id, requestId, projectId, voter, createdAt}
+ *   fr_votes     key = vote id       {id, requestId, projectId, email, emailLower,
+ *                                    userId, voter, createdAt}
+ *
+ * Ids are server-minted UUIDs reserved through Anvil's POST /db/uuid. One vote
+ * per person per request is enforced by looking the vote up by identity
+ * (emailLower, or the legacy browser key) before writing; votes created before
+ * the UUID switch keep their old requestId--voter composite keys and are found
+ * by the same query.
  *
  * Documents round-trip JSON faithfully (real arrays, no Cypher escaping), and
  * the graph representation is produced by Anvil's document-graph sync, not by
@@ -22,7 +29,7 @@ import {
   docPut,
   docQuery,
   ident,
-  newId,
+  reserveUuid,
   type AnvilDocument,
 } from "./anvil.server";
 import { DEFAULT_ACCENT, DEFAULT_BUTTON_LABEL, LIMITS, STATUSES, STATUS_LABEL, isStatus, type RequestStatus } from "./shared";
@@ -253,7 +260,7 @@ export async function createProject(
   if (existing.length >= LIMITS.projectsPerUser) throw new AnvilError(`You can have up to ${LIMITS.projectsPerUser} projects`, 400);
   const now = Date.now();
   const project: Project = {
-    id: newId(12),
+    id: await reserveUuid(),
     ownerId: owner.id,
     ownerEmail: owner.email,
     name: input.name.trim().slice(0, LIMITS.projectName),
@@ -350,7 +357,7 @@ export async function createRequest(projectId: string, input: NewRequestInput): 
   if ((await countRequests(pid)) >= LIMITS.requestsPerProject) throw new AnvilError("This project has reached its request limit.", 400);
   const now = Date.now();
   const req: FeatureRequest = {
-    id: newId(16),
+    id: await reserveUuid(),
     projectId: pid,
     title: v.value.title,
     details: v.value.details,
@@ -414,13 +421,11 @@ export const isEmail = (v: unknown): v is string => typeof v === "string" && /^[
  */
 export type VoterIdentity = { email?: string; userId?: string; voter?: string };
 
-/** One document per (request, person). The key encodes the identity, so uniqueness holds by construction. */
-function voteKey(requestId: string, identity: VoterIdentity): string {
-  if (identity.email) {
-    const hash = createHash("sha256").update(identity.email.trim().toLowerCase()).digest("hex").slice(0, 20);
-    return `${requestId}--e${hash}`;
-  }
-  return `${requestId}--${identity.voter}`;
+/** The condition that finds a person's votes: by email when known, else by browser key. */
+function identityFilter(identity: VoterIdentity): DocFilter {
+  return isEmail(identity.email)
+    ? { op: "eq", field: "emailLower", value: (identity.email as string).trim().toLowerCase() }
+    : { op: "eq", field: "voter", value: identity.voter };
 }
 
 function validIdentity(identity: VoterIdentity): boolean {
@@ -431,12 +436,9 @@ export async function votedRequestIds(projectId: string, identity: VoterIdentity
   if (!validIdentity(identity)) return new Set();
   await ensureCollections();
   const pid = ident(projectId, "project id");
-  const who: DocFilter = isEmail(identity.email)
-    ? { op: "eq", field: "emailLower", value: identity.email.trim().toLowerCase() }
-    : { op: "eq", field: "voter", value: identity.voter };
   const docs = await docQuery(
     VOTES,
-    { op: "and", conditions: [{ op: "eq", field: "projectId", value: pid }, who] },
+    { op: "and", conditions: [{ op: "eq", field: "projectId", value: pid }, identityFilter(identity)] },
     LIMITS.requestsPerProject * 2,
   );
   return new Set(docs.map((d) => str(d.body.requestId)));
@@ -447,14 +449,20 @@ export async function toggleVote(requestId: string, identity: VoterIdentity): Pr
   if (!validIdentity(identity)) throw new AnvilError("Invalid voter identity", 400);
   const req = await getRequest(requestId);
   if (!req || req.status === "declined") return null;
-  const key = voteKey(req.id, identity);
-  const existing = await docGet(VOTES, key);
-  if (existing) {
-    await docDelete(VOTES, key);
+  // One vote per person per request, looked up by identity (also finds
+  // pre-uuid votes, whose keys were requestId--voter composites).
+  const mine = await docQuery(
+    VOTES,
+    { op: "and", conditions: [{ op: "eq", field: "requestId", value: req.id }, identityFilter(identity)] },
+    10,
+  );
+  if (mine.length > 0) {
+    for (const d of mine) await docDelete(VOTES, d.key);
   } else {
     const email = isEmail(identity.email) ? identity.email.trim() : "";
-    await docPut(VOTES, key, {
-      id: key,
+    const id = await reserveUuid();
+    await docPut(VOTES, id, {
+      id,
       requestId: req.id,
       projectId: req.projectId,
       email,
@@ -462,12 +470,12 @@ export async function toggleVote(requestId: string, identity: VoterIdentity): Pr
       userId: identity.userId ?? "",
       voter: identity.voter ?? "",
       createdAt: Date.now(),
-    });
+    }, { ifNotExists: true });
   }
   // Recount from the vote documents rather than trusting the cached counter.
   const count = (await docQuery(VOTES, { op: "eq", field: "requestId", value: req.id }, 100_000)).length;
   await putRequest({ ...req, votes: count, updatedAt: Date.now() });
-  return { votes: count, voted: !existing };
+  return { votes: count, voted: mine.length === 0 };
 }
 
 /* ---------------------------------------------------------------------- */

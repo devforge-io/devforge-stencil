@@ -57,16 +57,27 @@ fr_projects  key = project id        {id, ownerId, ownerEmail, name, intro, orig
                                       boardEnabled, accent, buttonLabel, createdAt, updatedAt}
 fr_requests  key = request id        {id, projectId, title, details, email, status, votes,
                                       origin, ipHash, createdAt, updatedAt}
-fr_votes     key = requestId--voter  {id, requestId, projectId, voter, createdAt}
+fr_votes     key = vote id           {id, requestId, projectId, email, emailLower,
+                                      userId, voter, createdAt}
 ```
+
+Ids are server-minted UUIDs reserved through Anvil's `POST /db/uuid` (added
+2026-08-27; requires editor or admin, which the service principal has). The
+endpoint locks each UUID for 5 minutes via a TTL'd reservation document, so a
+reserved id can never be handed out twice; `reserveUuid()` in `anvil.server.ts`
+wraps it. Votes created before the switch keep their `requestId--voter`
+composite keys; nothing migrates them.
 
 `ownerId` is the Anvil user id (`sub` of the JWT) captured at creation time; it
 stops matching when accounts move to a fresh Anvil server, so `ownerEmail` is
 the durable ownership claim and access checks accept either. Statuses: `new`, `planned`,
 `in_progress`, `done`, `declined` (declined never appears publicly). Queries use
 the document query endpoint with `eq`/`and` filters on body fields; sorting and
-capping happen in `store.server.ts`. The vote key makes one vote per
-(request, voter) true by construction. The graph representation comes from
+capping happen in `store.server.ts`. One vote per (request, person) is enforced
+by querying for the person's existing vote (by `emailLower`, or the legacy
+browser key) before writing, which finds old composite-key votes too. Two
+simultaneous first votes could in principle both pass the check; the recount
+that follows keeps the total honest, and the pair collapses on the next toggle. The graph representation comes from
 Anvil's document-graph sync, configured on the server, not from this code.
 The collections are created automatically on first use.
 
@@ -110,6 +121,32 @@ SYNC LABEL FRVote TO COLLECTION fr_votes KEY id
 CREATE OR REPLACE TRIGGER fr_vote_link_insert
   AFTER INSERT ON COLLECTION fr_votes
   FOR EACH ROW AS { MERGE RELATIONSHIP (:FRVote {id: NEW.id})-[:FOR_REQUEST]->(:FRRequest {id: NEW.requestId}) }
+```
+
+Requests and votes also link back to the person (applied 2026-08-26). The vote
+and request documents carry the Anvil user id (`submitterId` / `userId`, written
+by the app at submission time), and these triggers draw the edge to the `:User`
+node that Anvil mirrors into the graph at registration. MERGE RELATIONSHIP only
+connects nodes that already exist, so a row whose id is empty (saved before the
+person's registration succeeded) is a logged no-op, never a stub `:User`; the
+update triggers heal such rows on their next write:
+
+```cypher
+CREATE OR REPLACE TRIGGER fr_request_user_link_insert
+  AFTER INSERT ON COLLECTION fr_requests
+  FOR EACH ROW AS { MERGE RELATIONSHIP (:FRRequest {id: NEW.id})-[:SUBMITTED_BY]->(:User {id: NEW.submitterId}) }
+
+CREATE OR REPLACE TRIGGER fr_request_user_link_update
+  AFTER UPDATE ON COLLECTION fr_requests
+  FOR EACH ROW AS { MERGE RELATIONSHIP (:FRRequest {id: NEW.id})-[:SUBMITTED_BY]->(:User {id: NEW.submitterId}) }
+
+CREATE OR REPLACE TRIGGER fr_vote_user_link_insert
+  AFTER INSERT ON COLLECTION fr_votes
+  FOR EACH ROW AS { MERGE RELATIONSHIP (:FRVote {id: NEW.id})-[:CAST_BY]->(:User {id: NEW.userId}) }
+
+CREATE OR REPLACE TRIGGER fr_vote_user_link_update
+  AFTER UPDATE ON COLLECTION fr_votes
+  FOR EACH ROW AS { MERGE RELATIONSHIP (:FRVote {id: NEW.id})-[:CAST_BY]->(:User {id: NEW.userId}) }
 ```
 
 Rule creation backfills existing rows in both directions; `SHOW SYNC RULES` and
