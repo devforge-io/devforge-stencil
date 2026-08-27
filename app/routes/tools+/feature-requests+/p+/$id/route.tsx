@@ -176,7 +176,11 @@ export default function PublicBoard() {
                     </Form>
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
-                        <h3 className="text-base font-semibold text-white">{r.title}</h3>
+                        <h3 className="text-base font-semibold text-white">
+                          <a href={`/tools/feature-requests/p/${project.id}/r/${r.id}`} className="transition-colors hover:text-[#f5a524]">
+                            {r.title}
+                          </a>
+                        </h3>
                         {r.status !== "new" ? <StatusChip status={r.status} /> : null}
                       </div>
                       {r.details ? <p className="mt-1.5 whitespace-pre-wrap text-sm leading-relaxed text-white/60">{r.details}</p> : null}

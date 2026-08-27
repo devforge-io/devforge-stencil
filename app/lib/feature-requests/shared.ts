@@ -23,7 +23,7 @@ export const LIMITS = {
   intro: 280,
   origins: 20,
   title: 120,
-  details: 2000,
+  details: 5000,
   email: 200,
   buttonLabel: 40,
   projectsPerUser: 25,

@@ -164,11 +164,14 @@ resolves for app-written data.
 | `/sign-in`, `/sign-up`, `/sign-out` | Password (Anvil `/auth/login`, `/auth/register`) and emailed code (`/auth/otp/*`). |
 | `/projects`, `/projects/:id` | Project list + create; dashboard with triage, embed snippets, settings, delete. |
 | `/p/:id` | Hosted public board; works without JavaScript. |
+| `/p/:id/r/:rid` | One request on its own page: full details, vote, and a creator edit form (email must match the submitter's). Works without JavaScript. |
 | `/embed.js` | The widget (see `app/lib/feature-requests/embed-script.ts`). |
 | `/project`, `/project/:id` | Owner self-serve area: emailed-code sign-in only, then every project whose `ownerEmail` matches the address (or whose `ownerId` matches the account). Same dashboard as the tools area (shared component). |
 | `GET /api/projects/:id/board?voter=` | Public JSON: project info + visible requests. |
 | `POST /api/projects/:id/requests` | Submit `{title, details, email, voter, website}`; `website` is a honeypot. |
 | `POST /api/requests/:rid/vote` | Toggle `{voter}`'s vote. |
+| `GET /api/requests/:rid?voter=&email=` | One request in full, plus `voted` and `canEdit` (email matches the submitter's). |
+| `POST /api/requests/:rid` | Creator edit: `{email, details, voter}`. 403 unless the email matches the request's submitter email. |
 
 API responses are CORS-enabled. Reads are public; writes honour the project's origin
 allow-list (exact origin match), and are rate limited per IP and per project in
@@ -181,6 +184,13 @@ widget remembers the address in `localStorage` after first entry and asks inline
 when someone votes before giving it. The hosted board still falls back to its
 anonymous HttpOnly cookie voter; align it the same way if anonymous votes there
 become a problem.
+
+Since 2026-08-27 (widget v4) each request in the widget's list opens an
+in-widget detail view: full title, date, details, vote button, a link to the
+hosted `/p/:id/r/:rid` page, and, when the visitor's remembered email matches
+the submitter's, an edit box for rewriting the details (`LIMITS.details` grew
+to 5000 for that). The edit claim is the same trust level as voting: a claimed
+email, checked server-side against the request's stored submitter email.
 
 ## Embed
 

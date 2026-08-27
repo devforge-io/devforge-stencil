@@ -3,7 +3,7 @@
 // dependencies; everything renders inside a Shadow DOM root so host-page CSS cannot leak
 // in or out. Do not use backticks or "${" inside the script: it is a String.raw template.
 
-export const EMBED_SCRIPT_VERSION = "3";
+export const EMBED_SCRIPT_VERSION = "4";
 
 export const EMBED_SCRIPT: string = String.raw`(function () {
   "use strict";
@@ -176,10 +176,18 @@ export const EMBED_SCRIPT: string = String.raw`(function () {
     ".fr-state{padding:24px 0;text-align:center;color:var(--muted);font-size:13px}",
     ".fr-hp{position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden;opacity:0}",
     ".fr-section{margin-bottom:24px}",
-    ".fr-h{font-size:16px;font-weight:600;margin-bottom:10px}"
+    ".fr-h{font-size:16px;font-weight:600;margin-bottom:10px}",
+    ".fr-row-btn{display:block;width:100%;text-align:left}.fr-row-btn:hover .fr-row-title{color:var(--accent)}",
+    ".fr-back{display:inline-flex;align-items:center;color:var(--muted);font-size:13px;font-weight:500;margin-bottom:12px}.fr-back:hover{color:var(--fg)}",
+    ".fr-detail-title{font-size:17px;font-weight:600;overflow-wrap:anywhere}",
+    ".fr-detail-meta{color:var(--muted);font-size:12px;margin:2px 0 10px}",
+    ".fr-detail-body{display:flex;gap:12px}",
+    ".fr-open{display:inline-block;margin-top:10px;color:var(--accent);font-size:12px;font-weight:500;text-decoration:none}.fr-open:hover{text-decoration:underline}",
+    ".fr-edit-actions{display:flex;gap:8px;margin-top:8px}",
+    ".fr-editor textarea.fr-input{min-height:140px;margin-top:10px}"
   ].join("\n");
 
-  var state = { project: null, requests: [], loaded: false, expanded: {} };
+  var state = { project: null, requests: [], loaded: false };
 
   // ---- Board: the list of requests ----
   function createBoard(onLoaded) {
@@ -219,7 +227,9 @@ export const EMBED_SCRIPT: string = String.raw`(function () {
       emailAsk.hidden = false;
       emailAskInput.focus();
     }
-    var wrap = el("div", {}, [intro, stateEl, notice, emailAsk, list]);
+    var detailWrap = el("div", { className: "fr-detail" });
+    detailWrap.hidden = true;
+    var wrap = el("div", {}, [intro, stateEl, notice, emailAsk, list, detailWrap]);
     var noticeTimer;
 
     function flash(text) {
@@ -266,6 +276,87 @@ export const EMBED_SCRIPT: string = String.raw`(function () {
         .then(function () { r.pending = false; });
     }
 
+    // ---- Detail view: one request, full page style, inside the widget ----
+    function detailUrl(r) {
+      return base + "/p/" + encodeURIComponent(projectId) + "/r/" + encodeURIComponent(r.id);
+    }
+
+    function showList() {
+      detailWrap.hidden = true;
+      detailWrap.textContent = "";
+      list.hidden = false;
+      if (state.project && state.project.intro) intro.hidden = false;
+      render();
+    }
+
+    function showDetail(r) {
+      list.hidden = true;
+      intro.hidden = true;
+      stateEl.hidden = true;
+      detailWrap.hidden = false;
+      paintDetail(r, null);
+      // Fresh copy plus the edit claim (server-checked email match).
+      api("GET", "/api/requests/" + encodeURIComponent(r.id) + "?voter=" + encodeURIComponent(voterKey()) + (storedEmail() ? "&email=" + encodeURIComponent(storedEmail()) : ""))
+        .then(function (d) {
+          if (d.request) {
+            r.title = d.request.title;
+            r.details = d.request.details;
+            r.status = d.request.status;
+            r.votes = d.request.votes;
+            r.voted = d.request.voted;
+          }
+          if (!detailWrap.hidden) paintDetail(r, d.canEdit === true);
+        }, function () {
+          if (!detailWrap.hidden) paintDetail(r, false);
+        });
+    }
+
+    function paintDetail(r, canEdit) {
+      detailWrap.textContent = "";
+      detailWrap.appendChild(el("button", { className: "fr-back", type: "button", text: "\u2190 All requests", onclick: showList }));
+      var vote = el("button", { className: "fr-vote", type: "button" });
+      vote.innerHTML = UP_ICON;
+      vote.appendChild(el("span"));
+      paintVote(vote, r);
+      vote.addEventListener("click", function () { toggleVote(r, vote); });
+      var title = el("p", { className: "fr-detail-title", text: r.title || "" });
+      if (STATUS[r.status]) title.appendChild(el("span", { className: "fr-chip " + r.status, text: STATUS[r.status] }));
+      var main = el("div", { className: "fr-main" }, [title]);
+      if (r.createdAt) main.appendChild(el("p", { className: "fr-detail-meta", text: new Date(r.createdAt).toLocaleDateString() }));
+      if (r.details) main.appendChild(el("p", { className: "fr-details", text: r.details }));
+      main.appendChild(el("a", { className: "fr-open", href: detailUrl(r), target: "_blank", rel: "noopener", text: "Open full page" }));
+      if (canEdit) {
+        var editBtn = el("button", { className: "fr-ghost", type: "button", text: "Edit details" });
+        var editor = el("div", { className: "fr-editor" });
+        editor.hidden = true;
+        var ta = el("textarea", { className: "fr-input", maxlength: "5000", "aria-label": "Details" });
+        ta.value = r.details || "";
+        var emsg = el("p", { className: "fr-msg", role: "status", "aria-live": "polite" });
+        emsg.hidden = true;
+        var save = el("button", { className: "fr-primary", type: "button", text: "Save" });
+        var cancel = el("button", { className: "fr-ghost", type: "button", text: "Cancel", onclick: function () { editor.hidden = true; editBtn.hidden = false; } });
+        save.addEventListener("click", function () {
+          save.disabled = true;
+          setMsg(emsg, "Saving...", "");
+          api("POST", "/api/requests/" + encodeURIComponent(r.id), { email: storedEmail(), voter: voterKey(), details: ta.value })
+            .then(function (d) {
+              if (d.request) r.details = d.request.details;
+              paintDetail(r, true);
+            }, function (err) {
+              save.disabled = false;
+              setMsg(emsg, err.message, "err");
+            });
+        });
+        editBtn.addEventListener("click", function () { editBtn.hidden = true; editor.hidden = false; ta.focus(); });
+        editor.appendChild(ta);
+        editor.appendChild(el("div", { className: "fr-edit-actions" }, [save, cancel]));
+        editor.appendChild(emsg);
+        main.appendChild(editBtn);
+        main.appendChild(editor);
+      }
+      detailWrap.appendChild(el("div", { className: "fr-detail-body" }, [vote, main]));
+    }
+
     function row(r) {
       var vote = el("button", { className: "fr-vote", type: "button" });
       vote.innerHTML = UP_ICON;
@@ -274,21 +365,16 @@ export const EMBED_SCRIPT: string = String.raw`(function () {
       vote.addEventListener("click", function () { toggleVote(r, vote); });
       var title = el("p", { className: "fr-row-title", text: r.title || "" });
       if (STATUS[r.status]) title.appendChild(el("span", { className: "fr-chip " + r.status, text: STATUS[r.status] }));
-      var main = el("div", { className: "fr-main" }, [title]);
+      var openBtn = el("button", { className: "fr-row-btn", type: "button" }, [title]);
+      openBtn.addEventListener("click", function () { showDetail(r); });
+      var main = el("div", { className: "fr-main" }, [openBtn]);
       if (r.details) {
         var long = r.details.length > 140 || r.details.indexOf("\n") !== -1;
-        var open = !!state.expanded[r.id];
-        var details = el("p", { className: "fr-details" + (long && !open ? " clamped" : ""), text: r.details });
+        var details = el("p", { className: "fr-details" + (long ? " clamped" : ""), text: r.details });
         main.appendChild(details);
         if (long) {
-          var more = el("button", { className: "fr-more", type: "button" });
-          var paintMore = function () {
-            details.className = "fr-details" + (open ? "" : " clamped");
-            more.textContent = open ? "Show less" : "Show more";
-            more.setAttribute("aria-expanded", open ? "true" : "false");
-          };
-          more.addEventListener("click", function () { open = state.expanded[r.id] = !open; paintMore(); });
-          paintMore();
+          var more = el("button", { className: "fr-more", type: "button", text: "Read more" });
+          more.addEventListener("click", function () { showDetail(r); });
           main.appendChild(more);
         }
       }
@@ -329,7 +415,7 @@ export const EMBED_SCRIPT: string = String.raw`(function () {
   // ---- Suggest form ----
   function createForm(onCreated) {
     var titleIn = el("input", { className: "fr-input", type: "text", maxlength: "120", placeholder: "Short summary of the idea", autocomplete: "off" });
-    var detailsIn = el("textarea", { className: "fr-input", maxlength: "2000", placeholder: "What problem would it solve? Any context helps." });
+    var detailsIn = el("textarea", { className: "fr-input", maxlength: "5000", placeholder: "What problem would it solve? Any context helps." });
     var emailIn = el("input", { className: "fr-input", type: "email", placeholder: "you@example.com", autocomplete: "email", required: "" });
     // Honeypot: visually hidden, never prefilled, always sent.
     var hp = el("input", { type: "text", name: "website", tabindex: "-1", autocomplete: "off", "aria-hidden": "true" });

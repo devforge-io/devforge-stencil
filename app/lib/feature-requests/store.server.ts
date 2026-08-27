@@ -382,6 +382,22 @@ async function putRequest(req: FeatureRequest): Promise<void> {
   await docPut(REQUESTS, req.id, { ...(doc?.body ?? {}), ...requestBody(req, str(doc?.body.ipHash)) });
 }
 
+/**
+ * Creator edit: the person who submitted a request (identified by the same
+ * email they gave with it) can rewrite the details to build the idea out.
+ * Requests submitted without an email have no editable claim.
+ */
+export async function updateRequestDetails(requestId: string, email: string, details: string): Promise<FeatureRequest | null> {
+  const req = await getRequest(requestId);
+  if (!req || req.status === "declined") return null;
+  if (!isEmail(email) || !sameEmail(req.email, email)) throw new AnvilError("Only the person who submitted this request can edit it", 403);
+  const trimmed = details.trim();
+  if (trimmed.length > LIMITS.details) throw new AnvilError(`Keep the details under ${LIMITS.details} characters.`, 400);
+  const next = { ...req, details: trimmed, updatedAt: Date.now() };
+  await putRequest(next);
+  return next;
+}
+
 export async function setRequestStatus(projectId: string, requestId: string, status: RequestStatus): Promise<FeatureRequest | null> {
   if (!isStatus(status)) throw new AnvilError("Unknown status", 400);
   const pid = ident(projectId, "project id");
