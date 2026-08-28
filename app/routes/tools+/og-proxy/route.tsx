@@ -60,8 +60,8 @@ export async function loader({ request }: Route.LoaderArgs) {
       redirect: "follow",
       headers: {
         Accept: "image/*",
-        "User-Agent":
-          "Mozilla/5.0 (compatible; DevforgeAudit/1.0; +https://devforge.io/tools/website-audit)",
+        "User-Agent": "Mozilla/5.0 (compatible; DevforgeAudit/1.0)",
+        From: "https://devforge.io/tools/website-audit",
       },
     });
 

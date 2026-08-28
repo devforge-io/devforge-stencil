@@ -90,8 +90,14 @@ const RDAP_MAX_REDIRECTS = 3;
 const MAX_RDAP_BYTES = 256 * 1024;
 const RDAP_ACCEPT = "application/rdap+json";
 
-const USER_AGENT =
-  "Mozilla/5.0 (compatible; DevforgeAudit/1.0; +https://devforge.io/tools/website-audit)";
+/**
+ * No `+https://...` contact URL in the UA on purpose: some WAFs (Signal
+ * Sciences in front of GovCMS, for one) silently drop any request whose
+ * user-agent carries that bot-contact convention, which surfaced as a bare
+ * timeout. The contact link travels in the `From` header instead.
+ */
+const USER_AGENT = "Mozilla/5.0 (compatible; DevforgeAudit/1.0)";
+const FROM_HEADER = "https://devforge.io/tools/website-audit";
 const HTML_ACCEPT = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8";
 const TEXT_ACCEPT = "text/plain,text/*;q=0.9,*/*;q=0.8";
 const ANY_ACCEPT = "*/*";
@@ -489,6 +495,7 @@ function insecureRequest(
       method: options.method,
       headers: {
         "user-agent": USER_AGENT,
+        from: FROM_HEADER,
         accept: options.accept,
         "accept-language": "en-US,en;q=0.9",
         // `node:https` will not decompress for us the way `fetch` does, so ask
@@ -575,6 +582,7 @@ async function safeFetch(target: string, options: SafeFetchOptions): Promise<Saf
             signal: deadline.signal,
             headers: {
               "user-agent": USER_AGENT,
+              from: FROM_HEADER,
               accept: options.accept ?? HTML_ACCEPT,
               "accept-language": "en-US,en;q=0.9"
             }
@@ -2327,6 +2335,7 @@ async function probeTrace(target: URL, insecure: boolean): Promise<boolean> {
     method: "TRACE",
     headers: {
       "user-agent": USER_AGENT,
+      from: FROM_HEADER,
       accept: ANY_ACCEPT,
       [TRACE_ECHO_HEADER]: TRACE_ECHO_TOKEN
     },
