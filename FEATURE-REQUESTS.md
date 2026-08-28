@@ -167,6 +167,22 @@ CREATE OR REPLACE TRIGGER fr_comment_user_link_insert
   FOR EACH ROW AS { MERGE RELATIONSHIP (:FRComment {id: NEW.id})-[:WRITTEN_BY]->(:User {id: NEW.userId}) }
 ```
 
+Projects link to their owner (applied to the hosted instance 2026-08-28; on
+this Anvil version trigger creation also backfilled the existing project, and
+the `(:FRProject)-[:OWNED_BY]->(:User)` edge resolved). Projects created by
+email-only owners through `/project` may have an empty `ownerId`, for which the
+MERGE is a logged no-op:
+
+```cypher
+CREATE OR REPLACE TRIGGER fr_project_owner_link_insert
+  AFTER INSERT ON COLLECTION fr_projects
+  FOR EACH ROW AS { MERGE RELATIONSHIP (:FRProject {id: NEW.id})-[:OWNED_BY]->(:User {id: NEW.ownerId}) }
+
+CREATE OR REPLACE TRIGGER fr_project_owner_link_update
+  AFTER UPDATE ON COLLECTION fr_projects
+  FOR EACH ROW AS { MERGE RELATIONSHIP (:FRProject {id: NEW.id})-[:OWNED_BY]->(:User {id: NEW.ownerId}) }
+```
+
 Rule creation backfills existing rows in both directions; `SHOW SYNC RULES` and
 `SHOW TRIGGERS` list what is active, `DROP SYNC RULE <id>` / `DROP TRIGGER <name>`
 remove them. Deleting a document detach-deletes its node, so edges go with it,
