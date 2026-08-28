@@ -227,9 +227,7 @@ export const EMBED_SCRIPT: string = String.raw`(function () {
     ".fr-who{margin-top:16px;font-size:12px;color:var(--muted)}",
     ".fr-auth{margin-top:20px;border-top:1px solid var(--border);padding-top:14px}",
     ".fr-auth-h{font-size:13px;font-weight:600;margin-bottom:8px}",
-    ".fr-auth-tabs{display:flex;gap:4px;margin-bottom:10px;border-bottom:1px solid var(--border)}",
-    ".fr-auth-tab{padding:6px 10px;font-size:13px;color:var(--muted);font-weight:500;border-bottom:2px solid transparent;margin-bottom:-1px}",
-    ".fr-auth-tab:hover,.fr-auth-tab[aria-selected=true]{color:var(--fg)}.fr-auth-tab[aria-selected=true]{border-bottom-color:var(--accent)}",
+    ".fr-auth-sub{font-size:12px;color:var(--muted);margin-bottom:10px}",
     ".fr-auth-form .fr-input{margin-bottom:8px}.fr-auth-form .fr-link{display:block;margin-top:10px}"
   ].join("\n");
 
@@ -260,60 +258,41 @@ export const EMBED_SCRIPT: string = String.raw`(function () {
     btn.lastChild.textContent = String(Number(r.votes) || 0);
   }
 
-  // ---- Sign in / register panel, shown inside the request modal ----
+  // ---- Sign-in panel, shown inside the request modal. Sign in and register
+  // are the same thing: email in, code out, code back. ----
   function createAuthPanel(onSignedIn) {
     var wrap = el("div", { className: "fr-auth" });
-    var tabIn = el("button", { className: "fr-auth-tab", type: "button", role: "tab", text: "Sign in" });
-    var tabUp = el("button", { className: "fr-auth-tab", type: "button", role: "tab", text: "Register" });
-    var tabs = el("div", { className: "fr-auth-tabs", role: "tablist" }, [tabIn, tabUp]);
     var emailIn = el("input", { className: "fr-input", type: "email", placeholder: "you@example.com", autocomplete: "email", "aria-label": "Email" });
-    var passIn = el("input", { className: "fr-input", type: "password", placeholder: "Password", autocomplete: "current-password", "aria-label": "Password" });
     var codeIn = el("input", { className: "fr-input", type: "text", inputmode: "numeric", autocomplete: "one-time-code", placeholder: "Code from the email", "aria-label": "Code" });
     var msg = el("p", { className: "fr-msg", role: "status", "aria-live": "polite" });
     msg.hidden = true;
-    var submit = el("button", { className: "fr-primary", type: "submit", text: "Sign in" });
-    var otpLink = el("button", { className: "fr-link", type: "button", text: "Email me a sign-in code instead" });
-    var backLink = el("button", { className: "fr-link", type: "button", text: "Use a password instead" });
-    var form = el("form", { className: "fr-auth-form", novalidate: "" }, [emailIn, passIn, codeIn, submit, msg, otpLink, backLink]);
+    var submit = el("button", { className: "fr-primary", type: "submit", text: "Send me a code" });
+    var backLink = el("button", { className: "fr-link", type: "button", text: "Use a different email" });
+    var form = el("form", { className: "fr-auth-form", novalidate: "" }, [emailIn, codeIn, submit, msg, backLink]);
     wrap.appendChild(el("p", { className: "fr-auth-h", text: "Sign in to vote and comment" }));
-    wrap.appendChild(tabs);
+    wrap.appendChild(el("p", { className: "fr-auth-sub", text: "Enter your email and we will send you a code. No password, and new addresses are signed up on the spot." }));
     wrap.appendChild(form);
-    var mode = "login"; // login | register | otp-request | otp-verify
+    var verify = false;
     var busy = false;
 
-    function setMode(m) {
-      mode = m;
-      var reg = m === "register", otp = m.indexOf("otp") === 0, verify = m === "otp-verify";
-      tabIn.setAttribute("aria-selected", reg ? "false" : "true");
-      tabUp.setAttribute("aria-selected", reg ? "true" : "false");
-      passIn.hidden = otp;
-      passIn.setAttribute("autocomplete", reg ? "new-password" : "current-password");
-      passIn.placeholder = reg ? "Password (10+ characters)" : "Password";
-      codeIn.hidden = !verify;
-      emailIn.readOnly = verify;
-      otpLink.hidden = reg || otp;
-      backLink.hidden = !otp;
-      submit.textContent = reg ? "Create account" : verify ? "Verify code" : m === "otp-request" ? "Send code" : "Sign in";
-      msg.hidden = true;
+    function setStage(v) {
+      verify = v;
+      codeIn.hidden = !v;
+      emailIn.readOnly = v;
+      backLink.hidden = !v;
+      submit.textContent = v ? "Verify code" : "Send me a code";
+      if (!v) { codeIn.value = ""; msg.hidden = true; }
     }
-    tabIn.addEventListener("click", function () { setMode("login"); emailIn.focus(); });
-    tabUp.addEventListener("click", function () { setMode("register"); emailIn.focus(); });
-    otpLink.addEventListener("click", function () { setMode("otp-request"); emailIn.focus(); });
-    backLink.addEventListener("click", function () { setMode("login"); emailIn.focus(); });
-    setMode("login");
+    backLink.addEventListener("click", function () { setStage(false); emailIn.focus(); });
+    setStage(false);
 
     form.addEventListener("submit", function (e) {
       e.preventDefault();
       if (busy) return;
       var email = emailIn.value.trim();
       if (!EMAIL_RE.test(email)) { setMsg(msg, "Enter a valid email address.", "err"); emailIn.focus(); return; }
-      var body = { intent: mode, email: email };
-      if (mode === "login" || mode === "register") {
-        body.password = passIn.value;
-        if (!body.password) { setMsg(msg, "Enter your password.", "err"); passIn.focus(); return; }
-        if (mode === "register" && body.password.length < 10) { setMsg(msg, "Use a password of at least 10 characters.", "err"); passIn.focus(); return; }
-      }
-      if (mode === "otp-verify") {
+      var body = { intent: verify ? "otp-verify" : "otp-request", email: email };
+      if (verify) {
         body.code = codeIn.value.trim();
         if (!body.code) { setMsg(msg, "Enter the code from the email.", "err"); codeIn.focus(); return; }
       }
@@ -322,7 +301,7 @@ export const EMBED_SCRIPT: string = String.raw`(function () {
       setMsg(msg, "One moment...", "");
       api("POST", "/api/auth", body).then(function (d) {
         if (d.stage === "code") {
-          setMode("otp-verify");
+          setStage(true);
           setMsg(msg, d.notice || "Check your email for the code.", "ok");
           codeIn.focus();
           return;
@@ -332,7 +311,6 @@ export const EMBED_SCRIPT: string = String.raw`(function () {
         onSignedIn();
       }, function (err) {
         setMsg(msg, err.message, "err");
-        if (err.data && err.data.otpOnly) setMode("otp-request");
       }).then(function () {
         busy = false;
         submit.disabled = false;

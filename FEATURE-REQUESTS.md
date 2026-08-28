@@ -184,7 +184,7 @@ resolves for app-written data.
 | `/p/:id` | Hosted public board; works without JavaScript. |
 | `/p/:id/r/:rid` | One request on its own page: full details, vote, and a creator edit form (email must match the submitter's). Works without JavaScript. |
 | `/embed.js` | The widget (see `app/lib/feature-requests/embed-script.ts`). |
-| `/api/auth` | Widget sign-in / register (CORS): `intent` login, register, otp-request, otp-verify; returns the bearer token. |
+| `/api/auth` | Widget sign-in (CORS): `intent` otp-request (registers unknown addresses first) or otp-verify; returns the bearer token. |
 | `/project`, `/project/:id` | Owner self-serve area: emailed-code sign-in only, then every project whose `ownerEmail` matches the address (or whose `ownerId` matches the account). Same dashboard as the tools area (shared component). |
 | `GET /api/projects/:id/board?voter=` | Public JSON: project info + visible requests. |
 | `POST /api/projects/:id/requests` | Submit `{title, details, email, voter, website}`; `website` is a honeypot. |
@@ -206,9 +206,12 @@ devforge.io, full context, not full screen): a dimmed backdrop with a card up to
 600px wide that scrolls internally (host page scroll locked while open; Esc, the
 backdrop, or the back link closes). Signed out, nothing vote- or comment-related shows at all (no count in the
 list or the modal, no comment thread); the modal shows the title, date and
-details, followed by a sign in / register panel
-(password sign-in, password registration, or an emailed code; same Anvil
-endpoints as the sign-in and sign-up pages, via `POST /api/auth`). Signed in, it
+details, followed by a sign-in panel. Sign in and
+register are one flow (Ben's call, 2026-08-28): email in, emailed code back,
+no password. `POST /api/auth` (`otp-request`) registers unknown addresses
+best-effort first (same `registerVisitor` as the suggest form) and then asks
+Anvil for the code; `otp-verify` swaps the code for the bearer token. Anvil
+needs email configured for this to work at all. Signed in, it
 shows the vote button, the comment form (the optional name is the only public
 identity), a "Signed in as ... Sign out" line and, when the account email matches
 the submitter's, an edit box for the details (`LIMITS.details` is 5000). The
