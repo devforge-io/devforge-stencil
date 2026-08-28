@@ -28,6 +28,9 @@ export const LIMITS = {
   buttonLabel: 40,
   projectsPerUser: 25,
   requestsPerProject: 2000,
+  commentBody: 2000,
+  commentName: 60,
+  commentsPerRequest: 500,
 };
 
 export const DEFAULT_ACCENT = "#f5a524";

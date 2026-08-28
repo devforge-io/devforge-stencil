@@ -38,12 +38,13 @@ export { DEFAULT_ACCENT, DEFAULT_BUTTON_LABEL, LIMITS, STATUSES, STATUS_LABEL, i
 const PROJECTS = "fr_projects";
 const REQUESTS = "fr_requests";
 const VOTES = "fr_votes";
+const COMMENTS = "fr_comments";
 
 let collectionsReady: Promise<void> | null = null;
 
 /** Creates the three collections on first use (idempotent, cached). */
 function ensureCollections(): Promise<void> {
-  collectionsReady ??= Promise.all([docEnsureCollection(PROJECTS), docEnsureCollection(REQUESTS), docEnsureCollection(VOTES)])
+  collectionsReady ??= Promise.all([docEnsureCollection(PROJECTS), docEnsureCollection(REQUESTS), docEnsureCollection(VOTES), docEnsureCollection(COMMENTS)])
     .then(() => undefined)
     .catch((err) => {
       collectionsReady = null;
@@ -415,6 +416,8 @@ export async function deleteRequest(projectId: string, requestId: string): Promi
   if (!req || req.projectId !== pid) return;
   const votes = await docQuery(VOTES, { op: "eq", field: "requestId", value: rid }, 100_000);
   for (const v of votes) await docDelete(VOTES, v.key);
+  const comments = await docQuery(COMMENTS, { op: "eq", field: "requestId", value: rid }, 100_000);
+  for (const c of comments) await docDelete(COMMENTS, c.key);
   await docDelete(REQUESTS, rid);
 }
 
@@ -492,6 +495,74 @@ export async function toggleVote(requestId: string, identity: VoterIdentity): Pr
   const count = (await docQuery(VOTES, { op: "eq", field: "requestId", value: req.id }, 100_000)).length;
   await putRequest({ ...req, votes: count, updatedAt: Date.now() });
   return { votes: count, voted: mine.length === 0 };
+}
+
+/* ---------------------------------------------------------------------- */
+/* Comments                                                                */
+/* ---------------------------------------------------------------------- */
+
+export type Comment = {
+  id: string;
+  requestId: string;
+  projectId: string;
+  name: string;
+  email: string;
+  body: string;
+  createdAt: number;
+};
+
+function toComment(doc: AnvilDocument): Comment {
+  const c = doc.body;
+  return {
+    id: str(c.id, doc.key),
+    requestId: str(c.requestId),
+    projectId: str(c.projectId),
+    name: str(c.name),
+    email: str(c.email),
+    body: str(c.body),
+    createdAt: num(c.createdAt),
+  };
+}
+
+export async function listComments(requestId: string): Promise<Comment[]> {
+  await ensureCollections();
+  const docs = await docQuery(COMMENTS, { op: "eq", field: "requestId", value: ident(requestId, "request id") }, LIMITS.commentsPerRequest * 2);
+  return docs.map(toComment).sort((a, b) => a.createdAt - b.createdAt);
+}
+
+/** Comments belong to a person too: email is required, same claim as votes. */
+export async function createComment(
+  requestId: string,
+  input: { body: string; name?: string; email: string; userId?: string; ip?: string },
+): Promise<Comment> {
+  const req = await getRequest(requestId);
+  if (!req || req.status === "declined") throw new AnvilError("Unknown request", 404);
+  const body = (input.body ?? "").trim();
+  if (!body) throw new AnvilError("Write a comment first.", 400);
+  if (body.length > LIMITS.commentBody) throw new AnvilError(`Keep the comment under ${LIMITS.commentBody} characters.`, 400);
+  if (!isEmail(input.email)) throw new AnvilError("Enter your email address to comment", 400);
+  if ((await listComments(req.id)).length >= LIMITS.commentsPerRequest) throw new AnvilError("This request has reached its comment limit.", 400);
+  const email = input.email.trim();
+  const comment: Comment = {
+    id: await reserveUuid(),
+    requestId: req.id,
+    projectId: req.projectId,
+    name: (input.name ?? "").trim().slice(0, LIMITS.commentName),
+    email,
+    body,
+    createdAt: Date.now(),
+  };
+  await docPut(COMMENTS, comment.id, {
+    ...comment,
+    emailLower: email.toLowerCase(),
+    userId: input.userId ?? "",
+    ipHash: input.ip ? hashIp(input.ip) : "",
+  }, { ifNotExists: true });
+  return comment;
+}
+
+export function publicComment(c: Comment) {
+  return { id: c.id, name: c.name || "Anonymous", body: c.body, createdAt: c.createdAt };
 }
 
 /* ---------------------------------------------------------------------- */

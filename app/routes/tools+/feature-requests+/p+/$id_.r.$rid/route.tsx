@@ -13,7 +13,7 @@ import { CsrfInput, CsrfProvider } from "~/components/csrf-input";
 import { newId, type AnvilError } from "~/lib/feature-requests/anvil.server";
 import { clientIp, rateLimited } from "~/lib/feature-requests/http.server";
 import { LIMITS } from "~/lib/feature-requests/shared";
-import { getProject, getRequest, isVoterKey, publicRequest, toggleVote, updateRequestDetails, votedRequestIds } from "~/lib/feature-requests/store.server";
+import { createComment, getProject, getRequest, isVoterKey, listComments, publicComment, publicRequest, toggleVote, updateRequestDetails, votedRequestIds } from "~/lib/feature-requests/store.server";
 import { Card, Field, Notice, Shell, StatusChip, formatDate, inputClass, primaryBtn } from "~/components/tools/feature-requests/shell";
 
 /** Same cookie as the board page, so the vote identity carries across. */
@@ -54,11 +54,13 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const { project, req } = await load(params);
   const [{ token, setCookie: csrfCookie }, chrome, { voter, setCookie: vCookie }] = await Promise.all([ensureCsrfToken(request), getSiteChrome(), voterFrom(request)]);
   const voted = (await votedRequestIds(project.id, { voter })).has(req.id);
+  const comments = (await listComments(req.id)).map(publicComment);
   const data = {
     csrfToken: token,
     chrome,
     project: { id: project.id, name: project.name, boardEnabled: project.boardEnabled, accent: project.accent },
     request: publicRequest(req, voted),
+    comments,
   };
   const headers = new Headers();
   if (csrfCookie) headers.append("Set-Cookie", csrfCookie);
@@ -89,6 +91,17 @@ export async function action({ request, params }: ActionFunctionArgs) {
       await updateRequestDetails(req.id, String(form.get("email") ?? "").trim(), String(form.get("details") ?? ""));
       return Response.json({ ok: "Saved. Thanks for building the idea out." } satisfies ActionData, { headers });
     }
+    if (intent === "comment") {
+      if (String(form.get("website") ?? "")) return Response.json({ ok: "Comment added." } satisfies ActionData, { headers });
+      if (rateLimited(`fr:comment:${ip}`, 20, 10 * 60_000)) return Response.json({ error: "Too many comments right now. Try again shortly." } satisfies ActionData, { status: 429, headers });
+      await createComment(req.id, {
+        body: String(form.get("body") ?? ""),
+        name: String(form.get("name") ?? ""),
+        email: String(form.get("email") ?? ""),
+        ip,
+      });
+      return Response.json({ ok: "Comment added." } satisfies ActionData, { headers });
+    }
     return Response.json({ error: "Unknown action." } satisfies ActionData, { status: 400, headers });
   } catch (err) {
     const e = err as AnvilError;
@@ -97,7 +110,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
 }
 
 export default function RequestPage() {
-  const { chrome, csrfToken, project, request: r } = useLoaderData<typeof loader>();
+  const { chrome, csrfToken, comments, project, request: r } = useLoaderData<typeof loader>();
   const data = (useActionData() ?? {}) as ActionData;
   const busy = useNavigation().state === "submitting";
   const accent = project.accent;
@@ -142,6 +155,51 @@ export default function RequestPage() {
 
         {data.ok === "vote" ? null : data.ok ? <div className="mt-6"><Notice kind="ok">{data.ok}</Notice></div> : null}
         {data.error ? <div className="mt-6"><Notice>{data.error}</Notice></div> : null}
+
+        <div className="mt-10">
+          <h2 className="font-mono text-[11px] uppercase tracking-[0.2em] text-white/45">
+            {comments.length} comment{comments.length === 1 ? "" : "s"}
+          </h2>
+          <div className="mt-3 space-y-3">
+            {comments.map((c) => (
+              <div key={c.id} className="rounded-2xl border border-white/10 bg-white/[0.02] p-4">
+                <div className="font-mono text-[11px] text-white/40">
+                  {c.name}
+                  {" · "}
+                  {formatDate(c.createdAt)}
+                </div>
+                <p className="mt-1.5 whitespace-pre-wrap text-sm leading-relaxed text-white/70">{c.body}</p>
+              </div>
+            ))}
+          </div>
+          <Card className="mt-4">
+            <Form method="post" className="space-y-4">
+              <CsrfInput />
+              <input type="hidden" name="intent" value="comment" />
+              <div className="absolute -left-[9999px] top-0" aria-hidden="true">
+                <label htmlFor="c-website">Website</label>
+                <input id="c-website" name="website" tabIndex={-1} autoComplete="off" />
+              </div>
+              <Field label="Comment" htmlFor="c-body">
+                <textarea id="c-body" name="body" rows={3} required maxLength={LIMITS.commentBody} placeholder="Add to the conversation." className={inputClass} />
+              </Field>
+              <Field label="Name (optional)" htmlFor="c-name">
+                <input id="c-name" name="name" maxLength={LIMITS.commentName} className={inputClass} />
+              </Field>
+              <Field label="Email" htmlFor="c-email" hint="Never shown publicly; it ties the comment to you.">
+                <input id="c-email" name="email" type="email" required maxLength={LIMITS.email} className={inputClass} />
+              </Field>
+              <button
+                type="submit"
+                disabled={busy}
+                className={primaryBtn}
+                style={{ background: accent, boxShadow: `0 8px 30px -10px ${accent}99`, color: "#111" }}
+              >
+                Comment
+              </button>
+            </Form>
+          </Card>
+        </div>
 
         <Card className="mt-10">
           <h2 className="text-base font-semibold text-white">Wrote this? Build it out.</h2>
