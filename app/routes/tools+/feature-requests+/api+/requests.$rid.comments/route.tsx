@@ -1,14 +1,14 @@
 /**
  * POST /tools/feature-requests/api/requests/:rid/comments (CORS): add a
- * comment. Comments belong to a person: email is required, registered in
- * Anvil best-effort like votes and submissions.
+ * comment. Comments belong to a signed-in person: the bearer token from
+ * /api/auth supplies the email and Anvil user id.
  */
 
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import type { AnvilError } from "~/lib/feature-requests/anvil.server";
-import { registerVisitor } from "~/lib/feature-requests/anvil.server";
+import { embedUser } from "~/lib/feature-requests/embed-auth.server";
 import { clientIp, corsHeaders, json, originBlocked, preflight, rateLimited, readBody } from "~/lib/feature-requests/http.server";
-import { createComment, getProject, getRequest, isEmail, publicComment } from "~/lib/feature-requests/store.server";
+import { createComment, getProject, getRequest, publicComment } from "~/lib/feature-requests/store.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   if (request.method === "OPTIONS") return preflight(request);
@@ -26,13 +26,12 @@ export async function action({ request, params }: ActionFunctionArgs) {
     const headers = corsHeaders(request, project.origins);
     if (originBlocked(request, project.origins)) return json({ ok: false, error: "This site is not allowed to comment on this project" }, { status: 403, headers });
     if (rateLimited(`fr:comment:${clientIp(request)}`, 20, 10 * 60_000)) return json({ ok: false, error: "Too many comments, try again in a minute" }, { status: 429, headers });
+    const user = embedUser(request);
+    if (!user) return json({ ok: false, error: "Sign in to comment", signIn: true }, { status: 401, headers });
     const body = await readBody(request);
     if (body.website) return json({ ok: true, comment: null }, { headers });
-    const email = (body.email ?? "").trim();
-    if (!isEmail(email)) return json({ ok: false, error: "Enter your email address to comment" }, { status: 400, headers });
-    const visitor = await registerVisitor(email);
-    const comment = await createComment(req.id, { body: body.body ?? "", name: body.name, email, userId: visitor.userId, ip: clientIp(request) });
-    return json({ ok: true, comment: publicComment(comment), account: visitor.account, verificationSent: visitor.verificationSent }, { headers });
+    const comment = await createComment(req.id, { body: body.body ?? "", name: body.name, email: user.email, userId: user.id, ip: clientIp(request) });
+    return json({ ok: true, comment: publicComment(comment) }, { headers });
   } catch (err) {
     const e = err as AnvilError;
     const status = e.status && e.status >= 400 && e.status < 600 ? e.status : 500;

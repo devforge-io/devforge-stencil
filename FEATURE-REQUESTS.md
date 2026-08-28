@@ -59,6 +59,8 @@ fr_requests  key = request id        {id, projectId, title, details, email, stat
                                       origin, ipHash, createdAt, updatedAt}
 fr_votes     key = vote id           {id, requestId, projectId, email, emailLower,
                                       userId, voter, createdAt}
+fr_comments  key = comment id        {id, requestId, projectId, name, email,
+                                      emailLower, userId, body, ipHash, createdAt}
 ```
 
 Ids are server-minted UUIDs reserved through Anvil's `POST /db/uuid` (added
@@ -149,6 +151,22 @@ CREATE OR REPLACE TRIGGER fr_vote_user_link_update
   FOR EACH ROW AS { MERGE RELATIONSHIP (:FRVote {id: NEW.id})-[:CAST_BY]->(:User {id: NEW.userId}) }
 ```
 
+Comments are synced the same way (applied to the hosted instance 2026-08-28,
+as sync rule #8 plus the two insert triggers; rule creation backfilled the
+existing comment and both edges resolved):
+
+```cypher
+SYNC LABEL FRComment TO COLLECTION fr_comments KEY id
+
+CREATE OR REPLACE TRIGGER fr_comment_link_insert
+  AFTER INSERT ON COLLECTION fr_comments
+  FOR EACH ROW AS { MERGE RELATIONSHIP (:FRComment {id: NEW.id})-[:ON_REQUEST]->(:FRRequest {id: NEW.requestId}) }
+
+CREATE OR REPLACE TRIGGER fr_comment_user_link_insert
+  AFTER INSERT ON COLLECTION fr_comments
+  FOR EACH ROW AS { MERGE RELATIONSHIP (:FRComment {id: NEW.id})-[:WRITTEN_BY]->(:User {id: NEW.userId}) }
+```
+
 Rule creation backfills existing rows in both directions; `SHOW SYNC RULES` and
 `SHOW TRIGGERS` list what is active, `DROP SYNC RULE <id>` / `DROP TRIGGER <name>`
 remove them. Deleting a document detach-deletes its node, so edges go with it,
@@ -166,32 +184,45 @@ resolves for app-written data.
 | `/p/:id` | Hosted public board; works without JavaScript. |
 | `/p/:id/r/:rid` | One request on its own page: full details, vote, and a creator edit form (email must match the submitter's). Works without JavaScript. |
 | `/embed.js` | The widget (see `app/lib/feature-requests/embed-script.ts`). |
+| `/api/auth` | Widget sign-in / register (CORS): `intent` login, register, otp-request, otp-verify; returns the bearer token. |
 | `/project`, `/project/:id` | Owner self-serve area: emailed-code sign-in only, then every project whose `ownerEmail` matches the address (or whose `ownerId` matches the account). Same dashboard as the tools area (shared component). |
 | `GET /api/projects/:id/board?voter=` | Public JSON: project info + visible requests. |
 | `POST /api/projects/:id/requests` | Submit `{title, details, email, voter, website}`; `website` is a honeypot. |
 | `POST /api/requests/:rid/vote` | Toggle `{voter}`'s vote. |
 | `GET /api/requests/:rid?voter=&email=` | One request in full, plus `voted` and `canEdit` (email matches the submitter's). |
 | `POST /api/requests/:rid` | Creator edit: `{email, details, voter}`. 403 unless the email matches the request's submitter email. |
+| `POST /api/requests/:rid/comments` | Add a comment: `{body, name?, email, voter, website}`. Email required (same person-claim as votes); name is the only public identity, "Anonymous" when blank. |
 
 API responses are CORS-enabled. Reads are public; writes honour the project's origin
 allow-list (exact origin match), and are rate limited per IP and per project in
-memory (one instance). Submitting an idea and voting through the widget both
-require an email address (since 2026-08-26): the address is registered in Anvil
-(verification email included when the mailer is configured), requests carry the
-submitter's email and Anvil user id, votes are keyed per person (a hash of the
-email, so one vote per address across browsers) and carry the same identity. The
-widget remembers the address in `localStorage` after first entry and asks inline
-when someone votes before giving it. The hosted board still falls back to its
-anonymous HttpOnly cookie voter; align it the same way if anonymous votes there
-become a problem.
+memory (one instance). Submitting an idea through the widget requires an email address (since
+2026-08-26): the address is registered in Anvil (verification email included when
+the mailer is configured) and requests carry the submitter's email and Anvil user id.
 
-Since 2026-08-27 (widget v5) each request in the widget's list opens an
-in-widget detail view, entirely inside the embed (Ben's call: no links out to
-devforge.io): full title, date, details, vote button, a back link to the list,
-and, when the visitor's remembered email matches
-the submitter's, an edit box for rewriting the details (`LIMITS.details` grew
-to 5000 for that). The edit claim is the same trust level as voting: a claimed
-email, checked server-side against the request's stored submitter email.
+Since 2026-08-28 (widget v8) voting, commenting and editing require a signed-in
+account. The list shows a read-only vote count per request; each row opens a
+centered modal, entirely inside the embed (Ben's calls: no links out to
+devforge.io, full context, not full screen): a dimmed backdrop with a card up to
+600px wide that scrolls internally (host page scroll locked while open; Esc, the
+backdrop, or the back link closes). Signed out, the modal shows the title, date,
+details, the count and the comments, followed by a sign in / register panel
+(password sign-in, password registration, or an emailed code; same Anvil
+endpoints as the sign-in and sign-up pages, via `POST /api/auth`). Signed in, it
+shows the vote button, the comment form (the optional name is the only public
+identity), a "Signed in as ... Sign out" line and, when the account email matches
+the submitter's, an edit box for the details (`LIMITS.details` is 5000). The
+suggest form hides its email field for signed-in people and submits under the
+account email.
+
+The widget session is a bearer token (`embed-auth.server.ts`: HMAC-SHA256 over a
+JSON payload with `SESSION_SECRET`, 30 days) kept in `localStorage`
+(`devforge-fr-session`) and sent as `Authorization: Bearer` on every API call.
+The token is the only identity the vote, comment and edit endpoints trust; they
+answer `401 {signIn: true}` without one and the widget then drops its stored
+session and shows the panel again. Votes stay keyed per email (one vote per
+address across browsers). The hosted board still falls back to its anonymous
+HttpOnly cookie voter; align it the same way if anonymous votes there become a
+problem.
 
 ## Embed
 

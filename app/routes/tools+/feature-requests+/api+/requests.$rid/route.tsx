@@ -2,15 +2,16 @@
  * /tools/feature-requests/api/requests/:rid (CORS)
  *
  * GET: one request in full, plus whether the caller voted for it and whether
- * they may edit it (their remembered email matches the submitter's).
- * POST: creator edit. The person who submitted the request (same email) can
- * rewrite the details to build the idea out; enforced server-side.
+ * they may edit it (the signed-in email matches the submitter's).
+ * POST: creator edit. The person who submitted the request (same email as
+ * the bearer token from /api/auth) can rewrite the details; enforced server-side.
  */
 
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import type { AnvilError } from "~/lib/feature-requests/anvil.server";
+import { embedUser } from "~/lib/feature-requests/embed-auth.server";
 import { clientIp, corsHeaders, json, originBlocked, preflight, rateLimited, readBody } from "~/lib/feature-requests/http.server";
-import { getProject, getRequest, isEmail, publicProject, publicRequest, updateRequestDetails, votedRequestIds } from "~/lib/feature-requests/store.server";
+import { getProject, getRequest, isEmail, listComments, publicComment, publicProject, publicRequest, updateRequestDetails, votedRequestIds } from "~/lib/feature-requests/store.server";
 
 function canEdit(requestEmail: string, email: string): boolean {
   return Boolean(requestEmail) && isEmail(email) && requestEmail.trim().toLowerCase() === email.trim().toLowerCase();
@@ -26,10 +27,14 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     // Reads are public, like the board; the allow-list only gates writes.
     const headers = corsHeaders(request);
     const search = new URL(request.url).searchParams;
-    const email = search.get("email") ?? "";
+    const user = embedUser(request);
+    // Signed-in widget users are identified by the token; the query email is
+    // kept for the hosted board, which remembers the address itself.
+    const email = user ? user.email : (search.get("email") ?? "");
     const identity = { email: email || undefined, voter: search.get("voter") ?? undefined };
     const voted = (await votedRequestIds(project.id, identity)).has(req.id);
-    return json({ ok: true, project: publicProject(project), request: publicRequest(req, voted), canEdit: canEdit(req.email, email) }, { headers });
+    const comments = (await listComments(req.id)).map(publicComment);
+    return json({ ok: true, project: publicProject(project), request: publicRequest(req, voted), comments, canEdit: canEdit(req.email, email) }, { headers });
   } catch (err) {
     const e = err as AnvilError;
     return json({ ok: false, error: e.status === 400 ? e.message : "Could not load the request" }, { status: e.status && e.status >= 400 ? e.status : 500, headers: corsHeaders(request) });
@@ -47,10 +52,12 @@ export async function action({ request, params }: ActionFunctionArgs) {
     const headers = corsHeaders(request, project.origins);
     if (originBlocked(request, project.origins)) return json({ ok: false, error: "This site is not allowed to edit requests on this project" }, { status: 403, headers });
     if (rateLimited(`fr:edit:${clientIp(request)}`, 20, 10 * 60_000)) return json({ ok: false, error: "Too many edits, try again in a minute" }, { status: 429, headers });
+    const user = embedUser(request);
+    if (!user) return json({ ok: false, error: "Sign in to edit this request", signIn: true }, { status: 401, headers });
     const body = await readBody(request);
-    const updated = await updateRequestDetails(req.id, (body.email ?? "").trim(), body.details ?? "");
+    const updated = await updateRequestDetails(req.id, user.email, body.details ?? "");
     if (!updated) return json({ ok: false, error: "Unknown request" }, { status: 404, headers });
-    const identity = { email: (body.email ?? "").trim() || undefined, voter: body.voter };
+    const identity = { email: user.email, voter: body.voter };
     const voted = (await votedRequestIds(project.id, identity)).has(updated.id);
     return json({ ok: true, request: publicRequest(updated, voted), canEdit: true }, { headers });
   } catch (err) {

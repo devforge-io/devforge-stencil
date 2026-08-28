@@ -3,7 +3,7 @@
 // dependencies; everything renders inside a Shadow DOM root so host-page CSS cannot leak
 // in or out. Do not use backticks or "${" inside the script: it is a String.raw template.
 
-export const EMBED_SCRIPT_VERSION = "5";
+export const EMBED_SCRIPT_VERSION = "8";
 
 export const EMBED_SCRIPT: string = String.raw`(function () {
   "use strict";
@@ -63,12 +63,29 @@ export const EMBED_SCRIPT: string = String.raw`(function () {
     else for (var i = 0; i < bytes.length; i++) bytes[i] = Math.random() * 256;
     return Array.prototype.map.call(bytes, function (b) { return (b % 36).toString(36); }).join("");
   }
-  var EMAIL_KEY = "devforge-fr-email";
-  function storedEmail() {
-    try { return (localStorage.getItem(EMAIL_KEY) || "").trim(); } catch (e) { return ""; }
+
+  // Signed-in state: the bearer token /api/auth hands out, plus the email for
+  // display. Voting, commenting and editing need it; reading never does.
+  var SESSION_KEY = "devforge-fr-session";
+  var memorySession = null;
+  var authListeners = [];
+  function session() {
+    var raw = null;
+    try { raw = JSON.parse(localStorage.getItem(SESSION_KEY) || "null"); } catch (e) { raw = memorySession; }
+    if (!raw && memorySession) raw = memorySession;
+    return raw && typeof raw.token === "string" && raw.token ? raw : null;
   }
-  function rememberEmail(v) {
-    try { localStorage.setItem(EMAIL_KEY, v); } catch (e) { /* private mode */ }
+  function setSession(s) {
+    memorySession = s;
+    try {
+      if (s) localStorage.setItem(SESSION_KEY, JSON.stringify(s));
+      else localStorage.removeItem(SESSION_KEY);
+    } catch (e) { /* private mode */ }
+    for (var i = 0; i < authListeners.length; i++) authListeners[i](s);
+  }
+  function sessionEmail() {
+    var s = session();
+    return s && s.email ? s.email : "";
   }
 
   function voterKey() {
@@ -83,11 +100,15 @@ export const EMBED_SCRIPT: string = String.raw`(function () {
   }
 
   function api(method, path, body) {
+    var headers = {};
+    if (body) headers["Content-Type"] = "application/json";
+    var s = session();
+    if (s) headers["Authorization"] = "Bearer " + s.token;
     return fetch(base + path, {
       method: method,
       mode: "cors",
       credentials: "omit",
-      headers: body ? { "Content-Type": "application/json" } : {},
+      headers: headers,
       body: body ? JSON.stringify(body) : undefined
     }).then(function (res) {
       return res.json().catch(function () { return {}; }).then(function (data) {
@@ -96,6 +117,10 @@ export const EMBED_SCRIPT: string = String.raw`(function () {
           ? "Too many requests, try again in a minute"
           : (data && data.error) || "Something went wrong (" + res.status + ")");
         err.status = res.status;
+        err.data = data || {};
+        // The server no longer accepts our token: forget it so the sign-in
+        // panel comes back instead of a dead end.
+        if (res.status === 401 && data && data.signIn && s) { err.signIn = true; setSession(null); }
         throw err;
       });
     }, function () {
@@ -179,14 +204,142 @@ export const EMBED_SCRIPT: string = String.raw`(function () {
     ".fr-h{font-size:16px;font-weight:600;margin-bottom:10px}",
     ".fr-row-btn{display:block;width:100%;text-align:left}.fr-row-btn:hover .fr-row-title{color:var(--accent)}",
     ".fr-back{display:inline-flex;align-items:center;color:var(--muted);font-size:13px;font-weight:500;margin-bottom:12px}.fr-back:hover{color:var(--fg)}",
-    ".fr-detail-title{font-size:17px;font-weight:600;overflow-wrap:anywhere}",
-    ".fr-detail-meta{color:var(--muted);font-size:12px;margin:2px 0 10px}",
-    ".fr-detail-body{display:flex;gap:12px}",
+    ".fr-detail{position:fixed;inset:0;z-index:2147483002;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:20px;outline:none}",
+    ".fr-detail-inner{background:var(--bg);color:var(--fg);border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow);width:min(600px,100%);max-height:min(85vh,44rem);overflow:auto;overscroll-behavior:contain;padding:22px 24px 26px}",
+    "@media (max-width:520px){.fr-detail{padding:0;align-items:stretch}.fr-detail-inner{width:100%;max-height:none;border-radius:0;border:0}}",
+    ".fr-detail-title{font-size:19px;font-weight:600;overflow-wrap:anywhere}",
+    ".fr-detail-meta{color:var(--muted);font-size:12px;margin:3px 0 12px}",
+    ".fr-detail-body{display:flex;gap:14px}",
+    ".fr-detail .fr-details{font-size:14px}",
+    ".fr-comments{margin-top:20px;border-top:1px solid var(--border);padding-top:14px}",
+    ".fr-comments-h{font-size:13px;font-weight:600;margin-bottom:10px}",
+    ".fr-comment{margin-bottom:12px}",
+    ".fr-comment-meta{font-size:11px;color:var(--muted);margin-bottom:2px}",
+    ".fr-comment-body{font-size:13px;white-space:pre-line;overflow-wrap:anywhere}",
+    ".fr-comment-form{margin-top:12px}.fr-comment-form .fr-input{margin-bottom:8px}",
     ".fr-edit-actions{display:flex;gap:8px;margin-top:8px}",
-    ".fr-editor textarea.fr-input{min-height:140px;margin-top:10px}"
+    ".fr-editor textarea.fr-input{min-height:140px;margin-top:10px}",
+    ".fr-row .fr-row-btn{display:flex;gap:12px;align-items:flex-start}",
+    ".fr-count{flex:0 0 auto;display:flex;flex-direction:column;align-items:center;min-width:44px;padding:6px 4px;border-radius:8px;border:1px solid var(--border);background:var(--field);color:var(--muted);font-size:12px;font-weight:600;line-height:1.2}",
+    ".fr-count.mine{color:var(--accent);border-color:var(--accent)}",
+    ".fr-count svg{width:14px;height:14px;display:block;margin-bottom:2px}",
+    ".fr-link{color:var(--accent);font-size:12px;font-weight:500;text-decoration:underline;text-underline-offset:2px}.fr-link:hover{color:var(--fg)}",
+    ".fr-who{margin-top:16px;font-size:12px;color:var(--muted)}",
+    ".fr-auth{margin-top:20px;border-top:1px solid var(--border);padding-top:14px}",
+    ".fr-auth-h{font-size:13px;font-weight:600;margin-bottom:8px}",
+    ".fr-auth-tabs{display:flex;gap:4px;margin-bottom:10px;border-bottom:1px solid var(--border)}",
+    ".fr-auth-tab{padding:6px 10px;font-size:13px;color:var(--muted);font-weight:500;border-bottom:2px solid transparent;margin-bottom:-1px}",
+    ".fr-auth-tab:hover,.fr-auth-tab[aria-selected=true]{color:var(--fg)}.fr-auth-tab[aria-selected=true]{border-bottom-color:var(--accent)}",
+    ".fr-auth-form .fr-input{margin-bottom:8px}.fr-auth-form .fr-link{display:block;margin-top:10px}"
   ].join("\n");
 
   var state = { project: null, requests: [], loaded: false };
+  var EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+  function voteButton(r, onclick) {
+    var vote = el("button", { className: "fr-vote", type: "button" });
+    vote.innerHTML = UP_ICON;
+    vote.appendChild(el("span"));
+    paintVote(vote, r);
+    vote.addEventListener("click", onclick);
+    return vote;
+  }
+
+  // Read-only count for the list and for visitors who are not signed in.
+  function voteCount(r) {
+    var c = el("div", { className: "fr-count", "aria-label": (Number(r.votes) || 0) + " votes" });
+    c.innerHTML = UP_ICON;
+    c.appendChild(el("span", { text: String(Number(r.votes) || 0) }));
+    if (r.voted) c.className += " mine";
+    return c;
+  }
+
+  function paintVote(btn, r) {
+    btn.setAttribute("aria-pressed", r.voted ? "true" : "false");
+    btn.setAttribute("aria-label", (r.voted ? "Remove upvote: " : "Upvote: ") + r.title);
+    btn.lastChild.textContent = String(Number(r.votes) || 0);
+  }
+
+  // ---- Sign in / register panel, shown inside the request modal ----
+  function createAuthPanel(onSignedIn) {
+    var wrap = el("div", { className: "fr-auth" });
+    var tabIn = el("button", { className: "fr-auth-tab", type: "button", role: "tab", text: "Sign in" });
+    var tabUp = el("button", { className: "fr-auth-tab", type: "button", role: "tab", text: "Register" });
+    var tabs = el("div", { className: "fr-auth-tabs", role: "tablist" }, [tabIn, tabUp]);
+    var emailIn = el("input", { className: "fr-input", type: "email", placeholder: "you@example.com", autocomplete: "email", "aria-label": "Email" });
+    var passIn = el("input", { className: "fr-input", type: "password", placeholder: "Password", autocomplete: "current-password", "aria-label": "Password" });
+    var codeIn = el("input", { className: "fr-input", type: "text", inputmode: "numeric", autocomplete: "one-time-code", placeholder: "Code from the email", "aria-label": "Code" });
+    var msg = el("p", { className: "fr-msg", role: "status", "aria-live": "polite" });
+    msg.hidden = true;
+    var submit = el("button", { className: "fr-primary", type: "submit", text: "Sign in" });
+    var otpLink = el("button", { className: "fr-link", type: "button", text: "Email me a sign-in code instead" });
+    var backLink = el("button", { className: "fr-link", type: "button", text: "Use a password instead" });
+    var form = el("form", { className: "fr-auth-form", novalidate: "" }, [emailIn, passIn, codeIn, submit, msg, otpLink, backLink]);
+    wrap.appendChild(el("p", { className: "fr-auth-h", text: "Sign in to vote and comment" }));
+    wrap.appendChild(tabs);
+    wrap.appendChild(form);
+    var mode = "login"; // login | register | otp-request | otp-verify
+    var busy = false;
+
+    function setMode(m) {
+      mode = m;
+      var reg = m === "register", otp = m.indexOf("otp") === 0, verify = m === "otp-verify";
+      tabIn.setAttribute("aria-selected", reg ? "false" : "true");
+      tabUp.setAttribute("aria-selected", reg ? "true" : "false");
+      passIn.hidden = otp;
+      passIn.setAttribute("autocomplete", reg ? "new-password" : "current-password");
+      passIn.placeholder = reg ? "Password (10+ characters)" : "Password";
+      codeIn.hidden = !verify;
+      emailIn.readOnly = verify;
+      otpLink.hidden = reg || otp;
+      backLink.hidden = !otp;
+      submit.textContent = reg ? "Create account" : verify ? "Verify code" : m === "otp-request" ? "Send code" : "Sign in";
+      msg.hidden = true;
+    }
+    tabIn.addEventListener("click", function () { setMode("login"); emailIn.focus(); });
+    tabUp.addEventListener("click", function () { setMode("register"); emailIn.focus(); });
+    otpLink.addEventListener("click", function () { setMode("otp-request"); emailIn.focus(); });
+    backLink.addEventListener("click", function () { setMode("login"); emailIn.focus(); });
+    setMode("login");
+
+    form.addEventListener("submit", function (e) {
+      e.preventDefault();
+      if (busy) return;
+      var email = emailIn.value.trim();
+      if (!EMAIL_RE.test(email)) { setMsg(msg, "Enter a valid email address.", "err"); emailIn.focus(); return; }
+      var body = { intent: mode, email: email };
+      if (mode === "login" || mode === "register") {
+        body.password = passIn.value;
+        if (!body.password) { setMsg(msg, "Enter your password.", "err"); passIn.focus(); return; }
+        if (mode === "register" && body.password.length < 10) { setMsg(msg, "Use a password of at least 10 characters.", "err"); passIn.focus(); return; }
+      }
+      if (mode === "otp-verify") {
+        body.code = codeIn.value.trim();
+        if (!body.code) { setMsg(msg, "Enter the code from the email.", "err"); codeIn.focus(); return; }
+      }
+      busy = true;
+      submit.disabled = true;
+      setMsg(msg, "One moment...", "");
+      api("POST", "/api/auth", body).then(function (d) {
+        if (d.stage === "code") {
+          setMode("otp-verify");
+          setMsg(msg, d.notice || "Check your email for the code.", "ok");
+          codeIn.focus();
+          return;
+        }
+        if (!d.token) throw new Error("Sign-in failed. Please try again.");
+        setSession({ token: d.token, email: (d.user && d.user.email) || email });
+        onSignedIn();
+      }, function (err) {
+        setMsg(msg, err.message, "err");
+        if (err.data && err.data.otpOnly) setMode("otp-request");
+      }).then(function () {
+        busy = false;
+        submit.disabled = false;
+      });
+    });
+    return wrap;
+  }
 
   // ---- Board: the list of requests ----
   function createBoard(onLoaded) {
@@ -196,39 +349,10 @@ export const EMBED_SCRIPT: string = String.raw`(function () {
     var notice = el("p", { className: "fr-msg err", role: "alert" });
     notice.hidden = true;
     var list = el("ul", { className: "fr-list" });
-    // Votes belong to a person: this one-line form appears the first time
-    // someone votes without a remembered email, then stays out of the way.
-    var emailAskInput = el("input", { className: "fr-input", type: "email", placeholder: "you@example.com", autocomplete: "email" });
-    var emailAskSave = el("button", { className: "fr-primary", type: "submit", text: "Save" });
-    var emailAsk = el("form", { className: "fr-email-ask", novalidate: "" }, [
-      el("span", { text: "Enter your email to vote" }),
-      emailAskInput,
-      emailAskSave
-    ]);
-    emailAsk.hidden = true;
-    var emailAskPending = null;
-    emailAsk.addEventListener("submit", function (e) {
-      e.preventDefault();
-      var value = emailAskInput.value.trim();
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
-        flash("Enter your email address to vote.");
-        emailAskInput.focus();
-        return;
-      }
-      rememberEmail(value);
-      emailAsk.hidden = true;
-      var run = emailAskPending;
-      emailAskPending = null;
-      if (run) run();
-    });
-    function askEmailInline(pending) {
-      emailAskPending = pending;
-      emailAsk.hidden = false;
-      emailAskInput.focus();
-    }
-    var detailWrap = el("div", { className: "fr-detail" });
+    var detailWrap = el("div", { className: "fr-detail", role: "dialog", "aria-modal": "true", "aria-label": "Request", tabindex: "-1" });
+    detailWrap.addEventListener("click", function (e) { if (e.target === detailWrap) showList(); });
     detailWrap.hidden = true;
-    var wrap = el("div", {}, [intro, stateEl, notice, emailAsk, list, detailWrap]);
+    var wrap = el("div", {}, [intro, stateEl, notice, list, detailWrap]);
     var noticeTimer;
 
     function flash(text) {
@@ -244,24 +368,15 @@ export const EMBED_SCRIPT: string = String.raw`(function () {
       if (retry) stateEl.appendChild(el("button", { className: "fr-ghost", type: "button", text: "Retry", onclick: load }));
     }
 
-    function paintVote(btn, r) {
-      btn.setAttribute("aria-pressed", r.voted ? "true" : "false");
-      btn.setAttribute("aria-label", (r.voted ? "Remove upvote: " : "Upvote: ") + r.title);
-      btn.lastChild.textContent = String(Number(r.votes) || 0);
-    }
-
-    function toggleVote(r, btn) {
+    function toggleVote(r, btn, onErr) {
       if (r.pending) return;
-      if (!storedEmail()) {
-        askEmailInline(function () { toggleVote(r, btn); });
-        return;
-      }
+      if (!session()) { paintDetail(r, r.canEdit === true); return; }
       r.pending = true;
       var wasVoted = !!r.voted, wasVotes = Number(r.votes) || 0;
       r.voted = !wasVoted;
       r.votes = wasVotes + (r.voted ? 1 : -1);
       paintVote(btn, r);
-      api("POST", "/api/requests/" + encodeURIComponent(r.id) + "/vote", { voter: voterKey(), email: storedEmail() })
+      api("POST", "/api/requests/" + encodeURIComponent(r.id) + "/vote", { voter: voterKey() })
         .then(function (d) {
           if (typeof d.votes === "number") r.votes = d.votes;
           if (typeof d.voted === "boolean") r.voted = d.voted;
@@ -269,29 +384,46 @@ export const EMBED_SCRIPT: string = String.raw`(function () {
         }, function (err) {
           r.voted = wasVoted;
           r.votes = wasVotes;
-          paintVote(btn, r);
-          flash(err.message);
+          if (err.signIn) paintDetail(r, false);
+          else { paintVote(btn, r); onErr(err.message); }
         })
         .then(function () { r.pending = false; });
     }
 
     // ---- Detail view: one request, full page style, inside the widget ----
+    var savedOverflow = null;
+    function lockScroll() {
+      if (savedOverflow !== null) return;
+      savedOverflow = document.documentElement.style.overflow;
+      document.documentElement.style.overflow = "hidden";
+    }
+    function unlockScroll() {
+      if (savedOverflow === null) return;
+      document.documentElement.style.overflow = savedOverflow;
+      savedOverflow = null;
+    }
+    function onDetailKey(e) {
+      if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); showList(); }
+    }
+
     function showList() {
+      if (detailWrap.hidden) return;
       detailWrap.hidden = true;
       detailWrap.textContent = "";
-      list.hidden = false;
-      if (state.project && state.project.intro) intro.hidden = false;
+      unlockScroll();
+      document.removeEventListener("keydown", onDetailKey, true);
       render();
     }
 
     function showDetail(r) {
-      list.hidden = true;
-      intro.hidden = true;
-      stateEl.hidden = true;
       detailWrap.hidden = false;
+      lockScroll();
+      document.addEventListener("keydown", onDetailKey, true);
+      detailWrap.focus();
       paintDetail(r, null);
-      // Fresh copy plus the edit claim (server-checked email match).
-      api("GET", "/api/requests/" + encodeURIComponent(r.id) + "?voter=" + encodeURIComponent(voterKey()) + (storedEmail() ? "&email=" + encodeURIComponent(storedEmail()) : ""))
+      // Fresh copy plus, when signed in, the vote state and the edit claim
+      // (server-checked email match on the bearer token).
+      api("GET", "/api/requests/" + encodeURIComponent(r.id) + "?voter=" + encodeURIComponent(voterKey()))
         .then(function (d) {
           if (d.request) {
             r.title = d.request.title;
@@ -300,7 +432,9 @@ export const EMBED_SCRIPT: string = String.raw`(function () {
             r.votes = d.request.votes;
             r.voted = d.request.voted;
           }
-          if (!detailWrap.hidden) paintDetail(r, d.canEdit === true);
+          r.comments = d.comments || [];
+          r.canEdit = d.canEdit === true;
+          if (!detailWrap.hidden) paintDetail(r, r.canEdit);
         }, function () {
           if (!detailWrap.hidden) paintDetail(r, false);
         });
@@ -308,18 +442,21 @@ export const EMBED_SCRIPT: string = String.raw`(function () {
 
     function paintDetail(r, canEdit) {
       detailWrap.textContent = "";
-      detailWrap.appendChild(el("button", { className: "fr-back", type: "button", text: "\u2190 All requests", onclick: showList }));
-      var vote = el("button", { className: "fr-vote", type: "button" });
-      vote.innerHTML = UP_ICON;
-      vote.appendChild(el("span"));
-      paintVote(vote, r);
-      vote.addEventListener("click", function () { toggleVote(r, vote); });
+      var signedIn = !!session();
+      var inner = el("div", { className: "fr-detail-inner" });
+      inner.appendChild(el("button", { className: "fr-back", type: "button", text: "← All requests", onclick: showList }));
+      var dMsg = el("p", { className: "fr-msg", role: "status", "aria-live": "polite" });
+      dMsg.hidden = true;
+      var vote = signedIn
+        ? voteButton(r, function () { toggleVote(r, vote, function (m) { setMsg(dMsg, m, "err"); }); })
+        : voteCount(r);
       var title = el("p", { className: "fr-detail-title", text: r.title || "" });
       if (STATUS[r.status]) title.appendChild(el("span", { className: "fr-chip " + r.status, text: STATUS[r.status] }));
       var main = el("div", { className: "fr-main" }, [title]);
       if (r.createdAt) main.appendChild(el("p", { className: "fr-detail-meta", text: new Date(r.createdAt).toLocaleDateString() }));
       if (r.details) main.appendChild(el("p", { className: "fr-details", text: r.details }));
-      if (canEdit) {
+      main.appendChild(dMsg);
+      if (signedIn && canEdit) {
         var editBtn = el("button", { className: "fr-ghost", type: "button", text: "Edit details" });
         var editor = el("div", { className: "fr-editor" });
         editor.hidden = true;
@@ -332,11 +469,12 @@ export const EMBED_SCRIPT: string = String.raw`(function () {
         save.addEventListener("click", function () {
           save.disabled = true;
           setMsg(emsg, "Saving...", "");
-          api("POST", "/api/requests/" + encodeURIComponent(r.id), { email: storedEmail(), voter: voterKey(), details: ta.value })
+          api("POST", "/api/requests/" + encodeURIComponent(r.id), { voter: voterKey(), details: ta.value })
             .then(function (d) {
               if (d.request) r.details = d.request.details;
               paintDetail(r, true);
             }, function (err) {
+              if (err.signIn) { paintDetail(r, false); return; }
               save.disabled = false;
               setMsg(emsg, err.message, "err");
             });
@@ -348,31 +486,78 @@ export const EMBED_SCRIPT: string = String.raw`(function () {
         main.appendChild(editBtn);
         main.appendChild(editor);
       }
-      detailWrap.appendChild(el("div", { className: "fr-detail-body" }, [vote, main]));
+      if (r.comments) {
+        var cWrap = el("div", { className: "fr-comments" });
+        cWrap.appendChild(el("p", { className: "fr-comments-h", text: "Comments (" + r.comments.length + ")" }));
+        for (var ci = 0; ci < r.comments.length; ci++) {
+          var c = r.comments[ci];
+          cWrap.appendChild(el("div", { className: "fr-comment" }, [
+            el("p", { className: "fr-comment-meta", text: (c.name || "Anonymous") + (c.createdAt ? " · " + new Date(c.createdAt).toLocaleDateString() : "") }),
+            el("p", { className: "fr-comment-body", text: c.body || "" })
+          ]));
+        }
+        if (signedIn) {
+          var cBody = el("textarea", { className: "fr-input", maxlength: "2000", placeholder: "Add to the conversation", "aria-label": "Comment" });
+          var cName = el("input", { className: "fr-input", type: "text", maxlength: "60", placeholder: "Name (optional)", autocomplete: "name" });
+          var cHp = el("input", { type: "text", name: "website", tabindex: "-1", autocomplete: "off", "aria-hidden": "true" });
+          var cMsg = el("p", { className: "fr-msg", role: "status", "aria-live": "polite" });
+          cMsg.hidden = true;
+          var cSubmit = el("button", { className: "fr-primary", type: "submit", text: "Comment" });
+          var cForm = el("form", { className: "fr-comment-form", novalidate: "" }, [cBody, cName]);
+          cForm.appendChild(el("div", { className: "fr-hp", "aria-hidden": "true" }, [cHp]));
+          cForm.appendChild(cSubmit);
+          cForm.appendChild(cMsg);
+          cForm.addEventListener("submit", function (e) {
+            e.preventDefault();
+            if (!cBody.value.trim()) {
+              setMsg(cMsg, "Write a comment first.", "err");
+              cBody.focus();
+              return;
+            }
+            cSubmit.disabled = true;
+            setMsg(cMsg, "Sending...", "");
+            api("POST", "/api/requests/" + encodeURIComponent(r.id) + "/comments", { body: cBody.value.trim(), name: cName.value.trim(), voter: voterKey(), website: cHp.value })
+              .then(function (d) {
+                if (d.comment) r.comments.push(d.comment);
+                paintDetail(r, canEdit);
+              }, function (err) {
+                if (err.signIn) { paintDetail(r, false); return; }
+                cSubmit.disabled = false;
+                setMsg(cMsg, err.message, "err");
+              });
+          });
+          cWrap.appendChild(cForm);
+        }
+        main.appendChild(cWrap);
+      }
+      if (signedIn) {
+        var who = el("p", { className: "fr-who" }, [
+          el("span", { text: "Signed in as " + sessionEmail() + " · " }),
+          el("button", { className: "fr-link", type: "button", text: "Sign out", onclick: function () { setSession(null); paintDetail(r, false); } })
+        ]);
+        main.appendChild(who);
+      } else {
+        main.appendChild(createAuthPanel(function () { showDetail(r); }));
+      }
+      inner.appendChild(el("div", { className: "fr-detail-body" }, [vote, main]));
+      detailWrap.appendChild(inner);
+      detailWrap.scrollTop = 0;
     }
 
+    // List rows: no vote button here. The count is read-only; voting and
+    // commenting happen in the modal, after signing in.
     function row(r) {
-      var vote = el("button", { className: "fr-vote", type: "button" });
-      vote.innerHTML = UP_ICON;
-      vote.appendChild(el("span"));
-      paintVote(vote, r);
-      vote.addEventListener("click", function () { toggleVote(r, vote); });
       var title = el("p", { className: "fr-row-title", text: r.title || "" });
       if (STATUS[r.status]) title.appendChild(el("span", { className: "fr-chip " + r.status, text: STATUS[r.status] }));
-      var openBtn = el("button", { className: "fr-row-btn", type: "button" }, [title]);
-      openBtn.addEventListener("click", function () { showDetail(r); });
-      var main = el("div", { className: "fr-main" }, [openBtn]);
+      var main = el("div", { className: "fr-main" }, [title]);
       if (r.details) {
         var long = r.details.length > 140 || r.details.indexOf("\n") !== -1;
-        var details = el("p", { className: "fr-details" + (long ? " clamped" : ""), text: r.details });
-        main.appendChild(details);
-        if (long) {
-          var more = el("button", { className: "fr-more", type: "button", text: "Read more" });
-          more.addEventListener("click", function () { showDetail(r); });
-          main.appendChild(more);
-        }
+        main.appendChild(el("p", { className: "fr-details" + (long ? " clamped" : ""), text: r.details }));
+        if (long) main.appendChild(el("span", { className: "fr-more", text: "Read more" }));
       }
-      return el("li", { className: "fr-row" }, [vote, main]);
+      var openBtn = el("button", { className: "fr-row-btn", type: "button", "aria-label": "Open: " + (r.title || "") }, [voteCount(r), main]);
+      openBtn.addEventListener("click", function () { showDetail(r); });
+      return el("li", { className: "fr-row" }, [openBtn]);
     }
 
     function render() {
@@ -385,7 +570,7 @@ export const EMBED_SCRIPT: string = String.raw`(function () {
       showState("Loading requests...");
       list.textContent = "";
       notice.hidden = true;
-      api("GET", "/api/projects/" + encodeURIComponent(projectId) + "/board?voter=" + encodeURIComponent(voterKey()) + (storedEmail() ? "&email=" + encodeURIComponent(storedEmail()) : ""))
+      api("GET", "/api/projects/" + encodeURIComponent(projectId) + "/board?voter=" + encodeURIComponent(voterKey()))
         .then(function (data) {
           state.project = data.project || {};
           state.requests = Array.isArray(data.requests) ? data.requests : [];
@@ -422,14 +607,19 @@ export const EMBED_SCRIPT: string = String.raw`(function () {
       return el("label", { className: "fr-field" }, [el("span", { text: text }), input]);
     }
 
+    var emailField = field("Email (required, we send a verification code)", emailIn);
     var form = el("form", { novalidate: "" }, [
       field("Title", titleIn),
       field("Details (optional)", detailsIn),
-      field("Email (required, we send a verification code)", emailIn),
+      emailField,
       el("div", { className: "fr-hp", "aria-hidden": "true" }, [hp]),
       submit,
       msg
     ]);
+    // Signed-in people submit under their account email; no need to ask again.
+    function syncAuth() { emailField.hidden = !!sessionEmail(); }
+    authListeners.push(syncAuth);
+    syncAuth();
 
     form.addEventListener("submit", function (e) {
       e.preventDefault();
@@ -440,8 +630,8 @@ export const EMBED_SCRIPT: string = String.raw`(function () {
         titleIn.focus();
         return;
       }
-      var email = emailIn.value.trim();
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      var email = sessionEmail() || emailIn.value.trim();
+      if (!EMAIL_RE.test(email)) {
         setMsg(msg, "Enter your email address so we can verify it.", "err");
         emailIn.focus();
         return;
@@ -456,7 +646,6 @@ export const EMBED_SCRIPT: string = String.raw`(function () {
         voter: voterKey(),
         website: hp.value
       }).then(function (data) {
-        rememberEmail(email);
         form.reset();
         if (data.verificationSent) {
           setMsg(msg, "Thanks, your request has been added. We emailed " + email + " a verification code.", "ok");
@@ -571,11 +760,16 @@ export const EMBED_SCRIPT: string = String.raw`(function () {
     }
     function onDocPointer(e) {
       var path = e.composedPath ? e.composedPath() : [];
+      for (var i = 0; i < path.length; i++) {
+        if (path[i] && path[i].classList && path[i].classList.contains("fr-detail")) return;
+      }
       if (path.indexOf(panel) === -1 && path.indexOf(launch) === -1) close();
     }
     // Keep Tab focus inside the open panel.
     panel.addEventListener("keydown", function (e) {
       if (e.key !== "Tab") return;
+      var od = panel.querySelector(".fr-detail");
+      if (od && !od.hidden) return;
       var all = panel.querySelectorAll("button,input,textarea,a[href]"), f = [];
       for (var i = 0; i < all.length; i++) {
         if (!all[i].disabled && all[i].tabIndex !== -1 && all[i].offsetParent !== null) f.push(all[i]);

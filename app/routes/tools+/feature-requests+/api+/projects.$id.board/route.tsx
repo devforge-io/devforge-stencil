@@ -2,6 +2,7 @@
 
 import type { LoaderFunctionArgs } from "react-router";
 import type { AnvilError } from "~/lib/feature-requests/anvil.server";
+import { embedUser } from "~/lib/feature-requests/embed-auth.server";
 import { corsHeaders, json, preflight } from "~/lib/feature-requests/http.server";
 import { getProject, listRequests, publicProject, publicRequest, votedRequestIds } from "~/lib/feature-requests/store.server";
 
@@ -14,7 +15,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     // gates writes (submissions and votes).
     const headers = corsHeaders(request);
     const search = new URL(request.url).searchParams;
-    const identity = { email: search.get("email") ?? undefined, voter: search.get("voter") ?? undefined };
+    const user = embedUser(request);
+    const identity = { email: user ? user.email : (search.get("email") ?? undefined), voter: search.get("voter") ?? undefined };
     const [requests, voted] = project.boardEnabled ? await Promise.all([listRequests(project.id), votedRequestIds(project.id, identity)]) : [[], new Set<string>()];
     return json({ ok: true, project: publicProject(project), requests: requests.map((r) => publicRequest(r, voted.has(r.id))) }, { headers });
   } catch (err) {
