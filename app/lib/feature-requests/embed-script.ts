@@ -447,9 +447,8 @@ export const EMBED_SCRIPT: string = String.raw`(function () {
       inner.appendChild(el("button", { className: "fr-back", type: "button", text: "← All requests", onclick: showList }));
       var dMsg = el("p", { className: "fr-msg", role: "status", "aria-live": "polite" });
       dMsg.hidden = true;
-      var vote = signedIn
-        ? voteButton(r, function () { toggleVote(r, vote, function (m) { setMsg(dMsg, m, "err"); }); })
-        : voteCount(r);
+      // Signed out: no vote, no comments, just the request and the sign-in panel.
+      var vote = signedIn ? voteButton(r, function () { toggleVote(r, vote, function (m) { setMsg(dMsg, m, "err"); }); }) : null;
       var title = el("p", { className: "fr-detail-title", text: r.title || "" });
       if (STATUS[r.status]) title.appendChild(el("span", { className: "fr-chip " + r.status, text: STATUS[r.status] }));
       var main = el("div", { className: "fr-main" }, [title]);
@@ -486,7 +485,7 @@ export const EMBED_SCRIPT: string = String.raw`(function () {
         main.appendChild(editBtn);
         main.appendChild(editor);
       }
-      if (r.comments) {
+      if (signedIn && r.comments) {
         var cWrap = el("div", { className: "fr-comments" });
         cWrap.appendChild(el("p", { className: "fr-comments-h", text: "Comments (" + r.comments.length + ")" }));
         for (var ci = 0; ci < r.comments.length; ci++) {
@@ -496,7 +495,7 @@ export const EMBED_SCRIPT: string = String.raw`(function () {
             el("p", { className: "fr-comment-body", text: c.body || "" })
           ]));
         }
-        if (signedIn) {
+        {
           var cBody = el("textarea", { className: "fr-input", maxlength: "2000", placeholder: "Add to the conversation", "aria-label": "Comment" });
           var cName = el("input", { className: "fr-input", type: "text", maxlength: "60", placeholder: "Name (optional)", autocomplete: "name" });
           var cHp = el("input", { type: "text", name: "website", tabindex: "-1", autocomplete: "off", "aria-hidden": "true" });
@@ -544,8 +543,9 @@ export const EMBED_SCRIPT: string = String.raw`(function () {
       detailWrap.scrollTop = 0;
     }
 
-    // List rows: no vote button here. The count is read-only; voting and
-    // commenting happen in the modal, after signing in.
+    // List rows: no vote button here. Signed in, the count is read-only;
+    // signed out, nothing vote-related shows. Voting and commenting happen in
+    // the modal, after signing in.
     function row(r) {
       var title = el("p", { className: "fr-row-title", text: r.title || "" });
       if (STATUS[r.status]) title.appendChild(el("span", { className: "fr-chip " + r.status, text: STATUS[r.status] }));
@@ -555,7 +555,7 @@ export const EMBED_SCRIPT: string = String.raw`(function () {
         main.appendChild(el("p", { className: "fr-details" + (long ? " clamped" : ""), text: r.details }));
         if (long) main.appendChild(el("span", { className: "fr-more", text: "Read more" }));
       }
-      var openBtn = el("button", { className: "fr-row-btn", type: "button", "aria-label": "Open: " + (r.title || "") }, [voteCount(r), main]);
+      var openBtn = el("button", { className: "fr-row-btn", type: "button", "aria-label": "Open: " + (r.title || "") }, [session() ? voteCount(r) : null, main]);
       openBtn.addEventListener("click", function () { showDetail(r); });
       return el("li", { className: "fr-row" }, [openBtn]);
     }
@@ -583,6 +583,8 @@ export const EMBED_SCRIPT: string = String.raw`(function () {
           onLoaded(null);
         });
     }
+
+    authListeners.push(function () { if (state.loaded) render(); });
 
     return {
       el: wrap,

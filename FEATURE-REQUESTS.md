@@ -200,12 +200,13 @@ memory (one instance). Submitting an idea through the widget requires an email a
 the mailer is configured) and requests carry the submitter's email and Anvil user id.
 
 Since 2026-08-28 (widget v8) voting, commenting and editing require a signed-in
-account. The list shows a read-only vote count per request; each row opens a
+account. The list shows a read-only vote count per request once signed in; each row opens a
 centered modal, entirely inside the embed (Ben's calls: no links out to
 devforge.io, full context, not full screen): a dimmed backdrop with a card up to
 600px wide that scrolls internally (host page scroll locked while open; Esc, the
-backdrop, or the back link closes). Signed out, the modal shows the title, date,
-details, the count and the comments, followed by a sign in / register panel
+backdrop, or the back link closes). Signed out, nothing vote- or comment-related shows at all (no count in the
+list or the modal, no comment thread); the modal shows the title, date and
+details, followed by a sign in / register panel
 (password sign-in, password registration, or an emailed code; same Anvil
 endpoints as the sign-in and sign-up pages, via `POST /api/auth`). Signed in, it
 shows the vote button, the comment form (the optional name is the only public
