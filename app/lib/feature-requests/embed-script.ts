@@ -3,7 +3,7 @@
 // dependencies; everything renders inside a Shadow DOM root so host-page CSS cannot leak
 // in or out. Do not use backticks or "${" inside the script: it is a String.raw template.
 
-export const EMBED_SCRIPT_VERSION = "9";
+export const EMBED_SCRIPT_VERSION = "10";
 
 export const EMBED_SCRIPT: string = String.raw`(function () {
   "use strict";
@@ -653,11 +653,17 @@ export const EMBED_SCRIPT: string = String.raw`(function () {
     function field(text, input) {
       return el("label", { className: "fr-field" }, [el("span", { text: text }), input]);
     }
+    // Not a <label>: clicking a label re-targets focus to a form control,
+    // and a contenteditable div is not one, so the editor would lose focus
+    // on every click. A div with the same classes looks identical.
+    function richField(text, input) {
+      return el("div", { className: "fr-field" }, [el("span", { text: text }), input]);
+    }
 
     var emailField = field("Email (required, we send a verification code)", emailIn);
     var form = el("form", { novalidate: "" }, [
       field("Title", titleIn),
-      field("Details (optional)", detailsEd.el),
+      richField("Details (optional)", detailsEd.el),
       emailField,
       el("div", { className: "fr-hp", "aria-hidden": "true" }, [hp]),
       submit,
