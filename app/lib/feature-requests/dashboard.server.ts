@@ -1,7 +1,7 @@
 /**
  * Shared loader/action logic for a project dashboard, used by both
  * /tools/feature-requests/projects/:id and /project/:id. Access is by
- * manager: the Anvil user id, or a matching fr_projects ownerEmail.
+ * manager: the Anvil user id (the only owner claim since 2026-08-31).
  */
 
 import { redirect } from "react-router";
@@ -43,7 +43,7 @@ export async function loadProjectDashboard(
   signInPath: string,
 ): Promise<Response | DashboardData> {
   const user = await requireFrUser(request, signInPath);
-  const project = await getManagedProject(projectId, { id: user.id, email: user.email }).catch(() => null);
+  const project = await getManagedProject(projectId, { id: user.id }).catch(() => null);
   if (!project) throw new Response("Not found", { status: 404 });
   const url = new URL(request.url);
   const filter = url.searchParams.get("status") ?? "all";
@@ -81,7 +81,7 @@ export async function actOnProjectDashboard(
   afterDeletePath: string,
 ): Promise<Response | { ok: true; saved?: boolean }> {
   const user = await requireFrUser(request, signInPath);
-  const manager = { id: user.id, email: user.email };
+  const manager = { id: user.id };
   const form = await request.formData();
   await validateCsrf(request, form);
   const project = await getManagedProject(projectId, manager).catch(() => null);

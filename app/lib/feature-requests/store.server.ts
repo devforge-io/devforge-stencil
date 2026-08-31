@@ -1,7 +1,7 @@
 /**
  * Data access for the feature-requests tool, on Anvil DB's document store.
  *
- *   fr_projects  key = project id   {id, ownerId, ownerEmail, name, intro, origins[],
+ *   fr_projects  key = project id   {id, ownerId, name, intro, origins[],
  *                                    boardEnabled, accent, buttonLabel, createdAt, updatedAt}
  *   fr_requests  key = request id   {id, projectId, title, details, status, votes,
  *                                    origin, ipHash, createdAt, updatedAt}
@@ -59,7 +59,6 @@ function ensureCollections(): Promise<void> {
 export type Project = {
   id: string;
   ownerId: string;
-  ownerEmail: string;
   name: string;
   intro: string;
   origins: string[];
@@ -110,7 +109,6 @@ function toProject(doc: AnvilDocument): Project {
   return {
     id: str(p.id, doc.key),
     ownerId: str(p.ownerId),
-    ownerEmail: str(p.ownerEmail),
     name: str(p.name),
     intro: str(p.intro),
     origins: readOrigins(p),
@@ -126,7 +124,6 @@ function projectBody(p: Project): Record<string, unknown> {
   return {
     id: p.id,
     ownerId: p.ownerId,
-    ownerEmail: p.ownerEmail,
     name: p.name,
     intro: p.intro,
     origins: p.origins,
@@ -222,42 +219,27 @@ export async function getOwnedProject(id: string, ownerId: string): Promise<Proj
   return p && p.ownerId === ownerId ? p : null;
 }
 
-export type Manager = { id: string; email: string };
-
-const sameEmail = (a: string, b: string) => Boolean(a) && a.trim().toLowerCase() === b.trim().toLowerCase();
+export type Manager = { id: string };
 
 /**
- * The project if this person manages it: matching Anvil user id, or matching
- * ownerEmail. Email is the durable claim; ids stop matching when accounts move
- * between Anvil servers while the project documents survive.
+ * The project if this person manages it. The Anvil user id is the only owner
+ * claim (2026-08-31): the graph links the project to :User, no stored email.
  */
 export async function getManagedProject(id: string, manager: Manager): Promise<Project | null> {
   const p = await getProject(id);
-  if (!p) return null;
-  if (p.ownerId === manager.id) return p;
-  return sameEmail(p.ownerEmail, manager.email) ? p : null;
+  return p && p.ownerId === manager.id ? p : null;
 }
 
-/** Every project this person manages, by user id or ownerEmail, deduplicated. */
+/** Every project this person manages, by Anvil user id. */
 export async function listManagedProjects(manager: Manager): Promise<Project[]> {
+  if (!manager.id) return [];
   await ensureCollections();
-  const byId = manager.id ? await docQuery(PROJECTS, { op: "eq", field: "ownerId", value: manager.id }, LIMITS.projectsPerUser * 2) : [];
-  const byEmail = manager.email
-    ? (await docQuery(PROJECTS, null, 10_000)).filter((d) => sameEmail(String(d.body.ownerEmail ?? ""), manager.email))
-    : [];
-  const seen = new Set<string>();
-  const out: Project[] = [];
-  for (const doc of [...byId, ...byEmail]) {
-    const project = toProject(doc);
-    if (seen.has(project.id)) continue;
-    seen.add(project.id);
-    out.push(project);
-  }
-  return out.sort(byNewest);
+  const docs = await docQuery(PROJECTS, { op: "eq", field: "ownerId", value: manager.id }, LIMITS.projectsPerUser * 2);
+  return docs.map(toProject);
 }
 
 export async function createProject(
-  owner: { id: string; email: string },
+  owner: { id: string },
   input: { name: string; intro?: string; origins?: string[] },
 ): Promise<Project> {
   const existing = await listProjects(owner.id);
@@ -266,7 +248,6 @@ export async function createProject(
   const project: Project = {
     id: await reserveUuid(),
     ownerId: owner.id,
-    ownerEmail: owner.email,
     name: input.name.trim().slice(0, LIMITS.projectName),
     intro: (input.intro ?? "").trim().slice(0, LIMITS.intro),
     origins: (input.origins ?? []).slice(0, LIMITS.origins),

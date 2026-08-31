@@ -1,6 +1,6 @@
 /**
  * /project: the self-serve home for project owners. Sign in with an emailed
- * code (Anvil OTP); once signed in, every fr_projects entry whose ownerEmail
+ * code (Anvil OTP); once signed in, every fr_projects entry whose ownerId
  * matches the address (or whose ownerId matches the account) is listed.
  * Email is the durable ownership claim: it survives Anvil account moves.
  */
@@ -28,7 +28,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const user = await getFrUser(request);
   const [{ token, setCookie }, chrome] = await Promise.all([ensureCsrfToken(request), getSiteChrome()]);
   let projects: Project[] = [];
-  if (user) projects = await listManagedProjects({ id: user.id, email: user.email }).catch(() => []);
+  if (user) projects = await listManagedProjects({ id: user.id }).catch(() => []);
   const data = { csrfToken: token, chrome, user: user ? { email: user.email } : null, projects };
   return setCookie ? Response.json(data, { headers: { "Set-Cookie": setCookie } }) : data;
 }

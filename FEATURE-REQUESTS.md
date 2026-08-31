@@ -53,7 +53,7 @@ curl -s -o /dev/null -w '%{http_code}\n' -X POST $ANVIL_URL/auth/register \
 Documents in Anvil's document store (`/docs/*` REST API), one collection per type:
 
 ```
-fr_projects  key = project id        {id, ownerId, ownerEmail, name, intro, origins[],
+fr_projects  key = project id        {id, ownerId, name, intro, origins[],
                                       boardEnabled, accent, buttonLabel, createdAt, updatedAt}
 fr_requests  key = request id        {id, projectId, title, details, submitterId, status,
                                       votes, origin, ipHash, createdAt, updatedAt}
@@ -237,7 +237,7 @@ resolves for app-written data.
 | `/api/projects/:id/uploads` | POST (CORS, bearer token): upload one attachment ahead of a submission. |
 | `/api/attachments/:aid` | GET streams the file; DELETE removes a pending upload (uploader only). |
 | `/api/auth` | Widget sign-in (CORS): `intent` otp-request (registers unknown addresses first) or otp-verify; returns the bearer token. |
-| `/project`, `/project/:id` | Owner self-serve area: emailed-code sign-in only, then every project whose `ownerEmail` matches the address (or whose `ownerId` matches the account). Same dashboard as the tools area (shared component). |
+| `/project`, `/project/:id` | Owner self-serve area: emailed-code sign-in only, then every project whose `ownerId` matches the account. Same dashboard as the tools area (shared component). |
 | `GET /api/projects/:id/board?voter=` | Public JSON: project info + visible requests. |
 | `POST /api/projects/:id/requests` | Submit `{title, details, email, voter, website}`; `website` is a honeypot. |
 | `POST /api/requests/:rid/vote` | Toggle `{voter}`'s vote. |
@@ -250,8 +250,8 @@ allow-list (exact origin match), and are rate limited per IP and per project in
 memory (one instance). Identity is the Anvil user id (Ben's call, 2026-08-31): request, vote,
 comment and attachment documents carry only `submitterId`/`userId`, which the
 graph links to `:User`; no email copies (the pre-cutover rows on the hosted
-instance still carry `email`/`emailLower` until the one-off field-drop
-migration is run). Submitting an idea still asks for an email: it resolves to
+instance were rewritten 2026-08-31 to drop `email`/`emailLower`/`ownerEmail`
+too). Submitting an idea still asks for an email: it resolves to
 the account via `registerVisitor` (registration sends the verification email
 when the mailer is configured) and only the resulting user id is stored, so a
 submission whose registration fails has no edit claim. The hosted board's

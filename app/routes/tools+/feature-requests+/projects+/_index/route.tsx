@@ -20,7 +20,7 @@ export function meta() {
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const user = await requireFrUser(request);
-  const [{ token, setCookie }, chrome, projects] = await Promise.all([ensureCsrfToken(request), getSiteChrome(), listManagedProjects({ id: user.id, email: user.email })]);
+  const [{ token, setCookie }, chrome, projects] = await Promise.all([ensureCsrfToken(request), getSiteChrome(), listManagedProjects({ id: user.id })]);
   const data = { csrfToken: token, chrome, user: { email: user.email }, projects };
   return setCookie ? Response.json(data, { headers: { "Set-Cookie": setCookie } }) : data;
 }
@@ -33,7 +33,7 @@ export async function action({ request }: ActionFunctionArgs) {
   if (name.length < 2) return Response.json({ error: "Give the project a name." }, { status: 400 });
   try {
     const project = await createProject(
-      { id: user.id, email: user.email },
+      { id: user.id },
       { name, intro: String(form.get("intro") ?? ""), origins: parseOriginList(String(form.get("origins") ?? "")) },
     );
     return redirect(`${TOOL_PATH}/projects/${project.id}`);
