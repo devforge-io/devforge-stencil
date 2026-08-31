@@ -12,6 +12,7 @@ import { ensureCsrfToken, validateCsrf } from "~/lib/csrf.server";
 import { CsrfInput, CsrfProvider } from "~/components/csrf-input";
 import { newId, type AnvilError } from "~/lib/feature-requests/anvil.server";
 import { clientIp, rateLimited } from "~/lib/feature-requests/http.server";
+import { sanitizeDetails } from "~/lib/feature-requests/details";
 import { LIMITS } from "~/lib/feature-requests/shared";
 import { createComment, getProject, getRequest, isVoterKey, listComments, publicComment, publicRequest, toggleVote, updateRequestDetails, votedRequestIds } from "~/lib/feature-requests/store.server";
 import { Card, Field, Notice, Shell, StatusChip, formatDate, inputClass, primaryBtn } from "~/components/tools/feature-requests/shell";
@@ -146,7 +147,7 @@ export default function RequestPage() {
             </div>
             <div className="mt-2 font-mono text-[11px] text-white/35">{formatDate(r.createdAt)}</div>
             {r.details ? (
-              <p className="mt-5 max-w-2xl whitespace-pre-wrap text-[15px] leading-relaxed text-white/70">{r.details}</p>
+              <div className="mt-5 max-w-2xl fr-rich whitespace-pre-wrap [&_ol]:list-decimal [&_ol]:pl-5 [&_ul]:list-disc [&_ul]:pl-5 text-[15px] leading-relaxed text-white/70" dangerouslySetInnerHTML={{ __html: sanitizeDetails(r.details).html }} />
             ) : (
               <p className="mt-5 text-sm text-white/40">No details yet.</p>
             )}

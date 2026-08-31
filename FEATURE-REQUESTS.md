@@ -94,6 +94,16 @@ The collections are created automatically on first use.
 - Setting `ANVIL_DATABASE` switches the schema context on 0.1.0; leave it
   empty for the default.
 
+Details are rich text (widget v9, 2026-08-31): the suggest form and the
+modal's edit box are contenteditable with a small toolbar (bold, italic,
+underline, strikethrough, lists), a basic version of Stencil's page editor
+text tools. The server is the only gate: `details.ts` sanitizes to an
+allowlist (b i u s p div br ul ol li, attributes dropped, tags balanced) on
+every write and on every read that renders HTML, so legacy plain-text rows and
+hostile payloads both come out safe. `publicRequest` returns `details` (plain
+text, for previews and clamps) plus `detailsHtml`. `LIMITS.details` applies to
+the text; the stored markup may be up to 4x that.
+
 ## Graph sync
 
 The app writes documents only. On the Anvil server, sync rules mirror the

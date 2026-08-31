@@ -5,7 +5,7 @@ import { EMBED_SCRIPT, EMBED_SCRIPT_VERSION } from "./embed-script";
 test("embed script is valid JavaScript", () => {
   assert.doesNotThrow(() => new Function(EMBED_SCRIPT));
   assert.ok(EMBED_SCRIPT.trim().startsWith("(function ()"), "wrapped in an IIFE");
-  assert.equal(EMBED_SCRIPT_VERSION, "8");
+  assert.equal(EMBED_SCRIPT_VERSION, "9");
 });
 
 test("embed script contains no em dashes", () => {
@@ -28,7 +28,7 @@ test("embed script keeps the contract details", () => {
 });
 
 test("embed script stays small", () => {
-  assert.ok(EMBED_SCRIPT.length < 48000, "script is " + EMBED_SCRIPT.length + " chars");
+  assert.ok(EMBED_SCRIPT.length < 56000, "script is " + EMBED_SCRIPT.length + " chars");
 });
 
 test("embed script gates votes and comments behind the bearer token", () => {
@@ -36,4 +36,10 @@ test("embed script gates votes and comments behind the bearer token", () => {
   assert.ok(EMBED_SCRIPT.includes('headers["Authorization"] = "Bearer " + s.token'), "token sent on API calls");
   assert.ok(EMBED_SCRIPT.includes('"devforge-fr-session"'), "session storage name");
   assert.ok(!EMBED_SCRIPT.includes("devforge-fr-email"), "remembered-email flow is gone");
+});
+
+test("embed script has the rich details editor", () => {
+  assert.ok(EMBED_SCRIPT.includes('contenteditable: "true"'), "contenteditable area");
+  assert.match(EMBED_SCRIPT, /execCommand/);
+  assert.ok(EMBED_SCRIPT.includes("insertUnorderedList"), "list tool");
 });

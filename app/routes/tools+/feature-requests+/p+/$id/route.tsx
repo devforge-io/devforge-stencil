@@ -12,6 +12,7 @@ import { ensureCsrfToken, validateCsrf } from "~/lib/csrf.server";
 import { CsrfInput, CsrfProvider } from "~/components/csrf-input";
 import { newId, type AnvilError } from "~/lib/feature-requests/anvil.server";
 import { clientIp, rateLimited } from "~/lib/feature-requests/http.server";
+import { sanitizeDetails } from "~/lib/feature-requests/details";
 import { LIMITS } from "~/lib/feature-requests/shared";
 import { createRequest, getProject, isVoterKey, listRequests, publicRequest, toggleVote, votedRequestIds } from "~/lib/feature-requests/store.server";
 import { Card, Field, Notice, Shell, StatusChip, TOOL_PATH, formatDate, inputClass, primaryBtn } from "~/components/tools/feature-requests/shell";
@@ -183,7 +184,7 @@ export default function PublicBoard() {
                         </h3>
                         {r.status !== "new" ? <StatusChip status={r.status} /> : null}
                       </div>
-                      {r.details ? <p className="mt-1.5 whitespace-pre-wrap text-sm leading-relaxed text-white/60">{r.details}</p> : null}
+                      {r.details ? <div className="mt-1.5 fr-rich whitespace-pre-wrap [&_ol]:list-decimal [&_ol]:pl-5 [&_ul]:list-disc [&_ul]:pl-5 text-sm leading-relaxed text-white/60" dangerouslySetInnerHTML={{ __html: sanitizeDetails(r.details).html }} /> : null}
                       <div className="mt-1.5 font-mono text-[11px] text-white/35">{formatDate(r.createdAt)}</div>
                     </div>
                   </div>

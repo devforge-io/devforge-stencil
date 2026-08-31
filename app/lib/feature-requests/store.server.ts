@@ -33,6 +33,7 @@ import {
   type AnvilDocument,
 } from "./anvil.server";
 import { DEFAULT_ACCENT, DEFAULT_BUTTON_LABEL, LIMITS, STATUSES, STATUS_LABEL, isStatus, type RequestStatus } from "./shared";
+import { sanitizeDetails } from "./details";
 export { DEFAULT_ACCENT, DEFAULT_BUTTON_LABEL, LIMITS, STATUSES, STATUS_LABEL, isStatus, type RequestStatus };
 
 const PROJECTS = "fr_projects";
@@ -342,11 +343,14 @@ export function validateRequestInput(
   input: NewRequestInput,
 ): { ok: true; value: Required<Pick<NewRequestInput, "title" | "details" | "email">> } | { ok: false; error: string } {
   const title = (input.title ?? "").replace(/\s+/g, " ").trim();
-  const details = (input.details ?? "").trim();
+  // Details may be rich (widget v9): sanitize to the allowlisted HTML subset
+  // and measure the text, not the markup.
+  const clean = sanitizeDetails(input.details);
+  const details = clean.html;
   const email = (input.email ?? "").trim();
   if (title.length < 3) return { ok: false, error: "Give the request a title (at least 3 characters)." };
   if (title.length > LIMITS.title) return { ok: false, error: `Keep the title under ${LIMITS.title} characters.` };
-  if (details.length > LIMITS.details) return { ok: false, error: `Keep the details under ${LIMITS.details} characters.` };
+  if (clean.text.length > LIMITS.details || details.length > LIMITS.details * 4) return { ok: false, error: `Keep the details under ${LIMITS.details} characters.` };
   if (email && (email.length > LIMITS.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))) return { ok: false, error: "That email address does not look right." };
   return { ok: true, value: { title, details, email } };
 }
@@ -392,9 +396,9 @@ export async function updateRequestDetails(requestId: string, email: string, det
   const req = await getRequest(requestId);
   if (!req || req.status === "declined") return null;
   if (!isEmail(email) || !sameEmail(req.email, email)) throw new AnvilError("Only the person who submitted this request can edit it", 403);
-  const trimmed = details.trim();
-  if (trimmed.length > LIMITS.details) throw new AnvilError(`Keep the details under ${LIMITS.details} characters.`, 400);
-  const next = { ...req, details: trimmed, updatedAt: Date.now() };
+  const clean = sanitizeDetails(details);
+  if (clean.text.length > LIMITS.details || clean.html.length > LIMITS.details * 4) throw new AnvilError(`Keep the details under ${LIMITS.details} characters.`, 400);
+  const next = { ...req, details: clean.html, updatedAt: Date.now() };
   await putRequest(next);
   return next;
 }
@@ -574,5 +578,8 @@ export function publicProject(p: Project) {
 }
 
 export function publicRequest(r: FeatureRequest, voted = false) {
-  return { id: r.id, title: r.title, details: r.details, status: r.status, votes: r.votes, createdAt: r.createdAt, voted };
+  // `details` is the plain-text rendering (previews, clamps); `detailsHtml`
+  // is the sanitized markup. Legacy plain-text rows pass through unchanged.
+  const clean = sanitizeDetails(r.details);
+  return { id: r.id, title: r.title, details: clean.text, detailsHtml: clean.html, status: r.status, votes: r.votes, createdAt: r.createdAt, voted };
 }

@@ -7,6 +7,7 @@
 import { Form } from "react-router";
 import { ExternalLink, Trash2 } from "lucide-react";
 import { CsrfInput, CsrfProvider } from "~/components/csrf-input";
+import { sanitizeDetails } from "~/lib/feature-requests/details";
 import { LIMITS, STATUSES, STATUS_LABEL } from "~/lib/feature-requests/shared";
 import type { DashboardData } from "~/lib/feature-requests/dashboard.server";
 import { Card, Field, Notice, Shell, StatusChip, TOOL_PATH, dangerBtn, formatDate, ghostBtn, inputClass, labelClass, primaryBtn, primaryBtnStyle } from "./shell";
@@ -113,7 +114,7 @@ export function ProjectDashboardView({
                           <h3 className="text-base font-semibold text-white">{r.title}</h3>
                           <StatusChip status={r.status} />
                         </div>
-                        {r.details ? <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-white/60">{r.details}</p> : null}
+                        {r.details ? <div className="fr-rich mt-2 whitespace-pre-wrap text-sm leading-relaxed text-white/60 [&_ol]:list-decimal [&_ol]:pl-5 [&_ul]:list-disc [&_ul]:pl-5" dangerouslySetInnerHTML={{ __html: sanitizeDetails(r.details).html }} /> : null}
                         <div className="mt-2 font-mono text-[11px] text-white/35">
                           {r.votes} vote{r.votes === 1 ? "" : "s"} · {formatDate(r.createdAt)}
                           {r.email ? ` · ${r.email}` : ""}

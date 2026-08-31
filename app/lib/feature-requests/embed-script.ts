@@ -3,7 +3,7 @@
 // dependencies; everything renders inside a Shadow DOM root so host-page CSS cannot leak
 // in or out. Do not use backticks or "${" inside the script: it is a String.raw template.
 
-export const EMBED_SCRIPT_VERSION = "8";
+export const EMBED_SCRIPT_VERSION = "9";
 
 export const EMBED_SCRIPT: string = String.raw`(function () {
   "use strict";
@@ -186,6 +186,16 @@ export const EMBED_SCRIPT: string = String.raw`(function () {
     ".fr-chip{display:inline-block;margin-left:8px;vertical-align:1px;padding:0 8px;border-radius:999px;font-size:11px;font-weight:600;background:var(--field);color:var(--muted);border:1px solid var(--border)}",
     ".fr-chip.in_progress{color:var(--accent);border-color:var(--accent)}.fr-chip.done{color:#3fb950;border-color:rgba(63,185,80,.45)}",
     ".fr-details{color:var(--muted);font-size:13px;white-space:pre-line;overflow-wrap:anywhere}",
+    ".fr-details p,.fr-details div{margin:0 0 6px}.fr-details p:last-child,.fr-details div:last-child{margin-bottom:0}",
+    ".fr-details ul,.fr-details ol{margin:0 0 6px;padding-left:20px;white-space:normal}",
+    ".fr-details ul{list-style:disc}.fr-details ol{list-style:decimal}.fr-details li{margin:2px 0}",
+    ".fr-rte-bar{display:flex;gap:2px;flex-wrap:wrap;padding:4px;border:1px solid var(--border);border-bottom:0;border-radius:8px 8px 0 0;background:var(--field)}",
+    ".fr-rte-btn{padding:3px 8px;border-radius:6px;font-size:12px;color:var(--muted);min-width:26px}",
+    ".fr-rte-btn:hover{background:var(--bg);color:var(--fg)}.fr-rte-btn[aria-pressed=true]{background:var(--accent);color:var(--on-accent)}",
+    ".fr-rte-b{font-weight:700}.fr-rte-i{font-style:italic}.fr-rte-u{text-decoration:underline}.fr-rte-s{text-decoration:line-through}",
+    ".fr-rte-area{min-height:88px;border-radius:0 0 8px 8px;outline:none;white-space:pre-wrap}",
+    ".fr-rte-area:empty::before{content:'What problem would it solve? Any context helps.';color:var(--muted)}",
+    ".fr-rte-area ul,.fr-rte-area ol{margin:4px 0;padding-left:20px}.fr-rte-area ul{list-style:disc}.fr-rte-area ol{list-style:decimal}",
     ".fr-details.clamped{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}",
     ".fr-more{color:var(--accent);font-size:12px;font-weight:500;margin-top:2px}",
     ".fr-field{display:block;margin-bottom:12px}",
@@ -256,6 +266,57 @@ export const EMBED_SCRIPT: string = String.raw`(function () {
     btn.setAttribute("aria-pressed", r.voted ? "true" : "false");
     btn.setAttribute("aria-label", (r.voted ? "Remove upvote: " : "Upvote: ") + r.title);
     btn.lastChild.textContent = String(Number(r.votes) || 0);
+  }
+
+  // ---- Rich details editor: a basic version of Stencil's page editor text
+  // tools. contenteditable plus execCommand; the server sanitizes to an
+  // allowlist (b i u s p div br ul ol li) so this only has to be usable.
+  function createRichEditor(ariaLabel, initialHtml) {
+    var wrap = el("div", { className: "fr-rte" });
+    var toolbar = el("div", { className: "fr-rte-bar", role: "toolbar", "aria-label": "Formatting" });
+    var area = el("div", { className: "fr-input fr-rte-area", contenteditable: "true", role: "textbox", "aria-multiline": "true", "aria-label": ariaLabel });
+    if (initialHtml) area.innerHTML = initialHtml;
+    var tools = [
+      ["B", "bold", "Bold", "fr-rte-b"],
+      ["I", "italic", "Italic", "fr-rte-i"],
+      ["U", "underline", "Underline", "fr-rte-u"],
+      ["S", "strikeThrough", "Strikethrough", "fr-rte-s"],
+      ["• List", "insertUnorderedList", "Bulleted list", ""],
+      ["1. List", "insertOrderedList", "Numbered list", ""]
+    ];
+    function make(t) {
+      var btn = el("button", { className: "fr-rte-btn " + t[3], type: "button", text: t[0], title: t[2], "aria-label": t[2] });
+      // mousedown, not click: keep the selection in the editable area.
+      btn.addEventListener("mousedown", function (e) {
+        e.preventDefault();
+        area.focus();
+        try { document.execCommand(t[1], false, null); } catch (err) {}
+        paint();
+      });
+      return btn;
+    }
+    var btns = [];
+    for (var i = 0; i < tools.length; i++) { btns.push(make(tools[i])); toolbar.appendChild(btns[i]); }
+    function paint() {
+      for (var i = 0; i < 4; i++) {
+        var on = false;
+        try { on = document.queryCommandState(tools[i][1]); } catch (err) {}
+        btns[i].setAttribute("aria-pressed", on ? "true" : "false");
+      }
+    }
+    area.addEventListener("keyup", paint);
+    area.addEventListener("mouseup", paint);
+    area.addEventListener("focus", paint);
+    wrap.appendChild(toolbar);
+    wrap.appendChild(area);
+    return {
+      el: wrap,
+      focus: function () { area.focus(); },
+      // Empty when there is no text at all (a lone <br> or empty block).
+      value: function () { return (area.textContent || "").trim() ? area.innerHTML : ""; },
+      text: function () { return (area.textContent || "").trim(); },
+      reset: function () { area.innerHTML = ""; }
+    };
   }
 
   // ---- Sign-in panel, shown inside the request modal. Sign in and register
@@ -431,14 +492,20 @@ export const EMBED_SCRIPT: string = String.raw`(function () {
       if (STATUS[r.status]) title.appendChild(el("span", { className: "fr-chip " + r.status, text: STATUS[r.status] }));
       var main = el("div", { className: "fr-main" }, [title]);
       if (r.createdAt) main.appendChild(el("p", { className: "fr-detail-meta", text: new Date(r.createdAt).toLocaleDateString() }));
-      if (r.details) main.appendChild(el("p", { className: "fr-details", text: r.details }));
+      if (r.detailsHtml || r.details) {
+        var det = el("div", { className: "fr-details" });
+        // Server-sanitized markup (see details.ts in the fork); plain-text
+        // fallback for rows fetched before v9.
+        if (r.detailsHtml) det.innerHTML = r.detailsHtml;
+        else det.textContent = r.details;
+        main.appendChild(det);
+      }
       main.appendChild(dMsg);
       if (signedIn && canEdit) {
         var editBtn = el("button", { className: "fr-ghost", type: "button", text: "Edit details" });
         var editor = el("div", { className: "fr-editor" });
         editor.hidden = true;
-        var ta = el("textarea", { className: "fr-input", maxlength: "5000", "aria-label": "Details" });
-        ta.value = r.details || "";
+        var ed = createRichEditor("Details", r.detailsHtml || "");
         var emsg = el("p", { className: "fr-msg", role: "status", "aria-live": "polite" });
         emsg.hidden = true;
         var save = el("button", { className: "fr-primary", type: "button", text: "Save" });
@@ -446,9 +513,9 @@ export const EMBED_SCRIPT: string = String.raw`(function () {
         save.addEventListener("click", function () {
           save.disabled = true;
           setMsg(emsg, "Saving...", "");
-          api("POST", "/api/requests/" + encodeURIComponent(r.id), { voter: voterKey(), details: ta.value })
+          api("POST", "/api/requests/" + encodeURIComponent(r.id), { voter: voterKey(), details: ed.value() })
             .then(function (d) {
-              if (d.request) r.details = d.request.details;
+              if (d.request) { r.details = d.request.details; r.detailsHtml = d.request.detailsHtml; }
               paintDetail(r, true);
             }, function (err) {
               if (err.signIn) { paintDetail(r, false); return; }
@@ -456,8 +523,8 @@ export const EMBED_SCRIPT: string = String.raw`(function () {
               setMsg(emsg, err.message, "err");
             });
         });
-        editBtn.addEventListener("click", function () { editBtn.hidden = true; editor.hidden = false; ta.focus(); });
-        editor.appendChild(ta);
+        editBtn.addEventListener("click", function () { editBtn.hidden = true; editor.hidden = false; ed.focus(); });
+        editor.appendChild(ed.el);
         editor.appendChild(el("div", { className: "fr-edit-actions" }, [save, cancel]));
         editor.appendChild(emsg);
         main.appendChild(editBtn);
@@ -574,7 +641,7 @@ export const EMBED_SCRIPT: string = String.raw`(function () {
   // ---- Suggest form ----
   function createForm(onCreated) {
     var titleIn = el("input", { className: "fr-input", type: "text", maxlength: "120", placeholder: "Short summary of the idea", autocomplete: "off" });
-    var detailsIn = el("textarea", { className: "fr-input", maxlength: "5000", placeholder: "What problem would it solve? Any context helps." });
+    var detailsEd = createRichEditor("Details", "");
     var emailIn = el("input", { className: "fr-input", type: "email", placeholder: "you@example.com", autocomplete: "email", required: "" });
     // Honeypot: visually hidden, never prefilled, always sent.
     var hp = el("input", { type: "text", name: "website", tabindex: "-1", autocomplete: "off", "aria-hidden": "true" });
@@ -590,7 +657,7 @@ export const EMBED_SCRIPT: string = String.raw`(function () {
     var emailField = field("Email (required, we send a verification code)", emailIn);
     var form = el("form", { novalidate: "" }, [
       field("Title", titleIn),
-      field("Details (optional)", detailsIn),
+      field("Details (optional)", detailsEd.el),
       emailField,
       el("div", { className: "fr-hp", "aria-hidden": "true" }, [hp]),
       submit,
@@ -610,6 +677,11 @@ export const EMBED_SCRIPT: string = String.raw`(function () {
         titleIn.focus();
         return;
       }
+      if (detailsEd.text().length > 5000) {
+        setMsg(msg, "Keep the details under 5000 characters.", "err");
+        detailsEd.focus();
+        return;
+      }
       var email = sessionEmail() || emailIn.value.trim();
       if (!EMAIL_RE.test(email)) {
         setMsg(msg, "Enter your email address so we can verify it.", "err");
@@ -621,12 +693,13 @@ export const EMBED_SCRIPT: string = String.raw`(function () {
       setMsg(msg, "Sending...", "");
       api("POST", "/api/projects/" + encodeURIComponent(projectId) + "/requests", {
         title: title,
-        details: detailsIn.value.trim(),
+        details: detailsEd.value(),
         email: email,
         voter: voterKey(),
         website: hp.value
       }).then(function (data) {
         form.reset();
+        detailsEd.reset();
         if (data.verificationSent) {
           setMsg(msg, "Thanks, your request has been added. We emailed " + email + " a verification code.", "ok");
         } else {
