@@ -3,14 +3,14 @@
  *
  *   fr_projects  key = project id   {id, ownerId, ownerEmail, name, intro, origins[],
  *                                    boardEnabled, accent, buttonLabel, createdAt, updatedAt}
- *   fr_requests  key = request id   {id, projectId, title, details, email, status, votes,
+ *   fr_requests  key = request id   {id, projectId, title, details, status, votes,
  *                                    origin, ipHash, createdAt, updatedAt}
- *   fr_votes     key = vote id       {id, requestId, projectId, email, emailLower,
+ *   fr_votes     key = vote id       {id, requestId, projectId,
  *                                    userId, voter, createdAt}
  *
  * Ids are server-minted UUIDs reserved through Anvil's POST /db/uuid. One vote
  * per person per request is enforced by looking the vote up by identity
- * (emailLower, or the legacy browser key) before writing; votes created before
+ * (userId, or the legacy browser key) before writing; votes created before
  * the UUID switch keep their old requestId--voter composite keys and are found
  * by the same query.
  *
@@ -75,7 +75,7 @@ export type FeatureRequest = {
   projectId: string;
   title: string;
   details: string;
-  email: string;
+  submitterId: string;
   status: RequestStatus;
   votes: number;
   origin: string;
@@ -146,7 +146,7 @@ function toRequest(doc: AnvilDocument): FeatureRequest {
     projectId: str(r.projectId),
     title: str(r.title),
     details: str(r.details),
-    email: str(r.email),
+    submitterId: str(r.submitterId),
     status: isStatus(status) ? status : "new",
     votes: num(r.votes),
     origin: str(r.origin),
@@ -161,7 +161,7 @@ function requestBody(r: FeatureRequest, ipHash: string): Record<string, unknown>
     projectId: r.projectId,
     title: r.title,
     details: r.details,
-    email: r.email,
+    submitterId: r.submitterId,
     status: r.status,
     votes: r.votes,
     origin: r.origin,
@@ -368,19 +368,14 @@ export async function createRequest(projectId: string, input: NewRequestInput): 
     projectId: pid,
     title: v.value.title,
     details: v.value.details,
-    email: v.value.email,
+    submitterId: input.submitterId ?? "",
     status: "new",
     votes: 0,
     origin: (input.origin ?? "").slice(0, 200),
     createdAt: now,
     updatedAt: now,
   };
-  await docPut(
-    REQUESTS,
-    req.id,
-    { ...requestBody(req, input.ip ? hashIp(input.ip) : ""), submitterId: input.submitterId ?? "" },
-    { ifNotExists: true },
-  );
+  await docPut(REQUESTS, req.id, requestBody(req, input.ip ? hashIp(input.ip) : ""), { ifNotExists: true });
   return req;
 }
 
@@ -391,13 +386,14 @@ async function putRequest(req: FeatureRequest): Promise<void> {
 
 /**
  * Creator edit: the person who submitted a request (identified by the same
- * email they gave with it) can rewrite the details to build the idea out.
- * Requests submitted without an email have no editable claim.
+ * Anvil user id as the stored submitterId) can rewrite the details to build
+ * the idea out. Requests submitted without a resolvable account have no
+ * editable claim.
  */
-export async function updateRequestDetails(requestId: string, email: string, details: string): Promise<FeatureRequest | null> {
+export async function updateRequestDetails(requestId: string, editorUserId: string, details: string): Promise<FeatureRequest | null> {
   const req = await getRequest(requestId);
   if (!req || req.status === "declined") return null;
-  if (!isEmail(email) || !sameEmail(req.email, email)) throw new AnvilError("Only the person who submitted this request can edit it", 403);
+  if (!editorUserId || req.submitterId !== editorUserId) throw new AnvilError("Only the person who submitted this request can edit it", 403);
   const clean = sanitizeDetails(details);
   if (clean.text.length > LIMITS.details || clean.html.length > LIMITS.details * 4) throw new AnvilError(`Keep the details under ${LIMITS.details} characters.`, 400);
   const next = { ...req, details: clean.html, updatedAt: Date.now() };
@@ -445,21 +441,23 @@ export function isVoterKey(v: unknown): v is string {
 export const isEmail = (v: unknown): v is string => typeof v === "string" && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v) && v.length <= LIMITS.email;
 
 /**
- * Who is voting. Email is the person-level identity (one vote per address,
- * whatever the browser); the anonymous voter key remains as a fallback for
- * surfaces that have not collected an email.
+ * Who is voting. The Anvil user id is the person-level identity (one vote per
+ * account, whatever the browser; the doc links to :User in the graph); the
+ * anonymous voter key remains as a fallback for the hosted board.
  */
-export type VoterIdentity = { email?: string; userId?: string; voter?: string };
+export type VoterIdentity = { userId?: string; voter?: string };
 
-/** The condition that finds a person's votes: by email when known, else by browser key. */
+const hasUserId = (identity: VoterIdentity): boolean => typeof identity.userId === "string" && identity.userId.length > 0;
+
+/** The condition that finds a person's votes: by user id when known, else by browser key. */
 function identityFilter(identity: VoterIdentity): DocFilter {
-  return isEmail(identity.email)
-    ? { op: "eq", field: "emailLower", value: (identity.email as string).trim().toLowerCase() }
+  return hasUserId(identity)
+    ? { op: "eq", field: "userId", value: identity.userId }
     : { op: "eq", field: "voter", value: identity.voter };
 }
 
 function validIdentity(identity: VoterIdentity): boolean {
-  return isEmail(identity.email) || isVoterKey(identity.voter);
+  return hasUserId(identity) || isVoterKey(identity.voter);
 }
 
 export async function votedRequestIds(projectId: string, identity: VoterIdentity): Promise<Set<string>> {
@@ -489,14 +487,11 @@ export async function toggleVote(requestId: string, identity: VoterIdentity): Pr
   if (mine.length > 0) {
     for (const d of mine) await docDelete(VOTES, d.key);
   } else {
-    const email = isEmail(identity.email) ? identity.email.trim() : "";
     const id = await reserveUuid();
     await docPut(VOTES, id, {
       id,
       requestId: req.id,
       projectId: req.projectId,
-      email,
-      emailLower: email.toLowerCase(),
       userId: identity.userId ?? "",
       voter: identity.voter ?? "",
       createdAt: Date.now(),
@@ -517,7 +512,7 @@ export type Comment = {
   requestId: string;
   projectId: string;
   name: string;
-  email: string;
+  userId: string;
   body: string;
   createdAt: number;
 };
@@ -529,7 +524,7 @@ function toComment(doc: AnvilDocument): Comment {
     requestId: str(c.requestId),
     projectId: str(c.projectId),
     name: str(c.name),
-    email: str(c.email),
+    userId: str(c.userId),
     body: str(c.body),
     createdAt: num(c.createdAt),
   };
@@ -541,32 +536,29 @@ export async function listComments(requestId: string): Promise<Comment[]> {
   return docs.map(toComment).sort((a, b) => a.createdAt - b.createdAt);
 }
 
-/** Comments belong to a person too: email is required, same claim as votes. */
+/** Comments belong to a person too: the Anvil user id is the identity. */
 export async function createComment(
   requestId: string,
-  input: { body: string; name?: string; email: string; userId?: string; ip?: string },
+  input: { body: string; name?: string; userId: string; ip?: string },
 ): Promise<Comment> {
   const req = await getRequest(requestId);
   if (!req || req.status === "declined") throw new AnvilError("Unknown request", 404);
   const body = (input.body ?? "").trim();
   if (!body) throw new AnvilError("Write a comment first.", 400);
   if (body.length > LIMITS.commentBody) throw new AnvilError(`Keep the comment under ${LIMITS.commentBody} characters.`, 400);
-  if (!isEmail(input.email)) throw new AnvilError("Enter your email address to comment", 400);
+  if (!input.userId) throw new AnvilError("Sign in to comment", 401);
   if ((await listComments(req.id)).length >= LIMITS.commentsPerRequest) throw new AnvilError("This request has reached its comment limit.", 400);
-  const email = input.email.trim();
   const comment: Comment = {
     id: await reserveUuid(),
     requestId: req.id,
     projectId: req.projectId,
     name: (input.name ?? "").trim().slice(0, LIMITS.commentName),
-    email,
+    userId: input.userId,
     body,
     createdAt: Date.now(),
   };
   await docPut(COMMENTS, comment.id, {
     ...comment,
-    emailLower: email.toLowerCase(),
-    userId: input.userId ?? "",
     ipHash: input.ip ? hashIp(input.ip) : "",
   }, { ifNotExists: true });
   return comment;
@@ -589,7 +581,6 @@ export type Attachment = {
   mime: string;
   size: number;
   storageKey: string;
-  emailLower: string;
   userId: string;
   createdAt: number;
 };
@@ -604,7 +595,6 @@ function toAttachment(doc: AnvilDocument): Attachment {
     mime: str(a.mime),
     size: num(a.size),
     storageKey: str(a.storageKey),
-    emailLower: str(a.emailLower),
     userId: str(a.userId),
     createdAt: num(a.createdAt),
   };
@@ -613,7 +603,7 @@ function toAttachment(doc: AnvilDocument): Attachment {
 /** Records an uploaded file as pending; the object is already in the bucket. */
 export async function createAttachment(
   projectId: string,
-  input: { name: string; mime: string; size: number; storageKey: string; email: string; userId?: string },
+  input: { name: string; mime: string; size: number; storageKey: string; userId: string },
 ): Promise<Attachment> {
   await ensureCollections();
   const a: Attachment = {
@@ -624,8 +614,7 @@ export async function createAttachment(
     mime: input.mime,
     size: input.size,
     storageKey: input.storageKey,
-    emailLower: input.email.trim().toLowerCase(),
-    userId: input.userId ?? "",
+    userId: input.userId,
     createdAt: Date.now(),
   };
   await docPut(ATTACHMENTS, a.id, { ...a }, { ifNotExists: true });
@@ -640,11 +629,11 @@ export async function getAttachment(id: string): Promise<Attachment | null> {
 
 /**
  * Binds pending uploads to a freshly created request. Only the uploader's own
- * pending files count; anything else in the list is ignored, and at most
- * MAX_ATTACHMENTS_PER_REQUEST are taken.
+ * pending files count (matched by Anvil user id); anything else in the list is
+ * ignored, and at most MAX_ATTACHMENTS_PER_REQUEST are taken.
  */
-export async function claimAttachments(requestId: string, projectId: string, email: string, ids: string[]): Promise<Attachment[]> {
-  const emailLower = email.trim().toLowerCase();
+export async function claimAttachments(requestId: string, projectId: string, userId: string, ids: string[]): Promise<Attachment[]> {
+  if (!userId) return [];
   const out: Attachment[] = [];
   for (const id of ids.slice(0, MAX_ATTACHMENTS_PER_REQUEST * 2)) {
     if (out.length >= MAX_ATTACHMENTS_PER_REQUEST) break;
@@ -654,7 +643,7 @@ export async function claimAttachments(requestId: string, projectId: string, ema
     } catch {
       continue; // malformed id in the list: skip, never sink the submission
     }
-    if (!a || a.requestId || a.projectId !== projectId || a.emailLower !== emailLower) continue;
+    if (!a || a.requestId || a.projectId !== projectId || a.userId !== userId) continue;
     const next = { ...a, requestId };
     await docPut(ATTACHMENTS, a.id, { ...next });
     out.push(next);
@@ -663,9 +652,9 @@ export async function claimAttachments(requestId: string, projectId: string, ema
 }
 
 /** Deletes a pending upload (its object too). Claimed files stay. */
-export async function deletePendingAttachment(id: string, email: string): Promise<boolean> {
+export async function deletePendingAttachment(id: string, userId: string): Promise<boolean> {
   const a = await getAttachment(id);
-  if (!a || a.requestId || a.emailLower !== email.trim().toLowerCase()) return false;
+  if (!a || a.requestId || !userId || a.userId !== userId) return false;
   await deleteObject(a.storageKey);
   await docDelete(ATTACHMENTS, a.id);
   return true;

@@ -31,7 +31,7 @@ export function ProjectDashboardView({
   listLabel: string;
   signOutAction: string;
 }) {
-  const { chrome, csrfToken, user, project, requests, counts, filter, sort, origin } = data;
+  const { chrome, csrfToken, user, project, requests, submitterEmails, counts, filter, sort, origin } = data;
   const embedSrc = `${origin}${TOOL_PATH}/embed.js`;
   const floating = `<script src="${embedSrc}" data-project="${project.id}" async></script>`;
   const inline = `<div id="feature-requests"></div>\n<script src="${embedSrc}" data-project="${project.id}" data-mode="inline" data-target="#feature-requests" async></script>`;
@@ -117,7 +117,7 @@ export function ProjectDashboardView({
                         {r.details ? <div className="fr-rich mt-2 whitespace-pre-wrap text-sm leading-relaxed text-white/60 [&_ol]:list-decimal [&_ol]:pl-5 [&_ul]:list-disc [&_ul]:pl-5" dangerouslySetInnerHTML={{ __html: sanitizeDetails(r.details).html }} /> : null}
                         <div className="mt-2 font-mono text-[11px] text-white/35">
                           {r.votes} vote{r.votes === 1 ? "" : "s"} · {formatDate(r.createdAt)}
-                          {r.email ? ` · ${r.email}` : ""}
+                          {submitterEmails[r.submitterId] ? ` · ${submitterEmails[r.submitterId]}` : ""}
                           {r.origin ? ` · from ${r.origin}` : ""}
                         </div>
                       </div>

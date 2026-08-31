@@ -41,12 +41,12 @@ export async function action({ request, params }: ActionFunctionArgs) {
     let attachments: ReturnType<typeof publicAttachment>[] = [];
     const wanted = (body.attachments ?? "").split(",").map((x) => x.trim()).filter(Boolean);
     if (wanted.length > 0) {
-      attachments = (await claimAttachments(created.id, project.id, email, wanted).catch(() => [])).map(publicAttachment);
+      attachments = (await claimAttachments(created.id, project.id, visitor.userId, wanted).catch(() => [])).map(publicAttachment);
     }
     let voted = false;
     let votes = 0;
     if (project.boardEnabled) {
-      const v = await toggleVote(created.id, { email, userId: visitor.userId, voter: body.voter }).catch(() => null);
+      const v = await toggleVote(created.id, { userId: visitor.userId || undefined, voter: body.voter }).catch(() => null);
       if (v) {
         voted = v.voted;
         votes = v.votes;

@@ -11,6 +11,7 @@ import { getSiteChrome } from "~/lib/site-chrome.server";
 import { ensureCsrfToken, validateCsrf } from "~/lib/csrf.server";
 import { CsrfInput, CsrfProvider } from "~/components/csrf-input";
 import { newId, type AnvilError } from "~/lib/feature-requests/anvil.server";
+import { registerVisitor } from "~/lib/feature-requests/anvil.server";
 import { clientIp, rateLimited } from "~/lib/feature-requests/http.server";
 import { sanitizeDetails } from "~/lib/feature-requests/details";
 import { LIMITS } from "~/lib/feature-requests/shared";
@@ -85,14 +86,17 @@ export async function action({ request, params }: ActionFunctionArgs) {
       if (rateLimited(`fr:submit:${ip}`, 10, 10 * 60_000) || rateLimited(`fr:submit:project:${project.id}`, 120, 60 * 60_000)) {
         return Response.json({ error: "Too many requests right now. Try again in a few minutes." } satisfies ActionData, { status: 429, headers });
       }
+      const email = String(form.get("email") ?? "").trim();
+      const visitor = email ? await registerVisitor(email) : { userId: "" };
       const created = await createRequest(project.id, {
         title: String(form.get("title") ?? ""),
         details: String(form.get("details") ?? ""),
-        email: String(form.get("email") ?? ""),
+        email,
+        submitterId: visitor.userId,
         origin: "hosted-board",
         ip,
       });
-      if (project.boardEnabled) await toggleVote(created.id, { email: String(form.get("email") ?? "").trim() || undefined, voter }).catch(() => null);
+      if (project.boardEnabled) await toggleVote(created.id, { userId: visitor.userId || undefined, voter }).catch(() => null);
       return Response.json({ ok: "Thanks, your request is in." } satisfies ActionData, { headers });
     }
     return Response.json({ error: "Unknown action." } satisfies ActionData, { status: 400, headers });

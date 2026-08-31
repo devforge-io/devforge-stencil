@@ -16,7 +16,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     const headers = corsHeaders(request);
     const search = new URL(request.url).searchParams;
     const user = embedUser(request);
-    const identity = { email: user ? user.email : (search.get("email") ?? undefined), voter: search.get("voter") ?? undefined };
+    const identity = { userId: user?.id, voter: search.get("voter") ?? undefined };
     const [requests, voted] = project.boardEnabled ? await Promise.all([listRequests(project.id), votedRequestIds(project.id, identity)]) : [[], new Set<string>()];
     return json({ ok: true, project: publicProject(project), requests: requests.map((r) => publicRequest(r, voted.has(r.id))) }, { headers });
   } catch (err) {

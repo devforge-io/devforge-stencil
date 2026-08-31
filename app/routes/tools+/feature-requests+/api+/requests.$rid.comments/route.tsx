@@ -30,7 +30,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
     if (!user) return json({ ok: false, error: "Sign in to comment", signIn: true }, { status: 401, headers });
     const body = await readBody(request);
     if (body.website) return json({ ok: true, comment: null }, { headers });
-    const comment = await createComment(req.id, { body: body.body ?? "", name: body.name, email: user.email, userId: user.id, ip: clientIp(request) });
+    const comment = await createComment(req.id, { body: body.body ?? "", name: body.name, userId: user.id, ip: clientIp(request) });
     return json({ ok: true, comment: publicComment(comment) }, { headers });
   } catch (err) {
     const e = err as AnvilError;

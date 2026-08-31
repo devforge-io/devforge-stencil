@@ -44,7 +44,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
     const { name, mime } = validateAttachment(file.name, file.type, bytes);
     const storageKey = `${project.id}/${await reserveUuid()}-${name}`;
     await putObject(storageKey, bytes, mime);
-    const attachment = await createAttachment(project.id, { name, mime, size: bytes.length, storageKey, email: user.email, userId: user.id });
+    const attachment = await createAttachment(project.id, { name, mime, size: bytes.length, storageKey, userId: user.id });
     return json({ ok: true, attachment: publicAttachment(attachment) }, { status: 201, headers });
   } catch (err) {
     const e = err as AnvilError;

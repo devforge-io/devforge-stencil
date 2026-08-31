@@ -55,12 +55,13 @@ Documents in Anvil's document store (`/docs/*` REST API), one collection per typ
 ```
 fr_projects  key = project id        {id, ownerId, ownerEmail, name, intro, origins[],
                                       boardEnabled, accent, buttonLabel, createdAt, updatedAt}
-fr_requests  key = request id        {id, projectId, title, details, email, status, votes,
-                                      origin, ipHash, createdAt, updatedAt}
-fr_votes     key = vote id           {id, requestId, projectId, email, emailLower,
-                                      userId, voter, createdAt}
-fr_comments  key = comment id        {id, requestId, projectId, name, email,
-                                      emailLower, userId, body, ipHash, createdAt}
+fr_requests  key = request id        {id, projectId, title, details, submitterId, status,
+                                      votes, origin, ipHash, createdAt, updatedAt}
+fr_votes     key = vote id           {id, requestId, projectId, userId, voter, createdAt}
+fr_comments  key = comment id        {id, requestId, projectId, name, userId, body,
+                                      ipHash, createdAt}
+fr_attachments key = attachment id   {id, requestId, projectId, name, mime, size,
+                                      storageKey, userId, createdAt}
 ```
 
 Ids are server-minted UUIDs reserved through Anvil's `POST /db/uuid` (added
@@ -246,9 +247,17 @@ resolves for app-written data.
 
 API responses are CORS-enabled. Reads are public; writes honour the project's origin
 allow-list (exact origin match), and are rate limited per IP and per project in
-memory (one instance). Submitting an idea through the widget requires an email address (since
-2026-08-26): the address is registered in Anvil (verification email included when
-the mailer is configured) and requests carry the submitter's email and Anvil user id.
+memory (one instance). Identity is the Anvil user id (Ben's call, 2026-08-31): request, vote,
+comment and attachment documents carry only `submitterId`/`userId`, which the
+graph links to `:User`; no email copies (the pre-cutover rows on the hosted
+instance still carry `email`/`emailLower` until the one-off field-drop
+migration is run). Submitting an idea still asks for an email: it resolves to
+the account via `registerVisitor` (registration sends the verification email
+when the mailer is configured) and only the resulting user id is stored, so a
+submission whose registration fails has no edit claim. The hosted board's
+no-JS forms resolve typed emails the same way (`lookupUserIdByEmail` for the
+edit claim). The dashboard shows submitter emails by resolving ids against
+`auth.users` at load time.
 
 Since 2026-08-28 (widget v8) voting, commenting and editing require a signed-in
 account. The list shows a read-only vote count per request once signed in; each row opens a

@@ -2,7 +2,6 @@
 
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import type { AnvilError } from "~/lib/feature-requests/anvil.server";
-import { registerVisitor } from "~/lib/feature-requests/anvil.server";
 import { embedUser } from "~/lib/feature-requests/embed-auth.server";
 import { clientIp, corsHeaders, json, originBlocked, preflight, rateLimited, readBody } from "~/lib/feature-requests/http.server";
 import { getProject, getRequest, toggleVote } from "~/lib/feature-requests/store.server";
@@ -29,8 +28,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
     const user = embedUser(request);
     if (!user) return json({ ok: false, error: "Sign in to vote", signIn: true }, { status: 401, headers });
     const body = await readBody(request);
-    const userId = user.id || (await registerVisitor(user.email)).userId;
-    const result = await toggleVote(req.id, { email: user.email, userId, voter: body.voter });
+    const result = await toggleVote(req.id, { userId: user.id, voter: body.voter });
     if (!result) return json({ ok: false, error: "This request cannot be voted on" }, { status: 404, headers });
     return json({ ok: true, votes: result.votes, voted: result.voted }, { headers });
   } catch (err) {

@@ -10,7 +10,7 @@ import { ChevronUp } from "lucide-react";
 import { getSiteChrome } from "~/lib/site-chrome.server";
 import { ensureCsrfToken, validateCsrf } from "~/lib/csrf.server";
 import { CsrfInput, CsrfProvider } from "~/components/csrf-input";
-import { newId, type AnvilError } from "~/lib/feature-requests/anvil.server";
+import { lookupUserIdByEmail, newId, registerVisitor, type AnvilError } from "~/lib/feature-requests/anvil.server";
 import { clientIp, rateLimited } from "~/lib/feature-requests/http.server";
 import { sanitizeDetails } from "~/lib/feature-requests/details";
 import { LIMITS } from "~/lib/feature-requests/shared";
@@ -91,16 +91,21 @@ export async function action({ request, params }: ActionFunctionArgs) {
     }
     if (intent === "edit") {
       if (rateLimited(`fr:edit:${ip}`, 20, 10 * 60_000)) return Response.json({ error: "Too many edits, try again in a minute." } satisfies ActionData, { status: 429, headers });
-      await updateRequestDetails(req.id, String(form.get("email") ?? "").trim(), String(form.get("details") ?? ""));
+      // No sign-in on the hosted board: the typed email resolves to the
+      // account and the edit claim is checked against the stored submitterId.
+      const editorId = await lookupUserIdByEmail(String(form.get("email") ?? "").trim());
+      await updateRequestDetails(req.id, editorId, String(form.get("details") ?? ""));
       return Response.json({ ok: "Saved. Thanks for building the idea out." } satisfies ActionData, { headers });
     }
     if (intent === "comment") {
       if (String(form.get("website") ?? "")) return Response.json({ ok: "Comment added." } satisfies ActionData, { headers });
       if (rateLimited(`fr:comment:${ip}`, 20, 10 * 60_000)) return Response.json({ error: "Too many comments right now. Try again shortly." } satisfies ActionData, { status: 429, headers });
+      const visitor = await registerVisitor(String(form.get("email") ?? "").trim());
+      if (!visitor.userId) return Response.json({ error: "That email address could not be verified. Check it and try again." } satisfies ActionData, { status: 400, headers });
       await createComment(req.id, {
         body: String(form.get("body") ?? ""),
         name: String(form.get("name") ?? ""),
-        email: String(form.get("email") ?? ""),
+        userId: visitor.userId,
         ip,
       });
       return Response.json({ ok: "Comment added." } satisfies ActionData, { headers });

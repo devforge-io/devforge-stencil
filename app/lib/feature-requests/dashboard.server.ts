@@ -7,7 +7,7 @@
 import { redirect } from "react-router";
 import { getSiteChrome } from "~/lib/site-chrome.server";
 import { ensureCsrfToken, validateCsrf } from "~/lib/csrf.server";
-import type { AnvilError } from "./anvil.server";
+import { docQuery, type AnvilError } from "./anvil.server";
 import { requireFrUser } from "./session.server";
 import { STATUSES, isStatus, type RequestStatus } from "./shared";
 import {
@@ -29,6 +29,8 @@ export type DashboardData = {
   user: { email: string };
   project: Project;
   requests: FeatureRequest[];
+  /** Anvil user id -> email, for showing who submitted what. */
+  submitterEmails: Record<string, string>;
   counts: Record<string, number>;
   filter: string;
   sort: RequestSort;
@@ -51,11 +53,24 @@ export async function loadProjectDashboard(
     getSiteChrome(),
     listRequests(project.id, { includeDeclined: true, sort }),
   ]);
+  // Requests store only the submitter's user id; resolve emails for display.
+  const submitterEmails: Record<string, string> = {};
+  const wantedIds = new Set(all.map((r) => r.submitterId).filter(Boolean));
+  if (wantedIds.size > 0) {
+    try {
+      for (const doc of await docQuery("auth.users", null, 100_000)) {
+        const id = typeof doc.body.id === "string" ? doc.body.id : "";
+        if (id && wantedIds.has(id) && typeof doc.body.email === "string") submitterEmails[id] = doc.body.email;
+      }
+    } catch {
+      // Display-only: the dashboard still works without the emails.
+    }
+  }
   const counts: Record<string, number> = { all: all.length };
   for (const s of STATUSES) counts[s] = all.filter((r) => r.status === s).length;
   const requests = filter === "all" ? all : all.filter((r) => r.status === filter);
   const origin = (process.env.PUBLIC_ORIGIN || url.origin).replace(/\/+$/, "");
-  const data: DashboardData = { csrfToken: token, chrome, user: { email: user.email }, project, requests, counts, filter, sort, origin };
+  const data: DashboardData = { csrfToken: token, chrome, user: { email: user.email }, project, requests, submitterEmails, counts, filter, sort, origin };
   return setCookie ? Response.json(data, { headers: { "Set-Cookie": setCookie } }) : data;
 }
 

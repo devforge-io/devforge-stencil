@@ -44,7 +44,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
   try {
     const user = embedUser(request);
     if (!user) return json({ ok: false, error: "Sign in first", signIn: true }, { status: 401, headers });
-    const removed = await deletePendingAttachment(params.aid ?? "", user.email);
+    const removed = await deletePendingAttachment(params.aid ?? "", user.id);
     if (!removed) return json({ ok: false, error: "This file cannot be removed" }, { status: 404, headers });
     return json({ ok: true }, { headers });
   } catch (err) {
