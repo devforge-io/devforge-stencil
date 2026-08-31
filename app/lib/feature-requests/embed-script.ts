@@ -3,7 +3,7 @@
 // dependencies; everything renders inside a Shadow DOM root so host-page CSS cannot leak
 // in or out. Do not use backticks or "${" inside the script: it is a String.raw template.
 
-export const EMBED_SCRIPT_VERSION = "10";
+export const EMBED_SCRIPT_VERSION = "11";
 
 export const EMBED_SCRIPT: string = String.raw`(function () {
   "use strict";
@@ -101,7 +101,7 @@ export const EMBED_SCRIPT: string = String.raw`(function () {
 
   function api(method, path, body) {
     var headers = {};
-    if (body) headers["Content-Type"] = "application/json";
+    if (body && !(body instanceof FormData)) headers["Content-Type"] = "application/json";
     var s = session();
     if (s) headers["Authorization"] = "Bearer " + s.token;
     return fetch(base + path, {
@@ -109,7 +109,7 @@ export const EMBED_SCRIPT: string = String.raw`(function () {
       mode: "cors",
       credentials: "omit",
       headers: headers,
-      body: body ? JSON.stringify(body) : undefined
+      body: body ? (body instanceof FormData ? body : JSON.stringify(body)) : undefined
     }).then(function (res) {
       return res.json().catch(function () { return {}; }).then(function (data) {
         if (res.ok && data && data.ok) return data;
@@ -238,7 +238,17 @@ export const EMBED_SCRIPT: string = String.raw`(function () {
     ".fr-auth{margin-top:20px;border-top:1px solid var(--border);padding-top:14px}",
     ".fr-auth-h{font-size:13px;font-weight:600;margin-bottom:8px}",
     ".fr-auth-sub{font-size:12px;color:var(--muted);margin-bottom:10px}",
-    ".fr-auth-form .fr-input{margin-bottom:8px}.fr-auth-form .fr-link{display:block;margin-top:10px}"
+    ".fr-auth-form .fr-input{margin-bottom:8px}.fr-auth-form .fr-link{display:block;margin-top:10px}",
+    ".fr-files{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}",
+    ".fr-file{display:inline-flex;align-items:center;padding:6px 10px;border-radius:8px;border:1px solid var(--border);background:var(--field);color:var(--fg);font-size:12px;text-decoration:none}",
+    ".fr-file:hover{border-color:var(--accent)}",
+    ".fr-file-img{display:block;border:1px solid var(--border);border-radius:8px;overflow:hidden;max-width:120px}",
+    ".fr-file-img img{display:block;width:100%;height:auto}",
+    ".fr-attach{margin-top:0}",
+    ".fr-attach-list{list-style:none;margin:8px 0 0;padding:0}",
+    ".fr-attach-item{display:flex;align-items:center;gap:8px;padding:4px 0;font-size:13px;color:var(--muted)}",
+    ".fr-attach-name{overflow-wrap:anywhere}",
+    ".fr-attach-x{width:22px;height:22px;border-radius:6px;color:var(--muted);font-size:15px;line-height:1}.fr-attach-x:hover{background:var(--field);color:var(--fg)}"
   ].join("\n");
 
   var state = { project: null, requests: [], loaded: false };
@@ -472,6 +482,7 @@ export const EMBED_SCRIPT: string = String.raw`(function () {
             r.voted = d.request.voted;
           }
           r.comments = d.comments || [];
+          r.attachments = d.attachments || [];
           r.canEdit = d.canEdit === true;
           if (!detailWrap.hidden) paintDetail(r, r.canEdit);
         }, function () {
@@ -499,6 +510,20 @@ export const EMBED_SCRIPT: string = String.raw`(function () {
         if (r.detailsHtml) det.innerHTML = r.detailsHtml;
         else det.textContent = r.details;
         main.appendChild(det);
+      }
+      if (r.attachments && r.attachments.length) {
+        var files = el("div", { className: "fr-files" });
+        for (var fi = 0; fi < r.attachments.length; fi++) {
+          var fa = r.attachments[fi];
+          if (fa.mime && fa.mime.indexOf("image/") === 0) {
+            var thumbLink = el("a", { className: "fr-file-img", href: base + "/api/attachments/" + encodeURIComponent(fa.id), target: "_blank", rel: "noopener", "aria-label": fa.name });
+            thumbLink.appendChild(el("img", { src: base + "/api/attachments/" + encodeURIComponent(fa.id), alt: fa.name, loading: "lazy" }));
+            files.appendChild(thumbLink);
+          } else {
+            files.appendChild(el("a", { className: "fr-file", href: base + "/api/attachments/" + encodeURIComponent(fa.id), target: "_blank", rel: "noopener", text: fa.name + " (" + Math.max(1, Math.round(fa.size / 1024)) + "KB)" }));
+          }
+        }
+        main.appendChild(files);
       }
       main.appendChild(dMsg);
       if (signedIn && canEdit) {
@@ -660,10 +685,92 @@ export const EMBED_SCRIPT: string = String.raw`(function () {
       return el("div", { className: "fr-field" }, [el("span", { text: text }), input]);
     }
 
+    // Attachments: uploaded as picked (signed-in only), claimed on submit.
+    var fileIn = el("input", { type: "file", multiple: "", accept: ".png,.jpg,.jpeg,.gif,.webp,.pdf,.txt,.md,.csv,.json,.log" });
+    fileIn.style.display = "none";
+    var attachBtn = el("button", { className: "fr-ghost fr-attach", type: "button", text: "Attach files" });
+    var attachList = el("ul", { className: "fr-attach-list" });
+    var attachMsg = el("p", { className: "fr-msg", role: "status", "aria-live": "polite" });
+    attachMsg.hidden = true;
+    var attachAuth = null;
+    var uploads = [];
+    function attachedIds() {
+      var ids = [];
+      for (var i = 0; i < uploads.length; i++) if (uploads[i].id) ids.push(uploads[i].id);
+      return ids;
+    }
+    function uploading() {
+      for (var i = 0; i < uploads.length; i++) if (uploads[i].busy) return true;
+      return false;
+    }
+    function renderUploads() {
+      attachList.textContent = "";
+      for (var i = 0; i < uploads.length; i++) (function (u) {
+        var li = el("li", { className: "fr-attach-item" }, [
+          el("span", { className: "fr-attach-name", text: u.name + (u.busy ? " (uploading...)" : "") })
+        ]);
+        if (!u.busy) li.appendChild(el("button", { className: "fr-attach-x", type: "button", text: "×", "aria-label": "Remove " + u.name, onclick: function () {
+          uploads.splice(uploads.indexOf(u), 1);
+          renderUploads();
+          if (u.id) api("DELETE", "/api/attachments/" + encodeURIComponent(u.id)).then(function () {}, function () {});
+        } }));
+        attachList.appendChild(li);
+      })(uploads[i]);
+      attachBtn.hidden = uploads.length >= 4;
+    }
+    attachBtn.addEventListener("click", function () {
+      if (!session()) {
+        setMsg(attachMsg, "Sign in to attach files.", "err");
+        if (!attachAuth) {
+          attachAuth = createAuthPanel(function () {
+            if (attachAuth) { attachAuth.remove(); attachAuth = null; }
+            attachMsg.hidden = true;
+            fileIn.click();
+          });
+          attachBtn.parentNode.insertBefore(attachAuth, attachList);
+        }
+        return;
+      }
+      fileIn.click();
+    });
+    fileIn.addEventListener("change", function () {
+      var picked = fileIn.files;
+      for (var i = 0; i < picked.length && uploads.length < 4; i++) (function (f) {
+        if (f.size > 5 * 1024 * 1024) {
+          setMsg(attachMsg, "Keep attachments under 5MB (" + f.name + ").", "err");
+          return;
+        }
+        var u = { name: f.name, busy: true, id: "" };
+        uploads.push(u);
+        renderUploads();
+        var fd = new FormData();
+        fd.append("file", f, f.name);
+        api("POST", "/api/projects/" + encodeURIComponent(projectId) + "/uploads", fd)
+          .then(function (d) {
+            u.busy = false;
+            if (d.attachment) { u.id = d.attachment.id; attachMsg.hidden = true; }
+            renderUploads();
+          }, function (err) {
+            uploads.splice(uploads.indexOf(u), 1);
+            renderUploads();
+            setMsg(attachMsg, err.message + (err.signIn ? "" : " (" + f.name + ")"), "err");
+          });
+      })(picked[i]);
+      fileIn.value = "";
+    });
+    var attachField = el("div", { className: "fr-field" }, [
+      el("span", { text: "Attachments (optional, images, PDF or text, 5MB each)" }),
+      attachBtn,
+      attachList,
+      attachMsg,
+      fileIn
+    ]);
+
     var emailField = field("Email (required, we send a verification code)", emailIn);
     var form = el("form", { novalidate: "" }, [
       field("Title", titleIn),
       richField("Details (optional)", detailsEd.el),
+      attachField,
       emailField,
       el("div", { className: "fr-hp", "aria-hidden": "true" }, [hp]),
       submit,
@@ -694,6 +801,10 @@ export const EMBED_SCRIPT: string = String.raw`(function () {
         emailIn.focus();
         return;
       }
+      if (uploading()) {
+        setMsg(msg, "Wait for the file uploads to finish.", "err");
+        return;
+      }
       busy = true;
       submit.disabled = true;
       setMsg(msg, "Sending...", "");
@@ -702,10 +813,13 @@ export const EMBED_SCRIPT: string = String.raw`(function () {
         details: detailsEd.value(),
         email: email,
         voter: voterKey(),
-        website: hp.value
+        website: hp.value,
+        attachments: attachedIds().join(",")
       }).then(function (data) {
         form.reset();
         detailsEd.reset();
+        uploads = [];
+        renderUploads();
         if (data.verificationSent) {
           setMsg(msg, "Thanks, your request has been added. We emailed " + email + " a verification code.", "ok");
         } else {

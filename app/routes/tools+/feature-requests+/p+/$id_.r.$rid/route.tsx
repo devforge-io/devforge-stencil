@@ -14,7 +14,7 @@ import { newId, type AnvilError } from "~/lib/feature-requests/anvil.server";
 import { clientIp, rateLimited } from "~/lib/feature-requests/http.server";
 import { sanitizeDetails } from "~/lib/feature-requests/details";
 import { LIMITS } from "~/lib/feature-requests/shared";
-import { createComment, getProject, getRequest, isVoterKey, listComments, publicComment, publicRequest, toggleVote, updateRequestDetails, votedRequestIds } from "~/lib/feature-requests/store.server";
+import { createComment, getProject, getRequest, isVoterKey, listAttachments, listComments, publicAttachment, publicComment, publicRequest, toggleVote, updateRequestDetails, votedRequestIds } from "~/lib/feature-requests/store.server";
 import { Card, Field, Notice, Shell, StatusChip, formatDate, inputClass, primaryBtn } from "~/components/tools/feature-requests/shell";
 
 /** Same cookie as the board page, so the vote identity carries across. */
@@ -56,12 +56,14 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const [{ token, setCookie: csrfCookie }, chrome, { voter, setCookie: vCookie }] = await Promise.all([ensureCsrfToken(request), getSiteChrome(), voterFrom(request)]);
   const voted = (await votedRequestIds(project.id, { voter })).has(req.id);
   const comments = (await listComments(req.id)).map(publicComment);
+  const attachments = (await listAttachments(req.id)).map(publicAttachment);
   const data = {
     csrfToken: token,
     chrome,
     project: { id: project.id, name: project.name, boardEnabled: project.boardEnabled, accent: project.accent },
     request: publicRequest(req, voted),
     comments,
+    attachments,
   };
   const headers = new Headers();
   if (csrfCookie) headers.append("Set-Cookie", csrfCookie);
@@ -111,7 +113,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
 }
 
 export default function RequestPage() {
-  const { chrome, csrfToken, comments, project, request: r } = useLoaderData<typeof loader>();
+  const { chrome, csrfToken, comments, attachments, project, request: r } = useLoaderData<typeof loader>();
   const data = (useActionData() ?? {}) as ActionData;
   const busy = useNavigation().state === "submitting";
   const accent = project.accent;
@@ -146,6 +148,23 @@ export default function RequestPage() {
               {r.status !== "new" ? <StatusChip status={r.status} /> : null}
             </div>
             <div className="mt-2 font-mono text-[11px] text-white/35">{formatDate(r.createdAt)}</div>
+            {attachments.length > 0 ? (
+              <ul className="mt-4 flex flex-wrap gap-2">
+                {attachments.map((a) => (
+                  <li key={a.id}>
+                    <a
+                      href={`/tools/feature-requests/api/attachments/${a.id}`}
+                      target="_blank"
+                      rel="noopener"
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-1.5 text-xs text-white/70 hover:border-[#f5a524]/45 hover:text-white"
+                    >
+                      {a.name}
+                      <span className="text-white/35">{Math.max(1, Math.round(a.size / 1024))}KB</span>
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
             {r.details ? (
               <div className="mt-5 max-w-2xl fr-rich whitespace-pre-wrap [&_ol]:list-decimal [&_ol]:pl-5 [&_ul]:list-disc [&_ul]:pl-5 text-[15px] leading-relaxed text-white/70" dangerouslySetInnerHTML={{ __html: sanitizeDetails(r.details).html }} />
             ) : (

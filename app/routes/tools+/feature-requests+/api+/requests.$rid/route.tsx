@@ -11,7 +11,7 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import type { AnvilError } from "~/lib/feature-requests/anvil.server";
 import { embedUser } from "~/lib/feature-requests/embed-auth.server";
 import { clientIp, corsHeaders, json, originBlocked, preflight, rateLimited, readBody } from "~/lib/feature-requests/http.server";
-import { getProject, getRequest, isEmail, listComments, publicComment, publicProject, publicRequest, updateRequestDetails, votedRequestIds } from "~/lib/feature-requests/store.server";
+import { getProject, getRequest, isEmail, listAttachments, listComments, publicAttachment, publicComment, publicProject, publicRequest, updateRequestDetails, votedRequestIds } from "~/lib/feature-requests/store.server";
 
 function canEdit(requestEmail: string, email: string): boolean {
   return Boolean(requestEmail) && isEmail(email) && requestEmail.trim().toLowerCase() === email.trim().toLowerCase();
@@ -34,7 +34,8 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     const identity = { email: email || undefined, voter: search.get("voter") ?? undefined };
     const voted = (await votedRequestIds(project.id, identity)).has(req.id);
     const comments = (await listComments(req.id)).map(publicComment);
-    return json({ ok: true, project: publicProject(project), request: publicRequest(req, voted), comments, canEdit: canEdit(req.email, email) }, { headers });
+    const attachments = (await listAttachments(req.id)).map(publicAttachment);
+    return json({ ok: true, project: publicProject(project), request: publicRequest(req, voted), comments, attachments, canEdit: canEdit(req.email, email) }, { headers });
   } catch (err) {
     const e = err as AnvilError;
     return json({ ok: false, error: e.status === 400 ? e.message : "Could not load the request" }, { status: e.status && e.status >= 400 ? e.status : 500, headers: corsHeaders(request) });

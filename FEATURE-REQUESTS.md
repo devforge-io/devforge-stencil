@@ -104,6 +104,22 @@ hostile payloads both come out safe. `publicRequest` returns `details` (plain
 text, for previews and clamps) plus `detailsHtml`. `LIMITS.details` applies to
 the text; the stored markup may be up to 4x that.
 
+Attachments (widget v11, 2026-08-31): requests can carry up to 4 files, 5MB
+each, stored in the private Anvil storage bucket `feature-requests`
+(`storage.server.ts` creates it on first use: public=false,
+file_size_limit=5242880, allowed_mime_types pinned; created on the hosted
+instance 2026-08-31). Only images (png, jpg, gif, webp), PDF and plain text
+(txt, md, csv, json, log) are accepted: the fork validates extension, declared
+MIME and magic bytes, and the served type comes from the extension, never the
+client. No executables, scripts, HTML, SVG or archives. Uploads require the
+widget bearer token; files upload ahead of the submission
+(`POST /api/projects/:id/uploads`, multipart) as pending `fr_attachments` docs
+and the submission claims them by id (uploader email must match). Downloads
+stream through `GET /api/attachments/:id` (nosniff, sandbox CSP, inline for
+images/PDF, attachment otherwise); `DELETE /api/attachments/:id` removes a
+still-pending upload only. Orphaned pending uploads are not auto-purged; they
+are invisible and capped by the upload rate limit.
+
 ## Graph sync
 
 The app writes documents only. On the Anvil server, sync rules mirror the
@@ -193,6 +209,13 @@ CREATE OR REPLACE TRIGGER fr_project_owner_link_update
   FOR EACH ROW AS { MERGE RELATIONSHIP (:FRProject {id: NEW.id})-[:OWNED_BY]->(:User {id: NEW.ownerId}) }
 ```
 
+Attachments are synced the same way (applied to the hosted instance
+2026-08-31, as sync rule #9 plus triggers 10-12): `SYNC LABEL FRAttachment TO
+COLLECTION fr_attachments KEY id`, insert+update triggers for
+`(:FRAttachment)-[:ON_REQUEST]->(:FRRequest)` (update because claiming a
+pending upload sets `requestId`), and an insert trigger for
+`(:FRAttachment)-[:UPLOADED_BY]->(:User)`.
+
 Rule creation backfills existing rows in both directions; `SHOW SYNC RULES` and
 `SHOW TRIGGERS` list what is active, `DROP SYNC RULE <id>` / `DROP TRIGGER <name>`
 remove them. Deleting a document detach-deletes its node, so edges go with it,
@@ -210,6 +233,8 @@ resolves for app-written data.
 | `/p/:id` | Hosted public board; works without JavaScript. |
 | `/p/:id/r/:rid` | One request on its own page: full details, vote, and a creator edit form (email must match the submitter's). Works without JavaScript. |
 | `/embed.js` | The widget (see `app/lib/feature-requests/embed-script.ts`). |
+| `/api/projects/:id/uploads` | POST (CORS, bearer token): upload one attachment ahead of a submission. |
+| `/api/attachments/:aid` | GET streams the file; DELETE removes a pending upload (uploader only). |
 | `/api/auth` | Widget sign-in (CORS): `intent` otp-request (registers unknown addresses first) or otp-verify; returns the bearer token. |
 | `/project`, `/project/:id` | Owner self-serve area: emailed-code sign-in only, then every project whose `ownerEmail` matches the address (or whose `ownerId` matches the account). Same dashboard as the tools area (shared component). |
 | `GET /api/projects/:id/board?voter=` | Public JSON: project info + visible requests. |

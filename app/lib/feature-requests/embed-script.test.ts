@@ -5,7 +5,7 @@ import { EMBED_SCRIPT, EMBED_SCRIPT_VERSION } from "./embed-script";
 test("embed script is valid JavaScript", () => {
   assert.doesNotThrow(() => new Function(EMBED_SCRIPT));
   assert.ok(EMBED_SCRIPT.trim().startsWith("(function ()"), "wrapped in an IIFE");
-  assert.equal(EMBED_SCRIPT_VERSION, "10");
+  assert.equal(EMBED_SCRIPT_VERSION, "11");
 });
 
 test("embed script contains no em dashes", () => {
@@ -42,4 +42,10 @@ test("embed script has the rich details editor", () => {
   assert.ok(EMBED_SCRIPT.includes('contenteditable: "true"'), "contenteditable area");
   assert.match(EMBED_SCRIPT, /execCommand/);
   assert.ok(EMBED_SCRIPT.includes("insertUnorderedList"), "list tool");
+});
+
+test("embed script uploads attachments through the API", () => {
+  assert.ok(EMBED_SCRIPT.includes('"/uploads"'), "upload endpoint");
+  assert.ok(EMBED_SCRIPT.includes("FormData"), "multipart upload");
+  assert.ok(EMBED_SCRIPT.includes('"/api/attachments/"'), "attachment links");
 });

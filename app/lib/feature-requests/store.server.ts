@@ -34,18 +34,20 @@ import {
 } from "./anvil.server";
 import { DEFAULT_ACCENT, DEFAULT_BUTTON_LABEL, LIMITS, STATUSES, STATUS_LABEL, isStatus, type RequestStatus } from "./shared";
 import { sanitizeDetails } from "./details";
+import { MAX_ATTACHMENTS_PER_REQUEST, deleteObject } from "./storage.server";
 export { DEFAULT_ACCENT, DEFAULT_BUTTON_LABEL, LIMITS, STATUSES, STATUS_LABEL, isStatus, type RequestStatus };
 
 const PROJECTS = "fr_projects";
 const REQUESTS = "fr_requests";
 const VOTES = "fr_votes";
 const COMMENTS = "fr_comments";
+const ATTACHMENTS = "fr_attachments";
 
 let collectionsReady: Promise<void> | null = null;
 
 /** Creates the three collections on first use (idempotent, cached). */
 function ensureCollections(): Promise<void> {
-  collectionsReady ??= Promise.all([docEnsureCollection(PROJECTS), docEnsureCollection(REQUESTS), docEnsureCollection(VOTES), docEnsureCollection(COMMENTS)])
+  collectionsReady ??= Promise.all([docEnsureCollection(PROJECTS), docEnsureCollection(REQUESTS), docEnsureCollection(VOTES), docEnsureCollection(COMMENTS), docEnsureCollection(ATTACHMENTS)])
     .then(() => undefined)
     .catch((err) => {
       collectionsReady = null;
@@ -422,6 +424,11 @@ export async function deleteRequest(projectId: string, requestId: string): Promi
   for (const v of votes) await docDelete(VOTES, v.key);
   const comments = await docQuery(COMMENTS, { op: "eq", field: "requestId", value: rid }, 100_000);
   for (const c of comments) await docDelete(COMMENTS, c.key);
+  const files = await docQuery(ATTACHMENTS, { op: "eq", field: "requestId", value: rid }, 1000);
+  for (const f of files) {
+    await deleteObject(str(f.body.storageKey));
+    await docDelete(ATTACHMENTS, f.key);
+  }
   await docDelete(REQUESTS, rid);
 }
 
@@ -567,6 +574,111 @@ export async function createComment(
 
 export function publicComment(c: Comment) {
   return { id: c.id, name: c.name || "Anonymous", body: c.body, createdAt: c.createdAt };
+}
+
+/* ---------------------------------------------------------------------- */
+/* Attachments                                                             */
+/* ---------------------------------------------------------------------- */
+
+export type Attachment = {
+  id: string;
+  /** "" while pending (uploaded, not yet attached to a request). */
+  requestId: string;
+  projectId: string;
+  name: string;
+  mime: string;
+  size: number;
+  storageKey: string;
+  emailLower: string;
+  userId: string;
+  createdAt: number;
+};
+
+function toAttachment(doc: AnvilDocument): Attachment {
+  const a = doc.body;
+  return {
+    id: str(a.id, doc.key),
+    requestId: str(a.requestId),
+    projectId: str(a.projectId),
+    name: str(a.name),
+    mime: str(a.mime),
+    size: num(a.size),
+    storageKey: str(a.storageKey),
+    emailLower: str(a.emailLower),
+    userId: str(a.userId),
+    createdAt: num(a.createdAt),
+  };
+}
+
+/** Records an uploaded file as pending; the object is already in the bucket. */
+export async function createAttachment(
+  projectId: string,
+  input: { name: string; mime: string; size: number; storageKey: string; email: string; userId?: string },
+): Promise<Attachment> {
+  await ensureCollections();
+  const a: Attachment = {
+    id: await reserveUuid(),
+    requestId: "",
+    projectId: ident(projectId, "project id"),
+    name: input.name,
+    mime: input.mime,
+    size: input.size,
+    storageKey: input.storageKey,
+    emailLower: input.email.trim().toLowerCase(),
+    userId: input.userId ?? "",
+    createdAt: Date.now(),
+  };
+  await docPut(ATTACHMENTS, a.id, { ...a }, { ifNotExists: true });
+  return a;
+}
+
+export async function getAttachment(id: string): Promise<Attachment | null> {
+  await ensureCollections();
+  const doc = await docGet(ATTACHMENTS, ident(id, "attachment id"));
+  return doc ? toAttachment(doc) : null;
+}
+
+/**
+ * Binds pending uploads to a freshly created request. Only the uploader's own
+ * pending files count; anything else in the list is ignored, and at most
+ * MAX_ATTACHMENTS_PER_REQUEST are taken.
+ */
+export async function claimAttachments(requestId: string, projectId: string, email: string, ids: string[]): Promise<Attachment[]> {
+  const emailLower = email.trim().toLowerCase();
+  const out: Attachment[] = [];
+  for (const id of ids.slice(0, MAX_ATTACHMENTS_PER_REQUEST * 2)) {
+    if (out.length >= MAX_ATTACHMENTS_PER_REQUEST) break;
+    let a: Attachment | null = null;
+    try {
+      a = await getAttachment(id);
+    } catch {
+      continue; // malformed id in the list: skip, never sink the submission
+    }
+    if (!a || a.requestId || a.projectId !== projectId || a.emailLower !== emailLower) continue;
+    const next = { ...a, requestId };
+    await docPut(ATTACHMENTS, a.id, { ...next });
+    out.push(next);
+  }
+  return out;
+}
+
+/** Deletes a pending upload (its object too). Claimed files stay. */
+export async function deletePendingAttachment(id: string, email: string): Promise<boolean> {
+  const a = await getAttachment(id);
+  if (!a || a.requestId || a.emailLower !== email.trim().toLowerCase()) return false;
+  await deleteObject(a.storageKey);
+  await docDelete(ATTACHMENTS, a.id);
+  return true;
+}
+
+export async function listAttachments(requestId: string): Promise<Attachment[]> {
+  await ensureCollections();
+  const docs = await docQuery(ATTACHMENTS, { op: "eq", field: "requestId", value: ident(requestId, "request id") }, 100);
+  return docs.map(toAttachment).sort((a, b) => a.createdAt - b.createdAt);
+}
+
+export function publicAttachment(a: Attachment) {
+  return { id: a.id, name: a.name, mime: a.mime, size: a.size };
 }
 
 /* ---------------------------------------------------------------------- */

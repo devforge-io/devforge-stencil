@@ -4,7 +4,7 @@ import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import type { AnvilError } from "~/lib/feature-requests/anvil.server";
 import { registerVisitor } from "~/lib/feature-requests/anvil.server";
 import { clientIp, corsHeaders, json, originBlocked, preflight, rateLimited, readBody } from "~/lib/feature-requests/http.server";
-import { createRequest, getProject, publicRequest, toggleVote } from "~/lib/feature-requests/store.server";
+import { claimAttachments, createRequest, getProject, publicAttachment, publicRequest, toggleVote } from "~/lib/feature-requests/store.server";
 
 export async function loader({ request }: LoaderFunctionArgs) {
   if (request.method === "OPTIONS") return preflight(request);
@@ -37,6 +37,12 @@ export async function action({ request, params }: ActionFunctionArgs) {
     // mail hiccup must not lose the idea.
     const visitor = await registerVisitor(email);
     const created = await createRequest(project.id, { title: body.title ?? "", details: body.details ?? "", email, submitterId: visitor.userId, origin, ip });
+    // Bind any files uploaded ahead of this submission (uploader must match).
+    let attachments: ReturnType<typeof publicAttachment>[] = [];
+    const wanted = (body.attachments ?? "").split(",").map((x) => x.trim()).filter(Boolean);
+    if (wanted.length > 0) {
+      attachments = (await claimAttachments(created.id, project.id, email, wanted).catch(() => [])).map(publicAttachment);
+    }
     let voted = false;
     let votes = 0;
     if (project.boardEnabled) {
@@ -47,7 +53,7 @@ export async function action({ request, params }: ActionFunctionArgs) {
       }
     }
     return json(
-      { ok: true, request: { ...publicRequest(created, voted), votes }, account: visitor.account, verificationSent: visitor.verificationSent },
+      { ok: true, request: { ...publicRequest(created, voted), votes, attachments }, account: visitor.account, verificationSent: visitor.verificationSent },
       { status: 201, headers },
     );
   } catch (err) {
