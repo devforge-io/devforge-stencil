@@ -8,3 +8,4 @@ save.sh
 # React Router
 /.react-router/
 /build/
+/tmp
