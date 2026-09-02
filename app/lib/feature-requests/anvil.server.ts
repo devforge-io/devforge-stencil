@@ -351,6 +351,13 @@ export function setLit(alias: string, props: Record<string, unknown>): string {
 /* Auth (end users)                                                        */
 /* ---------------------------------------------------------------------- */
 
+/**
+ * The Anvil app this tool belongs to (APPS.md). Passed on registration and
+ * OTP requests so Anvil uses the app's email templates and settings overrides
+ * when configured; harmless while none are set.
+ */
+export const APP_SLUG = "feature_requests";
+
 export type AnvilTokens = { accessToken: string; idToken?: string; refreshToken?: string };
 export type AnvilIdentity = { sub: string; username: string; email: string; roles: string[] };
 
@@ -390,11 +397,11 @@ export async function anvilLogin(username: string, password: string): Promise<An
 export async function anvilRegister(email: string, password: string): Promise<{ id: string }> {
   const token = await serviceToken();
   try {
-    return await anvilFetch<{ id: string }>("/auth/register", { body: { email, password }, token });
+    return await anvilFetch<{ id: string }>("/auth/register", { body: { email, password, app: APP_SLUG }, token });
   } catch (err) {
     if (err instanceof AnvilError && err.status === 401 && !getAnvilConfig().serviceKey) {
       return anvilFetch<{ id: string }>("/auth/register", {
-        body: { email, password },
+        body: { email, password, app: APP_SLUG },
         token: await serviceToken(true),
       });
     }
@@ -444,7 +451,7 @@ export async function lookupUserIdByEmail(email: string): Promise<string> {
 }
 
 export async function anvilOtpRequest(email: string): Promise<{ message: string; expires_in_seconds?: number }> {
-  return anvilFetch("/auth/otp/request", { body: { email } });
+  return anvilFetch("/auth/otp/request", { body: { email, app: APP_SLUG } });
 }
 
 export async function anvilOtpVerify(email: string, code: string): Promise<AnvilTokens> {

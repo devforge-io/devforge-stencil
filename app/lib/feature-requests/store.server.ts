@@ -1,11 +1,12 @@
 /**
  * Data access for the feature-requests tool, on Anvil DB's document store.
  *
- *   fr_projects  key = project id   {id, ownerId, name, intro, origins[],
+ * Collections (schema app_feature_requests since 2026-09-02):
+ *   projects     key = project id   {id, ownerId, name, intro, origins[],
  *                                    boardEnabled, accent, buttonLabel, createdAt, updatedAt}
- *   fr_requests  key = request id   {id, projectId, title, details, status, votes,
+ *   requests     key = request id   {id, projectId, title, details, status, votes,
  *                                    origin, ipHash, createdAt, updatedAt}
- *   fr_votes     key = vote id       {id, requestId, projectId,
+ *   votes        key = vote id       {id, requestId, projectId,
  *                                    userId, voter, createdAt}
  *
  * Ids are server-minted UUIDs reserved through Anvil's POST /db/uuid. One vote
@@ -37,11 +38,18 @@ import { sanitizeDetails } from "./details";
 import { MAX_ATTACHMENTS_PER_REQUEST, deleteObject } from "./storage.server";
 export { DEFAULT_ACCENT, DEFAULT_BUTTON_LABEL, LIMITS, STATUSES, STATUS_LABEL, isStatus, type RequestStatus };
 
-const PROJECTS = "fr_projects";
-const REQUESTS = "fr_requests";
-const VOTES = "fr_votes";
-const COMMENTS = "fr_comments";
-const ATTACHMENTS = "fr_attachments";
+// All tool data lives in the Anvil app "feature_requests" (schema
+// app_feature_requests, moved 2026-09-02). The service key's admin role gives
+// implicit app-admin, so the /docs calls pass the app membership checks.
+// Unprefixed names: the schema is the namespace (and the old public fr_*
+// names linger as phantom registry entries on the hosted server, an Anvil
+// drop_collection bug, so their bare names cannot be reused until a restart).
+const APP_SCHEMA = "app_feature_requests";
+const PROJECTS = `${APP_SCHEMA}.projects`;
+const REQUESTS = `${APP_SCHEMA}.requests`;
+const VOTES = `${APP_SCHEMA}.votes`;
+const COMMENTS = `${APP_SCHEMA}.comments`;
+const ATTACHMENTS = `${APP_SCHEMA}.attachments`;
 
 let collectionsReady: Promise<void> | null = null;
 

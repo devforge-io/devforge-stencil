@@ -50,17 +50,27 @@ curl -s -o /dev/null -w '%{http_code}\n' -X POST $ANVIL_URL/auth/register \
 
 ## Data model
 
-Documents in Anvil's document store (`/docs/*` REST API), one collection per type:
+Documents in Anvil's document store (`/docs/*` REST API), one collection per type. Since 2026-09-02 everything lives in the Anvil app
+`feature_requests` (schema `app_feature_requests`, see Anvil's APPS.md): the
+collection names below are all prefixed `app_feature_requests.` and carry no
+`fr_` prefix (the schema is the namespace; the old public `fr_*` names are
+stuck as phantom registry entries on the hosted server, an Anvil
+`drop_collection` bug now fixed for future drops but not repaired for
+existing phantoms), the labels
+are bound to that schema, and reads/writes through `/docs` pass the app
+membership check (the service key's admin role grants implicit app-admin).
+Registration and OTP requests carry `app: feature_requests` so Anvil can
+apply per-app email templates and settings once configured:
 
 ```
-fr_projects  key = project id        {id, ownerId, name, intro, origins[],
+projects     key = project id        {id, ownerId, name, intro, origins[],
                                       boardEnabled, accent, buttonLabel, createdAt, updatedAt}
-fr_requests  key = request id        {id, projectId, title, details, submitterId, status,
+requests     key = request id        {id, projectId, title, details, submitterId, status,
                                       votes, origin, ipHash, createdAt, updatedAt}
-fr_votes     key = vote id           {id, requestId, projectId, userId, voter, createdAt}
-fr_comments  key = comment id        {id, requestId, projectId, name, userId, body,
+votes        key = vote id           {id, requestId, projectId, userId, voter, createdAt}
+comments     key = comment id        {id, requestId, projectId, name, userId, body,
                                       ipHash, createdAt}
-fr_attachments key = attachment id   {id, requestId, projectId, name, mime, size,
+attachments  key = attachment id     {id, requestId, projectId, name, mime, size,
                                       storageKey, userId, createdAt}
 ```
 
