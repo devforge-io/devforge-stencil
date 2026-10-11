@@ -1,5 +1,6 @@
 import { createCookieSessionStorage, redirect } from "react-router";
 import type { GitHubTokenBundle } from "./oauth.server";
+import { CMS_LOGIN_PATH } from "./login-url";
 
 type Session = Awaited<ReturnType<typeof getSession>>;
 
@@ -110,7 +111,7 @@ export async function getAuthUser(request: Request): Promise<AuthUser | null> {
 export async function requireAuth(request: Request): Promise<AuthUser> {
   const user = await getAuthUser(request);
   if (!user) {
-    throw redirect("/login");
+    throw redirect(CMS_LOGIN_PATH);
   }
   return user;
 }

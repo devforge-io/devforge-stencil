@@ -36,6 +36,12 @@ export interface StencilSettings {
   enableMarkdown?: boolean;
   /** Show the Wiki (Wikitext) content type in the "New Content" picker. Off by default. */
   enableWiki?: boolean;
+  /**
+   * Where `/login` sends site visitors instead of showing the GitHub sign-in:
+   * a path on this site (e.g. "/account/sign-in") or an absolute http(s) URL.
+   * CMS admins keep signing in at /content/login, which ignores this. Unset = default.
+   */
+  loginUrl?: string;
   /** Contact form (POST /contact) — recipient + SMTP transport. */
   contact?: {
     /** Where contact-form submissions are emailed. */

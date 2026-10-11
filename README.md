@@ -204,6 +204,7 @@ content/assets/whiteboard-{pageSlug}-{wbSlug}.png    # rendered image
 - **Body classes** (light + dark) — applied to the public `<body>` at render.
 - **Fonts** — Google Fonts to load.
 - **Article template** — the Page used as the layout for all articles.
+- **Login URL**: where `/login` sends visitors, for sites that replace the GitHub sign-in with their own accounts (a path on the site or an absolute URL). CMS admins keep signing in at `/content/login`, which this setting never changes.
 
 ---
 
@@ -281,7 +282,8 @@ app/routes/
   embed+/articles.$slug/           /embed/articles/:slug     Template-free article embed
   embed[.]js/                      /embed.js                 Iframe resizer script
 
-  _auth+/login · logout            /login · /logout          Sign-in page / sign-out
+  _auth+/login · logout            /login · /logout          Sign-in page (or loginUrl redirect) / sign-out
+  _auth+/content.login             /content/login            GitHub sign-in for the CMS; ignores loginUrl
   auth+/github · github.callback   /auth/github(/callback)   GitHub OAuth flow
 
   _dashboard/                      (auth layout)             CMS shell

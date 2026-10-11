@@ -1,3 +1,4 @@
+import { CMS_LOGIN_PATH } from "~/lib/login-url";
 import { Link } from "react-router";
 import { isAuthenticated } from "~/lib/auth.server";
 import { getPublishedContentByPath } from "~/lib/content.server";
@@ -129,7 +130,7 @@ export default function Index({ loaderData }: Route.ComponentProps) {
                 <NavLink to="/logout" muted>Logout</NavLink>
               </>
             ) : (
-              <NavLink to="/login" primary>Sign in</NavLink>
+              <NavLink to={CMS_LOGIN_PATH} primary>Sign in</NavLink>
             )}
           </nav>
         </div>
@@ -161,7 +162,7 @@ export default function Index({ loaderData }: Route.ComponentProps) {
           </p>
 
           <div className="mt-8 flex flex-wrap items-center gap-3">
-            <CtaButton to={loggedIn ? "/content" : "/login"} primary>
+            <CtaButton to={loggedIn ? "/content" : CMS_LOGIN_PATH} primary>
               {loggedIn ? "Open the dashboard" : "Get started"}
               <ChevronRight size={16} />
             </CtaButton>
