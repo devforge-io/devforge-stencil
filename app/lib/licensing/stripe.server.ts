@@ -16,6 +16,13 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 export const STRIPE_API = "https://api.stripe.com";
+/**
+ * Pinned on every call: the account's default version dates from 2017, and the
+ * object shapes this module reads (Checkout Sessions, subscription items with
+ * their own period end) are the ones this version renders. Webhook events are
+ * only used for their ids; the subscription is always re-read through here.
+ */
+export const STRIPE_API_VERSION = "2025-08-27.basil";
 export const HAMMER_PRICE_LOOKUP_KEY = "hammer_yearly";
 
 export class StripeError extends Error {
@@ -74,7 +81,7 @@ async function stripeFetch<T>(path: string, init: { method?: "GET" | "POST" | "D
   const { secretKey } = stripeConfig();
   if (!secretKey) throw new StripeError("Payments are not configured (set STRIPE_SECRET_KEY)", 503);
   const method = init.method ?? (init.params ? "POST" : "GET");
-  const headers: Record<string, string> = { authorization: `Bearer ${secretKey}`, accept: "application/json" };
+  const headers: Record<string, string> = { authorization: `Bearer ${secretKey}`, accept: "application/json", "stripe-version": STRIPE_API_VERSION };
   let url = STRIPE_API + path;
   let body: string | undefined;
   if (init.params) {

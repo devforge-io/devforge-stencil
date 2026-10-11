@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
 import {
   HAMMER_PRICE_LOOKUP_KEY,
+  STRIPE_API_VERSION,
   StripeError,
   createCheckoutSession,
   encodeForm,
@@ -18,7 +19,7 @@ import {
 process.env.STRIPE_SECRET_KEY = "sk_test_unit";
 process.env.STRIPE_WEBHOOK_SECRET = "whsec_unit";
 
-type Call = { method: string; url: string; body: string; auth: string | null; contentType: string | null };
+type Call = { method: string; url: string; body: string; auth: string | null; contentType: string | null; version: string | null };
 type Reply = { status?: number; body?: unknown };
 
 const realFetch = globalThis.fetch;
@@ -27,7 +28,7 @@ function stubFetch(handler: (call: Call) => Reply): Call[] {
   const calls: Call[] = [];
   globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
     const headers = new Headers(init?.headers);
-    const call: Call = { method: init?.method ?? "GET", url: String(input), body: String(init?.body ?? ""), auth: headers.get("authorization"), contentType: headers.get("content-type") };
+    const call: Call = { method: init?.method ?? "GET", url: String(input), body: String(init?.body ?? ""), auth: headers.get("authorization"), contentType: headers.get("content-type"), version: headers.get("stripe-version") };
     calls.push(call);
     const reply = handler(call);
     return new Response(JSON.stringify(reply.body ?? {}), { status: reply.status ?? 200, headers: { "content-type": "application/json" } });
@@ -77,6 +78,7 @@ test("createCheckoutSession posts a subscription checkout with the purchase meta
   assert.equal(session.url, "https://checkout.stripe.com/c/pay/cs_1");
   assert.equal(calls.length, 1);
   assert.equal(calls[0].auth, "Bearer sk_test_unit");
+  assert.equal(calls[0].version, STRIPE_API_VERSION, "every call pins the API version");
   assert.equal(calls[0].contentType, "application/x-www-form-urlencoded");
   const body = new URLSearchParams(calls[0].body);
   assert.equal(body.get("mode"), "subscription");
