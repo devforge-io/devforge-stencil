@@ -146,8 +146,8 @@ export type DocFilter =
   | { op: "exists"; field: string }
   | { op: "and" | "or"; conditions: DocFilter[] };
 
-/** Runs a document-store call as the service principal, retrying a stale admin token once. */
-async function serviceFetch<T>(path: string, init: { method?: string; body?: unknown } = {}): Promise<T> {
+/** Runs any Anvil call as the service principal, retrying a stale admin token once. */
+export async function serviceFetch<T>(path: string, init: { method?: string; body?: unknown } = {}): Promise<T> {
   try {
     return await anvilFetch<T>(path, { ...init, token: await serviceToken() });
   } catch (err) {
@@ -352,9 +352,10 @@ export function setLit(alias: string, props: Record<string, unknown>): string {
 /* ---------------------------------------------------------------------- */
 
 /**
- * The Anvil app this tool belongs to (APPS.md). Passed on registration and
- * OTP requests so Anvil uses the app's email templates and settings overrides
- * when configured; harmless while none are set.
+ * The Anvil app the feature-requests tool belongs to (APPS.md). The board and
+ * widget flows pass it on registration and OTP requests so Anvil uses the
+ * tool's email templates and settings overrides. The site-wide account pages
+ * pass the Devforge account app instead (`account/anvil-app.server.ts`).
  */
 export const APP_SLUG = "feature_requests";
 
@@ -392,16 +393,17 @@ export async function anvilLogin(username: string, password: string): Promise<An
  * Creates an Anvil user through the admin-only register endpoint. No username
  * is sent on purpose: Anvil assigns one server-side (email local part, hex
  * suffix only on collision) and rejects duplicate emails with a 409. Sign-in
- * uses the email; Anvil's login resolves it to the stored username.
+ * uses the email; Anvil's login resolves it to the stored username. `app`
+ * names the Anvil app whose email templates and settings apply.
  */
-export async function anvilRegister(email: string, password: string): Promise<{ id: string }> {
+export async function anvilRegister(email: string, password: string, app: string = APP_SLUG): Promise<{ id: string }> {
   const token = await serviceToken();
   try {
-    return await anvilFetch<{ id: string }>("/auth/register", { body: { email, password, app: APP_SLUG }, token });
+    return await anvilFetch<{ id: string }>("/auth/register", { body: { email, password, app }, token });
   } catch (err) {
     if (err instanceof AnvilError && err.status === 401 && !getAnvilConfig().serviceKey) {
       return anvilFetch<{ id: string }>("/auth/register", {
-        body: { email, password, app: APP_SLUG },
+        body: { email, password, app },
         token: await serviceToken(true),
       });
     }
@@ -450,8 +452,9 @@ export async function lookupUserIdByEmail(email: string): Promise<string> {
   return "";
 }
 
-export async function anvilOtpRequest(email: string): Promise<{ message: string; expires_in_seconds?: number }> {
-  return anvilFetch("/auth/otp/request", { body: { email, app: APP_SLUG } });
+/** Emails a sign-in code; `app` picks the Anvil app whose template, TTL and registration setting apply. */
+export async function anvilOtpRequest(email: string, app: string = APP_SLUG): Promise<{ message: string; expires_in_seconds?: number }> {
+  return anvilFetch("/auth/otp/request", { body: { email, app } });
 }
 
 export async function anvilOtpVerify(email: string, code: string): Promise<AnvilTokens> {

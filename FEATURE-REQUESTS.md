@@ -12,6 +12,7 @@ data live in Anvil DB; this app talks to Anvil over its HTTP API.
 | `ANVIL_SERVICE_KEY` | one of | Service-account API key (`anvil_sk_...`). Preferred. |
 | `ANVIL_ADMIN_USER` / `ANVIL_ADMIN_PASSWORD` | one of | Fallback: the app logs in as this user and caches the token. |
 | `ANVIL_DATABASE` | no | Only for a non-default database. On Anvil 0.1.0 naming it also switches the schema context. |
+| `ANVIL_APP` | no | Slug of the Anvil app the Devforge account belongs to (default `devforge`). Account sign-up and code requests name it, and every sign-in enrols the person as a `reader` member of it. |
 | `SESSION_SECRET` | yes | Signs the `_fr_session` account cookie, shared by the site-wide account pages (`/account/*`), the tool and `/project`. |
 | `PUBLIC_ORIGIN` | no | Origin printed in the embed snippets (defaults to the request origin). |
 
@@ -23,6 +24,11 @@ Never commit the key; it belongs in `.env` locally and in the deployment's envir
   roles are enough for the data itself).
 - **Admin role** for password sign-up: `/auth/register` is admin-only in Anvil. With a
   non-admin key the sign-up page explains that and points people to the emailed code.
+- **App admin on the account app** (`ANVIL_APP`, default `devforge`) so a sign-in can add
+  the person as a member through `PUT /apps/{slug}/members/{user}`; a server admin key has
+  it implicitly. Enrolment (`app/lib/account/anvil-app.server.ts`) looks the membership up
+  first and never downgrades an existing member; when it fails the sign-in still succeeds
+  and the failure is logged.
 - **Usernames are Anvil's business** (since 2026-08-26): the app registers with
   `{email, password}` only and Anvil assigns the username (email local part, hex
   suffix only on collision, in a single call). A caller-provided username that is
@@ -59,8 +65,10 @@ stuck as phantom registry entries on the hosted server, an Anvil
 existing phantoms), the labels
 are bound to that schema, and reads/writes through `/docs` pass the app
 membership check (the service key's admin role grants implicit app-admin).
-Registration and OTP requests carry `app: feature_requests` so Anvil can
-apply per-app email templates and settings once configured:
+The board and widget flows carry `app: feature_requests` on registration and
+OTP requests so Anvil applies the tool's email templates and settings; the
+site-wide account pages carry the account app instead (`ANVIL_APP`, default
+`devforge`, see the routes table):
 
 ```
 projects     key = project id        {id, ownerId, name, intro, origins[],
@@ -239,7 +247,7 @@ resolves for app-written data.
 | Route | What |
 | --- | --- |
 | `/tools/feature-requests` | Landing; signed-in people go to their projects. |
-| `/sign-in`, `/sign-up`, `/sign-out` | Redirect to the site-wide account pages `/account/sign-in`, `/account/sign-up`, `/account/sign-out` (password via Anvil `/auth/login` and `/auth/register`, emailed code via `/auth/otp/*`). Sign-in returns to any same-site `next`; the account hub is `/account`. |
+| `/sign-in`, `/sign-up`, `/sign-out` | Redirect to the site-wide account pages `/account/sign-in`, `/account/sign-up`, `/account/sign-out` (password via Anvil `/auth/login` and `/auth/register`, emailed code via `/auth/otp/*`). Sign-in returns to any same-site `next`; the account hub is `/account`. Sign-up and code requests name the Anvil app `devforge` (its email templates and OTP settings apply, 404 if the app is missing) and every successful sign-in makes the person a `reader` member of it, so Hammer's member list for Devforge is the list of site accounts; an existing member keeps their privilege. |
 | `/projects`, `/projects/:id` | Project list + create; dashboard with triage, embed snippets, settings, delete. |
 | `/p/:id` | Hosted public board; works without JavaScript. |
 | `/p/:id/r/:rid` | One request on its own page: full details, vote, and a creator edit form (email must match the submitter's). Works without JavaScript. |

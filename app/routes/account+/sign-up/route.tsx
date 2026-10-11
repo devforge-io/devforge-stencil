@@ -1,7 +1,9 @@
 /**
  * /account/sign-up: creates the Anvil user (admin-only register endpoint,
- * called with the app's service credentials), then signs them in and returns
- * them to `next` (default /account).
+ * called with the app's service credentials) in the Anvil app named by
+ * `ANVIL_APP` (default `devforge`, so its email templates apply), enrols
+ * them as a member of it, then signs them in and returns them to `next`
+ * (default /account).
  */
 
 import { Form, redirect, useActionData, useLoaderData, useNavigation, type ActionFunctionArgs, type LoaderFunctionArgs } from "react-router";
@@ -11,6 +13,7 @@ import { ensureCsrfToken, validateCsrf } from "~/lib/csrf.server";
 import { CsrfInput, CsrfProvider } from "~/components/csrf-input";
 import { AnvilError, anvilLogin, anvilRegister, identityFromToken } from "~/lib/feature-requests/anvil.server";
 import { accountSignInHeaders, getAccountUser } from "~/lib/account/session.server";
+import { accountAppSlug, ensureAccountMember } from "~/lib/account/anvil-app.server";
 import { safeNext, signInHref } from "~/lib/account/paths";
 import { clientIp, rateLimited } from "~/lib/feature-requests/http.server";
 import { Card, Field, Notice, Shell, inputClass, primaryBtn, primaryBtnStyle } from "~/components/tools/feature-requests/shell";
@@ -49,7 +52,7 @@ export async function action({ request }: ActionFunctionArgs) {
   if (password !== confirm) return Response.json({ error: "The two passwords do not match.", email } satisfies ActionData, { status: 400 });
 
   try {
-    await anvilRegister(email, password);
+    await anvilRegister(email, password, accountAppSlug());
   } catch (err) {
     const e = err as AnvilError;
     if (e.status === 409) {
@@ -69,8 +72,10 @@ export async function action({ request }: ActionFunctionArgs) {
     const tokens = await anvilLogin(email, password);
     const identity = identityFromToken(tokens.accessToken);
     if (!identity) throw new AnvilError("Anvil returned an unreadable token", 502);
+    await ensureAccountMember(identity.sub, { fresh: true });
     return redirect(next, { headers: await accountSignInHeaders(identity, tokens) });
   } catch {
+    // Membership is ensured on the next sign-in if the login step failed here.
     return redirect(signInHref(next, email));
   }
 }

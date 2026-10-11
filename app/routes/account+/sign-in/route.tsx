@@ -3,6 +3,10 @@
  * both backed by Anvil's auth endpoints; on success the app sets its own
  * session cookie and returns the person to `next` (any same-site path, default
  * /account). Stencil's `loginUrl` setting points /login here.
+ *
+ * The account belongs to the Anvil app named by `ANVIL_APP` (default
+ * `devforge`): code requests carry it so the app's email template and OTP
+ * settings apply, and every successful sign-in enrols the person as a member.
  */
 
 import { Form, redirect, useActionData, useLoaderData, useNavigation, type ActionFunctionArgs, type LoaderFunctionArgs } from "react-router";
@@ -12,6 +16,7 @@ import { ensureCsrfToken, validateCsrf } from "~/lib/csrf.server";
 import { CsrfInput, CsrfProvider } from "~/components/csrf-input";
 import { AnvilError, anvilLogin, anvilOtpRequest, anvilOtpVerify, identityFromToken } from "~/lib/feature-requests/anvil.server";
 import { accountSignInHeaders, getAccountUser } from "~/lib/account/session.server";
+import { accountAppSlug, ensureAccountMember } from "~/lib/account/anvil-app.server";
 import { safeNext, signInHref, signUpHref } from "~/lib/account/paths";
 import { clientIp, rateLimited } from "~/lib/feature-requests/http.server";
 import { Card, Field, Notice, Shell, ghostBtn, inputClass, primaryBtn, primaryBtnStyle } from "~/components/tools/feature-requests/shell";
@@ -48,7 +53,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
   try {
     if (intent === "otp-request") {
-      await anvilOtpRequest(email);
+      await anvilOtpRequest(email, accountAppSlug());
       return { stage: "code", email, source, notice: "If that address has an account, a sign-in code is on its way. Enter it below." } satisfies ActionData;
     }
     if (intent === "otp-verify") {
@@ -57,6 +62,7 @@ export async function action({ request }: ActionFunctionArgs) {
       const tokens = await anvilOtpVerify(email, code);
       const identity = identityFromToken(tokens.accessToken);
       if (!identity) throw new AnvilError("Anvil returned an unreadable token", 502);
+      await ensureAccountMember(identity.sub);
       return redirect(next, { headers: await accountSignInHeaders(identity, tokens) });
     }
     const password = String(form.get("password") ?? "");
@@ -64,6 +70,7 @@ export async function action({ request }: ActionFunctionArgs) {
     const tokens = await anvilLogin(email, password);
     const identity = identityFromToken(tokens.accessToken);
     if (!identity) throw new AnvilError("Anvil returned an unreadable token", 502);
+    await ensureAccountMember(identity.sub);
     return redirect(next, { headers: await accountSignInHeaders(identity, tokens) });
   } catch (err) {
     const e = err as AnvilError;
