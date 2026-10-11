@@ -1,6 +1,7 @@
-import { Form, useNavigation } from "react-router";
+import { Form, useNavigation, data } from "react-router";
 import { useState, useCallback } from "react";
 import { getSettings, saveSettings, type StencilSettings } from "~/lib/settings.server";
+import { normalizeLoginUrl } from "~/lib/login-url";
 import { listPages } from "~/lib/content.server";
 import { requireRole } from "~/lib/auth.server";
 import { Button } from "~/components/ui/button";
@@ -44,6 +45,14 @@ export async function action({ request }: Route.ActionArgs) {
   const siteName = (formData.get("siteName") as string || "").trim();
   const favicon = (formData.get("favicon") as string || "").trim();
   const notFoundPageSlug = (formData.get("notFoundPageSlug") as string || "").trim();
+  const loginUrlInput = (formData.get("loginUrl") as string || "").trim();
+  const loginUrl = normalizeLoginUrl(loginUrlInput);
+  if (loginUrlInput && !loginUrl) {
+    return data(
+      { error: "Login URL must be a path on this site (starting with a single /) or an absolute http(s) URL, and cannot be /login itself." },
+      { status: 400 }
+    );
+  }
   const enableMarkdown = formData.get("enableMarkdown") === "on";
   const enableWiki = formData.get("enableWiki") === "on";
   const sha = (formData.get("sha") as string) || undefined;
@@ -85,6 +94,7 @@ export async function action({ request }: Route.ActionArgs) {
     siteName: siteName || undefined,
     favicon: favicon || undefined,
     notFoundPageSlug: notFoundPageSlug || undefined,
+    loginUrl: loginUrl || undefined,
     enableMarkdown: enableMarkdown || undefined,
     enableWiki: enableWiki || undefined,
     contact,
@@ -164,6 +174,11 @@ export default function SettingsPage({ loaderData, actionData }: Route.Component
       {actionData && "saved" in actionData && (
         <div className="mb-4 px-3 py-2 text-sm text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800">
           Settings saved.
+        </div>
+      )}
+      {actionData && "error" in actionData && (
+        <div className="mb-4 px-3 py-2 text-sm text-destructive bg-destructive/10 rounded-lg border border-destructive/30">
+          {actionData.error}
         </div>
       )}
 
@@ -421,6 +436,27 @@ export default function SettingsPage({ loaderData, actionData }: Route.Component
                 <option key={p.slug} value={p.slug}>{p.title} ({p.slug})</option>
               ))}
             </select>
+          </CardContent>
+        </Card>
+
+        {/* Login */}
+        <Card className={sectionCls("general")}>
+          <CardContent className="pt-6 space-y-2">
+            <Label className="text-sm font-semibold">Login URL</Label>
+            <p className="text-xs text-muted-foreground">
+              Where <code className="text-xs bg-muted px-1 py-0.5 rounded">/login</code> sends visitors.
+              Leave empty for Stencil's GitHub sign-in. To use your own sign-in instead, enter a path on
+              this site (for example <code className="text-xs bg-muted px-1 py-0.5 rounded">/account/sign-in</code>)
+              or an absolute URL. CMS admins always sign in at{" "}
+              <code className="text-xs bg-muted px-1 py-0.5 rounded">/content/login</code>, which this setting
+              does not change.
+            </p>
+            <Input
+              name="loginUrl"
+              defaultValue={typeof initial.loginUrl === "string" ? initial.loginUrl : ""}
+              placeholder="/account/sign-in"
+              className="max-w-sm"
+            />
           </CardContent>
         </Card>
 

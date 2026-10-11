@@ -1,3 +1,4 @@
+import { CMS_LOGIN_PATH } from "~/lib/login-url";
 import { Link } from "react-router";
 import { isAuthenticated } from "~/lib/auth.server";
 import {
@@ -237,7 +238,7 @@ export default function Guide({ loaderData }: Route.ComponentProps) {
               <span className="inline-flex items-center gap-1"><ArrowLeft size={13} /> Home</span>
             </Link>
             <Link
-              to={loggedIn ? "/content" : "/login"}
+              to={loggedIn ? "/content" : CMS_LOGIN_PATH}
               className="rounded-lg px-3 py-1.5 text-sm"
               style={{ color: ACCENT, border: `1px solid ${ACCENT}45`, boxShadow: `0 0 18px ${ACCENT}20` }}
             >
