@@ -4,12 +4,13 @@
  */
 
 import { Form, useLoaderData, type LoaderFunctionArgs } from "react-router";
-import { ArrowRight, UserRound } from "lucide-react";
+import { ArrowRight, KeyRound, UserRound } from "lucide-react";
 import { getSiteChrome } from "~/lib/site-chrome.server";
 import { ensureCsrfToken } from "~/lib/csrf.server";
 import { CsrfInput, CsrfProvider } from "~/components/csrf-input";
 import { requireAccountUser } from "~/lib/account/session.server";
 import { SIGN_OUT_PATH } from "~/lib/account/paths";
+import { LICENSES_PATH } from "~/lib/licensing/shared";
 import { Card, PROJECTS_PATH, Shell, ghostBtn } from "~/components/tools/feature-requests/shell";
 
 export function meta() {
@@ -39,6 +40,15 @@ export default function Account() {
             <p className="mt-2 text-sm text-white/55">Projects you created in the feature requests tool: boards, embeds and triage.</p>
             <a href={PROJECTS_PATH} className={`mt-4 ${ghostBtn}`}>
               Your projects <ArrowRight size={14} aria-hidden="true" />
+            </a>
+          </Card>
+          <Card>
+            <h2 className="flex items-center gap-2 text-base font-semibold text-white">
+              <KeyRound size={15} aria-hidden="true" /> Hammer licences
+            </h2>
+            <p className="mt-2 text-sm text-white/55">Your licence keys for the Hammer desktop client, which computers use them, and billing.</p>
+            <a href={LICENSES_PATH} className={`mt-4 ${ghostBtn}`}>
+              Your licences <ArrowRight size={14} aria-hidden="true" />
             </a>
           </Card>
           <Card>
