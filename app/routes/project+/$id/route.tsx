@@ -5,6 +5,7 @@
 
 import { useActionData, useLoaderData, useNavigation, type ActionFunctionArgs, type LoaderFunctionArgs } from "react-router";
 import { actOnProjectDashboard, loadProjectDashboard, type DashboardData } from "~/lib/feature-requests/dashboard.server";
+import { SIGN_IN_PATH, SIGN_OUT_PATH } from "~/lib/account/paths";
 import { ProjectDashboardView, type DashboardActionData } from "~/components/tools/feature-requests/project-dashboard";
 
 export function meta({ data }: { data?: { project?: { name: string } } }) {
@@ -12,11 +13,11 @@ export function meta({ data }: { data?: { project?: { name: string } } }) {
 }
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
-  return loadProjectDashboard(request, params.id ?? "", "/project");
+  return loadProjectDashboard(request, params.id ?? "", SIGN_IN_PATH);
 }
 
 export async function action({ request, params }: ActionFunctionArgs) {
-  return actOnProjectDashboard(request, params.id ?? "", "/project", "/project");
+  return actOnProjectDashboard(request, params.id ?? "", SIGN_IN_PATH, "/project");
 }
 
 export default function OwnerProjectDashboard() {
@@ -31,7 +32,8 @@ export default function OwnerProjectDashboard() {
       base={`/project/${data.project.id}`}
       listHref="/project"
       listLabel="Your projects"
-      signOutAction="/project"
+      signOutAction={SIGN_OUT_PATH}
+      signOutNext="/project"
     />
   );
 }

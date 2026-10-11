@@ -1,5 +1,6 @@
 /**
- * Shared page shell and small form primitives for the feature-requests tool.
+ * Shared page shell and small form primitives for the feature-requests tool
+ * and the site-wide account pages (/account/*).
  *
  * Same approach as the audit tool: the CMS header/footer and stylesheet come
  * from the content repo (site-chrome), the rest is Tailwind. Fork-local colours
@@ -12,6 +13,7 @@ import type { SiteChrome } from "~/lib/site-chrome.server";
 import { TailwindCdn } from "~/components/tailwind-cdn";
 
 export const TOOL_PATH = "/tools/feature-requests";
+export const PROJECTS_PATH = `${TOOL_PATH}/projects`;
 export const ACCENT = "#f5a524";
 
 export function molten(text: string) {
@@ -35,6 +37,7 @@ export function Shell({
   backHref = "/tools",
   backLabel = "All tools",
   eyebrow = "Feature requests",
+  icon = <Lightbulb size={13} aria-hidden="true" />,
   wide = false,
   nav,
 }: {
@@ -43,6 +46,7 @@ export function Shell({
   backHref?: string;
   backLabel?: string;
   eyebrow?: string;
+  icon?: ReactNode;
   wide?: boolean;
   nav?: ReactNode;
 }) {
@@ -71,7 +75,7 @@ export function Shell({
                 {nav}
               </div>
               <div className="mb-3 flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.24em] text-[#f5a524]/70">
-                <Lightbulb size={13} aria-hidden="true" />
+                {icon}
                 {eyebrow}
               </div>
               {children}

@@ -45,6 +45,8 @@ export const RESERVED_PREFIXES = [
   "/robots.txt",
   "/sitemap.xml",
   "/llms.txt",
+  // Site-wide account pages (fork): /account, /account/sign-in, /account/sign-up, /account/sign-out.
+  "/account",
 ];
 
 export function isReservedPath(path: string): boolean {

@@ -22,6 +22,7 @@ export function ProjectDashboardView({
   listHref,
   listLabel,
   signOutAction,
+  signOutNext,
 }: {
   data: DashboardData;
   actionData: DashboardActionData;
@@ -30,6 +31,8 @@ export function ProjectDashboardView({
   listHref: string;
   listLabel: string;
   signOutAction: string;
+  /** Same-site path sign-out returns to. */
+  signOutNext: string;
 }) {
   const { chrome, csrfToken, user, project, requests, submitterEmails, counts, filter, sort, origin } = data;
   const embedSrc = `${origin}${TOOL_PATH}/embed.js`;
@@ -49,7 +52,7 @@ export function ProjectDashboardView({
         nav={
           <Form method="post" action={signOutAction} className="flex items-center gap-3 text-xs text-white/45">
             <CsrfInput />
-            <input type="hidden" name="intent" value="sign-out" />
+            <input type="hidden" name="next" value={signOutNext} />
             <span className="font-mono">{user.email}</span>
             <button type="submit" className="rounded-full border border-white/10 px-3 py-1 transition-colors hover:bg-white/[0.06] hover:text-white">
               Sign out

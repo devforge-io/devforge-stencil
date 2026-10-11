@@ -20,6 +20,7 @@ Disallow: /content
 Disallow: /api/
 Disallow: /login
 Disallow: /logout
+Disallow: /account
 Disallow: /settings
 Disallow: /components
 

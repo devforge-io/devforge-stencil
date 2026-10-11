@@ -12,7 +12,7 @@ data live in Anvil DB; this app talks to Anvil over its HTTP API.
 | `ANVIL_SERVICE_KEY` | one of | Service-account API key (`anvil_sk_...`). Preferred. |
 | `ANVIL_ADMIN_USER` / `ANVIL_ADMIN_PASSWORD` | one of | Fallback: the app logs in as this user and caches the token. |
 | `ANVIL_DATABASE` | no | Only for a non-default database. On Anvil 0.1.0 naming it also switches the schema context. |
-| `SESSION_SECRET` | yes | Signs the tool's `_fr_session` cookie (shared with the rest of Stencil). |
+| `SESSION_SECRET` | yes | Signs the `_fr_session` account cookie, shared by the site-wide account pages (`/account/*`), the tool and `/project`. |
 | `PUBLIC_ORIGIN` | no | Origin printed in the embed snippets (defaults to the request origin). |
 
 Never commit the key; it belongs in `.env` locally and in the deployment's environment.
@@ -239,7 +239,7 @@ resolves for app-written data.
 | Route | What |
 | --- | --- |
 | `/tools/feature-requests` | Landing; signed-in people go to their projects. |
-| `/sign-in`, `/sign-up`, `/sign-out` | Password (Anvil `/auth/login`, `/auth/register`) and emailed code (`/auth/otp/*`). |
+| `/sign-in`, `/sign-up`, `/sign-out` | Redirect to the site-wide account pages `/account/sign-in`, `/account/sign-up`, `/account/sign-out` (password via Anvil `/auth/login` and `/auth/register`, emailed code via `/auth/otp/*`). Sign-in returns to any same-site `next`; the account hub is `/account`. |
 | `/projects`, `/projects/:id` | Project list + create; dashboard with triage, embed snippets, settings, delete. |
 | `/p/:id` | Hosted public board; works without JavaScript. |
 | `/p/:id/r/:rid` | One request on its own page: full details, vote, and a creator edit form (email must match the submitter's). Works without JavaScript. |
@@ -247,7 +247,7 @@ resolves for app-written data.
 | `/api/projects/:id/uploads` | POST (CORS, bearer token): upload one attachment ahead of a submission. |
 | `/api/attachments/:aid` | GET streams the file; DELETE removes a pending upload (uploader only). |
 | `/api/auth` | Widget sign-in (CORS): `intent` otp-request (registers unknown addresses first) or otp-verify; returns the bearer token. |
-| `/project`, `/project/:id` | Owner self-serve area: emailed-code sign-in only, then every project whose `ownerId` matches the account. Same dashboard as the tools area (shared component). |
+| `/project`, `/project/:id` | Owner self-serve area: signs in through `/account/sign-in` (returns to `/project`), then every project whose `ownerId` matches the account. Same dashboard as the tools area (shared component). |
 | `GET /api/projects/:id/board?voter=` | Public JSON: project info + visible requests. |
 | `POST /api/projects/:id/requests` | Submit `{title, details, email, voter, website}`; `website` is a honeypot. |
 | `POST /api/requests/:rid/vote` | Toggle `{voter}`'s vote. |

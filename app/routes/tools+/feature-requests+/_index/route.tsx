@@ -9,9 +9,10 @@
 import { redirect, type LoaderFunctionArgs, useLoaderData } from "react-router";
 import { Code2, ListChecks, MessageSquarePlus, ThumbsUp } from "lucide-react";
 import { getSiteChrome } from "~/lib/site-chrome.server";
-import { getFrUser, PROJECTS_PATH } from "~/lib/feature-requests/session.server";
+import { getAccountUser } from "~/lib/account/session.server";
+import { signInHref, signUpHref } from "~/lib/account/paths";
 import { anvilConfigured } from "~/lib/feature-requests/anvil.server";
-import { Card, Shell, TOOL_PATH, ghostBtn, molten, primaryBtn, primaryBtnStyle } from "~/components/tools/feature-requests/shell";
+import { Card, PROJECTS_PATH, Shell, ghostBtn, molten, primaryBtn, primaryBtnStyle } from "~/components/tools/feature-requests/shell";
 
 export function meta() {
   return [
@@ -26,7 +27,7 @@ export function meta() {
 }
 
 export async function loader({ request }: LoaderFunctionArgs) {
-  const user = await getFrUser(request);
+  const user = await getAccountUser(request);
   if (user) throw redirect(PROJECTS_PATH);
   const chrome = await getSiteChrome();
   return { chrome, ready: anvilConfigured() };
@@ -48,10 +49,10 @@ export default function FeatureRequestsLanding() {
       </p>
 
       <div className="mt-8 flex flex-wrap gap-3">
-        <a href={`${TOOL_PATH}/sign-up`} className={primaryBtn} style={primaryBtnStyle}>
+        <a href={signUpHref(PROJECTS_PATH)} className={primaryBtn} style={primaryBtnStyle}>
           Create a free account
         </a>
-        <a href={`${TOOL_PATH}/sign-in`} className={ghostBtn}>
+        <a href={signInHref(PROJECTS_PATH)} className={ghostBtn}>
           Sign in
         </a>
       </div>

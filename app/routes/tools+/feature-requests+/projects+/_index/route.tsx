@@ -9,7 +9,8 @@ import { getSiteChrome } from "~/lib/site-chrome.server";
 import { ensureCsrfToken, validateCsrf } from "~/lib/csrf.server";
 import { CsrfInput, CsrfProvider } from "~/components/csrf-input";
 import type { AnvilError } from "~/lib/feature-requests/anvil.server";
-import { requireFrUser } from "~/lib/feature-requests/session.server";
+import { requireAccountUser } from "~/lib/account/session.server";
+import { SIGN_OUT_PATH } from "~/lib/account/paths";
 import { LIMITS } from "~/lib/feature-requests/shared";
 import { createProject, listManagedProjects, parseOriginList } from "~/lib/feature-requests/store.server";
 import { Card, Field, Notice, Shell, TOOL_PATH, formatDate, ghostBtn, inputClass, primaryBtn, primaryBtnStyle } from "~/components/tools/feature-requests/shell";
@@ -19,14 +20,14 @@ export function meta() {
 }
 
 export async function loader({ request }: LoaderFunctionArgs) {
-  const user = await requireFrUser(request);
+  const user = await requireAccountUser(request);
   const [{ token, setCookie }, chrome, projects] = await Promise.all([ensureCsrfToken(request), getSiteChrome(), listManagedProjects({ id: user.id })]);
   const data = { csrfToken: token, chrome, user: { email: user.email }, projects };
   return setCookie ? Response.json(data, { headers: { "Set-Cookie": setCookie } }) : data;
 }
 
 export async function action({ request }: ActionFunctionArgs) {
-  const user = await requireFrUser(request);
+  const user = await requireAccountUser(request);
   const form = await request.formData();
   await validateCsrf(request, form);
   const name = String(form.get("name") ?? "").trim();
@@ -55,8 +56,9 @@ export default function Projects() {
         backLabel="Feature requests"
         wide
         nav={
-          <Form method="post" action={`${TOOL_PATH}/sign-out`} className="flex items-center gap-3 text-xs text-white/45">
+          <Form method="post" action={SIGN_OUT_PATH} className="flex items-center gap-3 text-xs text-white/45">
             <CsrfInput />
+            <input type="hidden" name="next" value={TOOL_PATH} />
             <span className="font-mono">{user.email}</span>
             <button type="submit" className="rounded-full border border-white/10 px-3 py-1 transition-colors hover:bg-white/[0.06] hover:text-white">
               Sign out

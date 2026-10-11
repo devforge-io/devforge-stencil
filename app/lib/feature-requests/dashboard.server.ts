@@ -8,7 +8,7 @@ import { redirect } from "react-router";
 import { getSiteChrome } from "~/lib/site-chrome.server";
 import { ensureCsrfToken, validateCsrf } from "~/lib/csrf.server";
 import { docQuery, type AnvilError } from "./anvil.server";
-import { requireFrUser } from "./session.server";
+import { requireAccountUser } from "../account/session.server";
 import { STATUSES, isStatus, type RequestStatus } from "./shared";
 import {
   deleteProject,
@@ -42,7 +42,7 @@ export async function loadProjectDashboard(
   projectId: string,
   signInPath: string,
 ): Promise<Response | DashboardData> {
-  const user = await requireFrUser(request, signInPath);
+  const user = await requireAccountUser(request, signInPath);
   const project = await getManagedProject(projectId, { id: user.id }).catch(() => null);
   if (!project) throw new Response("Not found", { status: 404 });
   const url = new URL(request.url);
@@ -80,7 +80,7 @@ export async function actOnProjectDashboard(
   signInPath: string,
   afterDeletePath: string,
 ): Promise<Response | { ok: true; saved?: boolean }> {
-  const user = await requireFrUser(request, signInPath);
+  const user = await requireAccountUser(request, signInPath);
   const manager = { id: user.id };
   const form = await request.formData();
   await validateCsrf(request, form);

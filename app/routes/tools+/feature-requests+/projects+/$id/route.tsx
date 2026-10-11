@@ -5,7 +5,7 @@
 
 import { useActionData, useLoaderData, useNavigation, type ActionFunctionArgs, type LoaderFunctionArgs } from "react-router";
 import { actOnProjectDashboard, loadProjectDashboard, type DashboardData } from "~/lib/feature-requests/dashboard.server";
-import { SIGN_IN_PATH } from "~/lib/feature-requests/session.server";
+import { SIGN_IN_PATH, SIGN_OUT_PATH } from "~/lib/account/paths";
 import { ProjectDashboardView, type DashboardActionData } from "~/components/tools/feature-requests/project-dashboard";
 import { TOOL_PATH } from "~/components/tools/feature-requests/shell";
 
@@ -33,7 +33,8 @@ export default function ProjectDashboard() {
       base={`${TOOL_PATH}/projects/${data.project.id}`}
       listHref={`${TOOL_PATH}/projects`}
       listLabel="Your projects"
-      signOutAction={`${TOOL_PATH}/sign-out`}
+      signOutAction={SIGN_OUT_PATH}
+      signOutNext={TOOL_PATH}
     />
   );
 }
