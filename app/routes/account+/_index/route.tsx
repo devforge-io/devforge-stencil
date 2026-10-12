@@ -31,7 +31,7 @@ export default function Account() {
   const { chrome, csrfToken, user } = useLoaderData<typeof loader>();
   return (
     <CsrfProvider token={csrfToken}>
-      <Shell chrome={chrome} backHref="/" backLabel="Home" eyebrow="Account" icon={<UserRound size={13} aria-hidden="true" />}>
+      <Shell chrome={chrome} backHref="/" backLabel="Home" eyebrow="Account" icon={<UserRound size={13} aria-hidden="true" />} wide>
         <h1 className="text-3xl font-semibold tracking-tight text-white sm:text-4xl">Your account</h1>
         <p className="mt-3 text-white/55">
           Signed in as <span className="font-mono text-white/75">{user.email}</span>. One account for every tool on this site.
