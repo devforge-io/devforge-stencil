@@ -10,9 +10,11 @@ export const SIGN_UP_PATH = "/account/sign-up";
 export const SIGN_OUT_PATH = "/account/sign-out";
 /** Admin-only: everyone with an account and their Devforge role. */
 export const PEOPLE_PATH = "/account/people";
+/** JSON: who is signed in, for the header's profile menu. */
+export const ME_PATH = "/account/me";
 
-/** Pages that must never be a post-sign-in destination: they would bounce straight back. */
-const NO_RETURN = new Set([SIGN_IN_PATH, SIGN_UP_PATH, SIGN_OUT_PATH, "/login", "/logout"]);
+/** Pages that must never be a post-sign-in destination: they would bounce straight back (or show JSON). */
+const NO_RETURN = new Set([SIGN_IN_PATH, SIGN_UP_PATH, SIGN_OUT_PATH, ME_PATH, "/login", "/logout"]);
 
 /**
  * Only same-site relative paths are allowed as a return target, and never one

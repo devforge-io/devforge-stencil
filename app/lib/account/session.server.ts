@@ -14,6 +14,11 @@
  * The cookie also carries the slug of the person's Devforge role (roles.ts)
  * as it was at sign-in. Sessions from before roles existed read as member
  * until the next sign-in.
+ *
+ * Next to it travels `df_account=1`, a plain (not httpOnly, unsigned) hint
+ * that a session exists. It grants nothing: the CMS header's script reads it
+ * to draw the profile button before /account/me answers, so signed-in people
+ * do not see "Sign in" flash on every page.
  */
 
 import { createCookie, redirect } from "react-router";
@@ -71,6 +76,21 @@ function legacyCookie() {
     maxAge: SESSION_MAX_AGE,
     secrets: secrets(),
   });
+}
+
+/**
+ * The signed-in hint for the header script: `df_account=1`, written by hand
+ * because `createCookie` would JSON-encode the value. No secret, nothing
+ * worth forging: it only decides whether the header draws a button first.
+ */
+function hintHeader(value: string, maxAge: number): string {
+  const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
+  return `df_account=${value}; Max-Age=${maxAge}; Path=/; SameSite=Lax${secure}`;
+}
+
+/** Set-Cookie value that removes the signed-in hint. */
+export async function accountHintClearHeader(): Promise<string> {
+  return hintHeader("", 0);
 }
 
 export async function getAccountUser(request: Request): Promise<AccountUser | null> {
@@ -143,13 +163,15 @@ export async function accountSignInHeaders(identity: AnvilIdentity, tokens: Anvi
   const headers = new Headers();
   headers.append("Set-Cookie", await cookie().serialize(payload));
   headers.append("Set-Cookie", await legacyCookie().serialize("", { maxAge: 0 }));
+  headers.append("Set-Cookie", hintHeader("1", SESSION_MAX_AGE));
   return headers;
 }
 
-/** Headers that clear the session at both cookie scopes. */
+/** Headers that clear the session at both cookie scopes, and the hint. */
 export async function accountSignOutHeaders(): Promise<Headers> {
   const headers = new Headers();
   headers.append("Set-Cookie", await cookie().serialize("", { maxAge: 0 }));
   headers.append("Set-Cookie", await legacyCookie().serialize("", { maxAge: 0 }));
+  headers.append("Set-Cookie", await accountHintClearHeader());
   return headers;
 }

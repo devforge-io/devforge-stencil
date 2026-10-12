@@ -36,3 +36,8 @@ test("signInHref and signUpHref encode their parameters", () => {
   assert.equal(signInHref(null, "a@b.co"), "/account/sign-in?email=a%40b.co");
   assert.equal(signUpHref("/project"), "/account/sign-up?next=%2Fproject");
 });
+
+test("the JSON endpoint behind the header menu is never a return target", () => {
+  assert.equal(safeNext("/account/me"), "/account");
+  assert.equal(safeNext("/account/me?x=1"), "/account");
+});

@@ -1,6 +1,6 @@
 import { beforeEach, test } from "node:test";
 import assert from "node:assert/strict";
-import { accountSignInHeaders, getAccountUser, requireAccountRole, requireAccountUser } from "./session.server";
+import { accountHintClearHeader, accountSignInHeaders, accountSignOutHeaders, getAccountUser, requireAccountRole, requireAccountUser } from "./session.server";
 import { resetAccountsCache } from "./accounts.server";
 
 process.env.SESSION_SECRET = "unit-test-secret";
@@ -100,4 +100,18 @@ test("ACCOUNT_ADMINS wins without touching the store, and a store outage falls b
   assert.equal(fallback.role, "client");
   assert.match(logged.join("\n"), /could not read the role of u-ann/);
   await assert.rejects(requireAccountRole(await requestWith(await accountSignInHeaders(identity, tokens)), ["client"]), (res: Response) => res.status === 403);
+});
+
+test("sign-in sets the plain df_account hint next to the session, sign-out clears both", async () => {
+  const on = (await accountSignInHeaders(identity, tokens, "member")).getSetCookie();
+  const hint = on.find((c) => c.startsWith("df_account="));
+  assert.ok(hint, "hint cookie set");
+  assert.match(hint!, /^df_account=1;/);
+  assert.ok(!/HttpOnly/i.test(hint!), "readable by the header script");
+  assert.match(hint!, /Path=\//);
+  assert.ok(on.some((c) => c.startsWith("_fr_session=") && /HttpOnly/i.test(c)), "the session itself stays httpOnly");
+  const off = (await accountSignOutHeaders()).getSetCookie();
+  assert.match(off.find((c) => c.startsWith("df_account="))!, /Max-Age=0/);
+  assert.match(off.find((c) => c.startsWith("_fr_session="))!, /Max-Age=0/);
+  assert.match(await accountHintClearHeader(), /^df_account=;.*Max-Age=0/);
 });
