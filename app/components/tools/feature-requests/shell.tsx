@@ -100,8 +100,10 @@ export function Card({ children, className = "" }: { children: ReactNode; classN
   );
 }
 
-export const inputClass =
-  "w-full rounded-xl border border-white/10 bg-white/[0.03] px-3.5 py-2.5 text-sm text-white outline-none transition-colors placeholder:text-white/30 focus:border-[#f5a524]/50 focus:bg-white/[0.05]";
+/** Text field look without a width, for selects and other controls that size to their content. */
+export const fieldClass =
+  "rounded-xl border border-white/10 bg-white/[0.03] px-3.5 py-2.5 text-sm text-white outline-none transition-colors placeholder:text-white/30 focus:border-[#f5a524]/50 focus:bg-white/[0.05]";
+export const inputClass = `w-full ${fieldClass}`;
 export const labelClass = "mb-1.5 block font-mono text-[11px] uppercase tracking-[0.18em] text-white/45";
 export const primaryBtn =
   "inline-flex items-center justify-center gap-2 rounded-full px-5 py-2.5 text-sm font-semibold text-[#1a0f00] transition-transform hover:-translate-y-0.5 disabled:opacity-60 disabled:hover:translate-y-0";

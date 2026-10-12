@@ -17,7 +17,7 @@ import { requireAccountRole } from "~/lib/account/session.server";
 import { assignRoleByEmail, configuredAdmins, createRole, listPeople, listRoles, setAccountRole } from "~/lib/account/accounts.server";
 import { ACCOUNT_PATH } from "~/lib/account/paths";
 import { ADMIN_ROLE, isRoleId, type RoleDef, type RoleSlug } from "~/lib/account/roles";
-import { Card, Field, Notice, Shell, formatDate, ghostBtn, inputClass, primaryBtn, primaryBtnStyle } from "~/components/tools/feature-requests/shell";
+import { Card, Field, Notice, Shell, fieldClass, formatDate, ghostBtn, inputClass, primaryBtn, primaryBtnStyle } from "~/components/tools/feature-requests/shell";
 
 export function meta() {
   return [{ title: "People · Devforge" }, { name: "robots", content: "noindex" }];
@@ -103,7 +103,7 @@ function RoleChip({ role, roles }: { role: RoleSlug; roles: RoleDef[] }) {
 /** Options carry the role UUID; `defaultValue` is a UUID too. */
 function RoleSelect({ id, name, defaultValue, roles }: { id: string; name: string; defaultValue: string; roles: RoleDef[] }) {
   return (
-    <select id={id} name={name} defaultValue={defaultValue} className={`${inputClass} w-auto min-w-[8rem] py-1.5`}>
+    <select id={id} name={name} defaultValue={defaultValue} className={`${fieldClass} min-w-[8rem]`}>
       {roles.map((r) => (
         <option key={r.id} value={r.id} className="bg-[#08060f]">
           {r.name}
@@ -165,7 +165,7 @@ export default function People() {
             <CsrfInput />
             <input type="hidden" name="intent" value="add-role" />
             <div className="min-w-[12rem]">
-              <Field label="New role" htmlFor="role-name" hint="Gets a UUID; its slug is made from the name.">
+              <Field label="New role" htmlFor="role-name">
                 <input id="role-name" name="name" type="text" required minLength={2} maxLength={40} defaultValue={data.roleName ?? ""} className={inputClass} />
               </Field>
             </div>
@@ -174,9 +174,10 @@ export default function People() {
                 <input id="role-description" name="description" type="text" maxLength={200} defaultValue={data.roleDescription ?? ""} className={inputClass} />
               </Field>
             </div>
-            <button type="submit" disabled={busy} className={ghostBtn}>
+            <button type="submit" disabled={busy} className={`${ghostBtn} py-2.5`}>
               Add role
             </button>
+            <p className="basis-full text-xs text-white/40">Gets a UUID; its slug is made from the name.</p>
           </Form>
         </Card>
 
@@ -255,7 +256,7 @@ export default function People() {
                               Role for {p.email || p.username || p.id}
                             </label>
                             <RoleSelect id={`role-${p.id}`} name="role" defaultValue={p.roleId} roles={roles} />
-                            <button type="submit" disabled={busy} className={ghostBtn}>
+                            <button type="submit" disabled={busy} className={`${ghostBtn} py-2.5`}>
                               Save
                             </button>
                           </Form>
