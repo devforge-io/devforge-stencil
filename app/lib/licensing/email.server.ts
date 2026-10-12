@@ -39,7 +39,8 @@ export type LicenseEmailInput = {
   licensee: string;
   keys: { id: string; key: string }[];
   /** Absolute URL of the licences page. */
-  manageUrl: string;
+  /** Absolute URL of the licences page; the line is left out when unknown. */
+  manageUrl?: string;
 };
 
 /** Sends the keys; returns false (after logging) when mail is not configured or fails. */
@@ -62,8 +63,7 @@ export async function sendLicenseKeysEmail(input: LicenseEmailInput): Promise<bo
     "Each key is for one computer. In Hammer open Settings, then Licence, and paste the key.",
     "Your subscription renews yearly; your keys keep working as long as it is active.",
     "",
-    `Manage your keys and billing: ${input.manageUrl}`,
-    "",
+    ...(input.manageUrl ? [`Manage your keys and billing: ${input.manageUrl}`, ""] : []),
     "Devforge",
   ].join("\n");
   const html =
@@ -77,7 +77,7 @@ export async function sendLicenseKeysEmail(input: LicenseEmailInput): Promise<bo
       .join("") +
     `<p>Each key is for one computer. In Hammer open <strong>Settings</strong>, then <strong>Licence</strong>, and paste the key.<br>` +
     `Your subscription renews yearly; your keys keep working as long as it is active.</p>` +
-    `<p><a href="${escapeHtml(input.manageUrl)}">Manage your keys and billing</a></p>` +
+    (input.manageUrl ? `<p><a href="${escapeHtml(input.manageUrl)}">Manage your keys and billing</a></p>` : "") +
     `<p>Devforge</p>`;
   try {
     const transport = nodemailer.createTransport({

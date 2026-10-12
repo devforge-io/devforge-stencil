@@ -29,14 +29,18 @@ import {
 } from "./stripe.server";
 import { acquireLock, listSubscriptionLicenses, markLicenseRevoked, releaseLock, saveLicense, type OwnedLicense } from "./store.server";
 import { sendLicenseKeysEmail } from "./email.server";
-import { HAMMER_PLAN, HAMMER_PRODUCT, LICENSES_PATH } from "./shared";
+import { HAMMER_PLAN, HAMMER_PRODUCT } from "./shared";
 
 export type Notifier = (input: { to: string; licensee: string; keys: { id: string; key: string }[] }) => Promise<unknown>;
 
 export type ReconcileOptions = {
   /** How new keys reach the buyer; defaults to email, `null` sends nothing. */
   notify?: Notifier | null;
-  /** Absolute URL of the licences page, for the email. */
+  /**
+   * Absolute URL of the licences page for the email, derived by the caller
+   * from its request (`stripeReturnOrigin`). Without it the email carries no
+   * link; nothing here guesses an origin.
+   */
   manageUrl?: string;
 };
 
@@ -160,9 +164,7 @@ async function rankForRevocation(active: OwnedLicense[]): Promise<OwnedLicense[]
 }
 
 function defaultNotifier(manageUrl?: string): Notifier {
-  const origin = (process.env.PUBLIC_ORIGIN || "https://devforge.io").replace(/\/+$/, "");
-  const url = manageUrl || `${origin}${LICENSES_PATH}`;
-  return (input) => sendLicenseKeysEmail({ ...input, manageUrl: url });
+  return (input) => sendLicenseKeysEmail({ ...input, manageUrl });
 }
 
 /** The subscription a webhook event is about, or null for events this app ignores. */

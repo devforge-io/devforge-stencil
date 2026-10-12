@@ -10,7 +10,8 @@
  */
 
 import type { ActionFunctionArgs } from "react-router";
-import { StripeError, parseStripeEvent } from "~/lib/licensing/stripe.server";
+import { LICENSES_PATH } from "~/lib/licensing/shared";
+import { StripeError, parseStripeEvent, stripeReturnOrigin } from "~/lib/licensing/stripe.server";
 import { reconcileSubscription, webhookSubscriptionId } from "~/lib/licensing/subscriptions.server";
 
 const json = (data: unknown, status = 200) => Response.json(data, { status });
@@ -34,7 +35,10 @@ export async function action({ request }: ActionFunctionArgs) {
   if (!subscriptionId) return json({ received: true, ignored: event.type });
 
   try {
-    const result = await reconcileSubscription(subscriptionId);
+    // The keys email links to the licences page on whichever origin Stripe
+    // delivered this event to: devforge.io in production, localhost when the
+    // Stripe CLI forwards events to a dev server.
+    const result = await reconcileSubscription(subscriptionId, { manageUrl: `${stripeReturnOrigin(request)}${LICENSES_PATH}` });
     if (result.busy) return json({ error: "another delivery for this subscription is being processed; retry" }, 503);
     return json({
       received: true,
