@@ -14,7 +14,7 @@ import { CsrfInput, CsrfProvider } from "~/components/csrf-input";
 import { requireAccountUser } from "~/lib/account/session.server";
 import { ACCOUNT_PATH } from "~/lib/account/paths";
 import { dropActivation, hallmarkConfigured, showLicense, type Activation } from "~/lib/licensing/hallmark.server";
-import { StripeError, createPortalSession, getSubscription, stripeConfigured, subscriptionPeriodEnd, type SubscriptionStatus } from "~/lib/licensing/stripe.server";
+import { StripeError, createPortalSession, getSubscription, stripeConfigured, stripeReturnOrigin, subscriptionPeriodEnd, type SubscriptionStatus } from "~/lib/licensing/stripe.server";
 import { getOwnedLicense, listUserLicenses, type OwnedLicense } from "~/lib/licensing/store.server";
 import { HAMMER_PLAN, LICENSES_PATH, PURCHASE_PATH, formatDay } from "~/lib/licensing/shared";
 import { LicenseKey } from "~/components/licensing/license-key";
@@ -150,7 +150,7 @@ export async function action({ request }: ActionFunctionArgs) {
     if (!customerId || !owned.some((l) => l.customerId === customerId)) {
       return Response.json({ error: "No billing account found for you." } satisfies ActionData, { status: 404 });
     }
-    const origin = (process.env.PUBLIC_ORIGIN || new URL(request.url).origin).replace(/\/+$/, "");
+    const origin = stripeReturnOrigin(request);
     try {
       const portal = await createPortalSession(customerId, `${origin}${LICENSES_PATH}`);
       return redirect(portal.url, 303);

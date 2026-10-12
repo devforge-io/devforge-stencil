@@ -11,6 +11,7 @@ import { ArrowRight, Hammer } from "lucide-react";
 import { getSiteChrome } from "~/lib/site-chrome.server";
 import { requireAccountUser } from "~/lib/account/session.server";
 import { fulfilCheckoutSession } from "~/lib/licensing/subscriptions.server";
+import { stripeReturnOrigin } from "~/lib/licensing/stripe.server";
 import { LICENSES_PATH, PURCHASE_PATH } from "~/lib/licensing/shared";
 import { LicenseKey } from "~/components/licensing/license-key";
 import { Card, Notice, Shell, ghostBtn, primaryBtn, primaryBtnStyle } from "~/components/tools/feature-requests/shell";
@@ -26,7 +27,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const url = new URL(request.url);
   const sessionId = (url.searchParams.get("session_id") ?? "").trim();
   if (!sessionId || !/^[A-Za-z0-9_]{1,255}$/.test(sessionId)) throw redirect(PURCHASE_PATH);
-  const origin = (process.env.PUBLIC_ORIGIN || url.origin).replace(/\/+$/, "");
+  const origin = stripeReturnOrigin(request);
   const chrome = await getSiteChrome();
 
   let state: State = "error";

@@ -11,6 +11,7 @@ import {
   parseStripeEvent,
   resetStripeCache,
   resolveHammerPriceId,
+  stripeReturnOrigin,
   subscriptionPeriodEnd,
   subscriptionQuantity,
   verifyStripeSignature,
@@ -171,4 +172,39 @@ test("subscription helpers sum quantities and find the period end on either API 
   assert.equal(subscriptionQuantity(sub), 3);
   assert.equal(subscriptionPeriodEnd(sub), 1_900_000_000);
   assert.equal(subscriptionPeriodEnd({ ...sub, current_period_end: 5, items: { data: [{ id: "si", quantity: 1, price: sub.items.data[0].price }] } }), 5);
+});
+
+test("stripeReturnOrigin: STRIPE_RETURN_ORIGIN wins, else the request's own origin, never PUBLIC_ORIGIN", () => {
+  const prev = { ret: process.env.STRIPE_RETURN_ORIGIN, pub: process.env.PUBLIC_ORIGIN };
+  const logged: string[] = [];
+  const realError = console.error;
+  console.error = (...args: unknown[]) => logged.push(args.map(String).join(" "));
+  try {
+    process.env.PUBLIC_ORIGIN = "https://devforge.io";
+    delete process.env.STRIPE_RETURN_ORIGIN;
+    const local = new Request("http://localhost:5174/products/hammer/purchase", { method: "POST" });
+    assert.equal(stripeReturnOrigin(local), "http://localhost:5174");
+
+    // behind Vercel's proxy the forwarded headers name the public host
+    const proxied = new Request("http://10.0.0.5/products/hammer/purchase", {
+      headers: { "x-forwarded-host": "devforge.io, internal", "x-forwarded-proto": "https" },
+    });
+    assert.equal(stripeReturnOrigin(proxied), "https://devforge.io");
+    const badHost = new Request("http://localhost:5174/x", { headers: { "x-forwarded-host": "evil.example/%0d" } });
+    assert.equal(stripeReturnOrigin(badHost), "http://localhost:5174");
+
+    process.env.STRIPE_RETURN_ORIGIN = "https://devforge.io/";
+    assert.equal(stripeReturnOrigin(local), "https://devforge.io");
+    process.env.STRIPE_RETURN_ORIGIN = "http://127.0.0.1:5199/some/path";
+    assert.equal(stripeReturnOrigin(proxied), "http://127.0.0.1:5199");
+    process.env.STRIPE_RETURN_ORIGIN = "devforge.io";
+    assert.equal(stripeReturnOrigin(local), "http://localhost:5174");
+    assert.match(logged.join("\n"), /STRIPE_RETURN_ORIGIN is not an http\(s\) origin/);
+  } finally {
+    console.error = realError;
+    if (prev.ret === undefined) delete process.env.STRIPE_RETURN_ORIGIN;
+    else process.env.STRIPE_RETURN_ORIGIN = prev.ret;
+    if (prev.pub === undefined) delete process.env.PUBLIC_ORIGIN;
+    else process.env.PUBLIC_ORIGIN = prev.pub;
+  }
 });

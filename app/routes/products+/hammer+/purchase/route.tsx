@@ -17,7 +17,7 @@ import { getAccountUser, requireAccountUser } from "~/lib/account/session.server
 import { signInHref, signUpHref } from "~/lib/account/paths";
 import { clientIp, rateLimited } from "~/lib/feature-requests/http.server";
 import { hallmarkConfigured } from "~/lib/licensing/hallmark.server";
-import { StripeError, createCheckoutSession, resolveHammerPriceId, stripeConfigured } from "~/lib/licensing/stripe.server";
+import { StripeError, createCheckoutSession, resolveHammerPriceId, stripeConfigured, stripeReturnOrigin } from "~/lib/licensing/stripe.server";
 import { listUserLicenses } from "~/lib/licensing/store.server";
 import { HAMMER_PAGE_PATH, HAMMER_PLAN, HAMMER_PRODUCT, LICENSES_PATH, PURCHASE_PATH, PURCHASE_SUCCESS_PATH, formatUsd, parseQuantity } from "~/lib/licensing/shared";
 import { Card, Field, Notice, Shell, ghostBtn, inputClass, primaryBtn, primaryBtnStyle } from "~/components/tools/feature-requests/shell";
@@ -68,7 +68,7 @@ export async function action({ request }: ActionFunctionArgs) {
   if (!stripeConfigured() || !hallmarkConfigured()) {
     return Response.json({ error: "Purchasing is not available right now. Please try again later." } satisfies ActionData, { status: 503 });
   }
-  const origin = (process.env.PUBLIC_ORIGIN || new URL(request.url).origin).replace(/\/+$/, "");
+  const origin = stripeReturnOrigin(request);
   try {
     const priceId = await resolveHammerPriceId();
     const session = await createCheckoutSession({

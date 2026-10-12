@@ -51,6 +51,35 @@ export function stripeConfigured(): boolean {
   return Boolean(stripeConfig().secretKey);
 }
 
+/**
+ * Where Stripe sends the buyer back to: the Checkout success and cancel URLs
+ * and the Customer Portal return URL. `STRIPE_RETURN_ORIGIN` when set,
+ * otherwise the origin this request arrived on (the proxy's forwarded headers
+ * first), so a dev server on localhost round-trips to localhost and only the
+ * production deployment names devforge.io. `PUBLIC_ORIGIN` is deliberately not
+ * consulted: it describes the public site for embed snippets and emails, and
+ * a test purchase must never land on the live site.
+ */
+export function stripeReturnOrigin(request: Request): string {
+  const configured = (process.env.STRIPE_RETURN_ORIGIN ?? "").trim();
+  if (configured) {
+    try {
+      const u = new URL(configured);
+      if (u.protocol === "http:" || u.protocol === "https:") return u.origin;
+    } catch {
+      /* fall through to the request */
+    }
+    console.error(`[licensing] STRIPE_RETURN_ORIGIN is not an http(s) origin: ${JSON.stringify(configured)}; using the request origin`);
+  }
+  const url = new URL(request.url);
+  const host = (request.headers.get("x-forwarded-host") ?? "").split(",")[0].trim();
+  const proto = (request.headers.get("x-forwarded-proto") ?? "").split(",")[0].trim();
+  if (host && /^[A-Za-z0-9.-]+(:\d{1,5})?$/.test(host)) {
+    return `${proto === "http" || proto === "https" ? proto : url.protocol.replace(":", "")}://${host}`;
+  }
+  return url.origin;
+}
+
 /* ---------------------------------------------------------------------- */
 /* Transport                                                               */
 /* ---------------------------------------------------------------------- */

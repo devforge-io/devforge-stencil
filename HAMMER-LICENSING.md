@@ -38,7 +38,8 @@ Stripe sends `checkout.session.completed` and the `customer.subscription.*` even
 | `STRIPE_SECRET_KEY` | Live secret key. |
 | `STRIPE_WEBHOOK_SECRET` | Signing secret of the endpoint that points at `<origin>/api/stripe/webhook`. |
 | `STRIPE_PRICE_HAMMER` | Optional price id; otherwise the active price with lookup key `hammer_yearly` is looked up (cached 10 minutes). |
-| `PUBLIC_ORIGIN` | Used for the Stripe return URLs and the link in the email; falls back to the request origin. |
+| `STRIPE_RETURN_ORIGIN` | Where Stripe sends the buyer back to: Checkout success and cancel URLs and the Customer Portal return URL. Unset, the origin the request arrived on is used (forwarded headers first), so a dev server on localhost returns to localhost and a test purchase never lands on the live site. Set it to `https://devforge.io` on the production deployment only. |
+| `PUBLIC_ORIGIN` | Used for the link in the keys email sent from the webhook (which has no browser request to take an origin from); the success page uses the return origin above. Not used for Stripe return URLs. |
 | `SMTP_*` | Same as the contact form; keys are still issued and listed when mail is not configured. |
 
 The price shown on the page is `HAMMER_PLAN` in `app/lib/licensing/shared.ts`; it is not read back from Stripe. Change both together.
