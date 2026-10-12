@@ -27,6 +27,7 @@ import type { AuditResult } from "~/lib/audit/types";
 import { ensureCsrfToken, validateCsrf } from "~/lib/csrf.server";
 import { getSiteChrome } from "~/lib/site-chrome.server";
 import { TailwindCdn } from "~/components/tailwind-cdn";
+import { CmsHtml } from "~/components/cms-html";
 
 type ActionResult = AuditResult & { requested?: string };
 
@@ -179,7 +180,7 @@ export default function WebsiteAuditRoute({
 
       <div className="min-h-screen bg-[#08060f] font-sans text-white antialiased">
         {chrome.headerHtml ? (
-          <div dangerouslySetInnerHTML={{ __html: chrome.headerHtml }} />
+          <CmsHtml html={chrome.headerHtml} />
         ) : null}
 
         <main>
@@ -355,7 +356,7 @@ export default function WebsiteAuditRoute({
         </main>
 
         {chrome.footerHtml ? (
-          <div dangerouslySetInnerHTML={{ __html: chrome.footerHtml }} />
+          <CmsHtml html={chrome.footerHtml} />
         ) : null}
       </div>
     </CsrfProvider>

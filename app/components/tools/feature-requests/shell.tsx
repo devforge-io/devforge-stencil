@@ -11,6 +11,7 @@ import type { ReactNode } from "react";
 import { ArrowLeft, Lightbulb } from "lucide-react";
 import type { SiteChrome } from "~/lib/site-chrome.server";
 import { TailwindCdn } from "~/components/tailwind-cdn";
+import { CmsHtml } from "~/components/cms-html";
 
 export const TOOL_PATH = "/tools/feature-requests";
 export const PROJECTS_PATH = `${TOOL_PATH}/projects`;
@@ -55,7 +56,7 @@ export function Shell({
       <TailwindCdn />
       {chrome.css ? <style dangerouslySetInnerHTML={{ __html: chrome.css }} /> : null}
       <div className="min-h-screen bg-[#08060f] font-sans text-white antialiased">
-        {chrome.headerHtml ? <div dangerouslySetInnerHTML={{ __html: chrome.headerHtml }} /> : null}
+        {chrome.headerHtml ? <CmsHtml html={chrome.headerHtml} /> : null}
         <main>
           <div className="relative overflow-hidden px-5 pt-28 pb-24 sm:px-8">
             <div
@@ -82,7 +83,7 @@ export function Shell({
             </div>
           </div>
         </main>
-        {chrome.footerHtml ? <div dangerouslySetInnerHTML={{ __html: chrome.footerHtml }} /> : null}
+        {chrome.footerHtml ? <CmsHtml html={chrome.footerHtml} /> : null}
       </div>
     </>
   );
