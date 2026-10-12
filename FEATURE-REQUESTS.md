@@ -23,23 +23,25 @@ Never commit the key; it belongs in `.env` locally and in the deployment's envir
 
 - Cypher read/write on the `FRProject`, `FRRequest` and `FRVote` labels (reader + writer
   roles are enough for the data itself).
-- **Admin role** for password sign-up: `/auth/register` is admin-only in Anvil. With a
-  non-admin key the sign-up page explains that and points people to the emailed code.
+- **Sign-up is by emailed code only** (since 2026-10-13): `/account/sign-up` takes an email,
+  requests a code that names the account app, and `/auth/otp/verify` creates the account when
+  the server or the app has `allow_otp_registration` on (an address that already has an
+  account is simply signed in). The site never sets a password and no longer calls the
+  admin-only `/auth/register`; `anvilRegister` stays in the Anvil client for tooling. The
+  sign-in page keeps its password form for accounts that already have one.
 - **App admin on the account app** (`ANVIL_APP`, default `devforge`) so a sign-in can add
   the person as a member through `PUT /apps/{slug}/members/{user}`; a server admin key has
   it implicitly. Enrolment (`app/lib/account/anvil-app.server.ts`) looks the membership up
   first and never downgrades an existing member; when it fails the sign-in still succeeds
   and the failure is logged.
-- **Usernames are Anvil's business** (since 2026-08-26): the app registers with
-  `{email, password}` only and Anvil assigns the username (email local part, hex
-  suffix only on collision, in a single call). A caller-provided username that is
-  taken is a hard 409; clients must not probe for free names. Duplicate emails are
-  rejected. Password login accepts the email; Anvil resolves it to the stored
-  username. Requires an Anvil build with this contract: deploy Anvil before
-  deploying the app change, or sign-up fails with a missing-username 422.
-- For the emailed-code path: Anvil must have email configured (`/auth/otp/request`
-  returns 503 otherwise) and `allow_otp_registration = true` so a code can create an
-  account that does not exist yet. Existing accounts can always use the code.
+- **Usernames are Anvil's business** (since 2026-08-26): the app never sends one and
+  Anvil assigns it on registration (email local part, hex suffix only on collision).
+  Clients must not probe for free names. Password login accepts the email; Anvil
+  resolves it to the stored username.
+- For sign-up and the emailed-code sign-in: Anvil must have email configured
+  (`/auth/otp/request` returns 503 otherwise) and `allow_otp_registration = true`
+  (server-wide, or on the `devforge` app) so a code can create an account that does not
+  exist yet. Existing accounts can always use the code.
   `/project` relies on this entirely: a person whose email is set as a project's
   `ownerEmail` but who has no Anvil account yet can only get in if
   `allow_otp_registration` is on.
@@ -248,7 +250,7 @@ resolves for app-written data.
 | Route | What |
 | --- | --- |
 | `/tools/feature-requests` | Landing; signed-in people go to their projects. |
-| `/sign-in`, `/sign-up`, `/sign-out` | Redirect to the site-wide account pages `/account/sign-in`, `/account/sign-up`, `/account/sign-out` (password via Anvil `/auth/login` and `/auth/register`, emailed code via `/auth/otp/*`). Sign-in returns to any same-site `next`; the account hub is `/account`. Sign-up and code requests name the Anvil app `devforge` (its email templates and OTP settings apply, 404 if the app is missing) and every successful sign-in makes the person a `reader` member of it, so Hammer's member list for Devforge is the list of site accounts; an existing member keeps their privilege. |
+| `/sign-in`, `/sign-up`, `/sign-out` | Redirect to the site-wide account pages `/account/sign-in`, `/account/sign-up`, `/account/sign-out` (sign-in by password via Anvil `/auth/login` or by emailed code via `/auth/otp/*`; sign-up by emailed code only). Sign-in returns to any same-site `next`; the account hub is `/account`. Sign-up and code requests name the Anvil app `devforge` (its email templates and OTP settings apply, 404 if the app is missing) and every successful sign-in makes the person a `reader` member of it, so Hammer's member list for Devforge is the list of site accounts; an existing member keeps their privilege. |
 | `/projects`, `/projects/:id` | Project list + create; dashboard with triage, embed snippets, settings, delete. |
 | `/p/:id` | Hosted public board; works without JavaScript. |
 | `/p/:id/r/:rid` | One request on its own page: full details, vote, and a creator edit form (email must match the submitter's). Works without JavaScript. |
