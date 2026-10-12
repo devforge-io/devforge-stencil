@@ -29,6 +29,7 @@ import { parsePage, type ParsedPage } from "./page.server";
 import { parseWikipedia, type ParsedWikipedia } from "./wikipedia.server";
 import { parseTutorial, type ParsedTutorial } from "./tutorial.server";
 import { contentCache } from "./cache.server";
+import { selectUnpublishedChanges, publishEach } from "./publish-all";
 import { listArticleIndex, upsertArticleIndex, removeFromArticleIndex } from "./articles.server";
 import { listPageIndex, upsertPageIndex, removeFromPageIndex, pageIndexExists, savePageIndex, type PageIndexEntry } from "./page-index.server";
 import { listTutorialIndex, upsertTutorialIndex, removeFromTutorialIndex, tutorialIndexExists, saveTutorialIndex, type TutorialIndexEntry } from "./tutorial-index.server";
@@ -439,6 +440,29 @@ export async function unpublishContent(slug: string, type: ContentType = "markdo
   }
 
   contentCache.invalidate(slug);
+}
+
+export interface PublishAllResult {
+  published: { slug: string; title: string }[];
+  failed: { slug: string; title: string; error: string }[];
+}
+
+/**
+ * Publish every item the listing badges "Unpublished changes", one after the
+ * other, through the same per-page publish (compiled CSS, referenced assets and
+ * the publish-branch index included). See publish-all.ts for the rules.
+ */
+export async function publishAllChanged(): Promise<PublishAllResult> {
+  const changed = selectUnpublishedChanges(await listContent());
+  const outcome = await publishEach(changed, (item) => publishContent(item.slug, item.contentType));
+  for (const { item, error } of outcome.failed) {
+    console.error(`[publish-all] ${item.contentType} ${item.slug} failed:`, error);
+  }
+  const brief = (it: ContentListItem) => ({ slug: it.slug, title: it.meta.title });
+  return {
+    published: outcome.published.map(brief),
+    failed: outcome.failed.map(({ item, error }) => ({ ...brief(item), error })),
+  };
 }
 
 export async function getContentPublishStatus(slug: string, type: ContentType = "markdown") {
