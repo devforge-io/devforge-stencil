@@ -22,17 +22,22 @@ async function requestWith(headers: Headers, path = "/account/people"): Promise<
   return new Request(`https://devforge.io${path}`, { headers: { Cookie: cookie } });
 }
 
-/** A fake Anvil with the seeded roles and, when `roleId` is set, one accounts row for Ann. */
-function store(roleId: string | null, status = 200) {
-  const roles = ["admin", "client", "member"].map((id) => ({ key: id, body: { id, name: id, description: "", builtin: true }, created_at: 1, updated_at: 1, version: 1 }));
+const ROLE_IDS: Record<string, string> = {
+  admin: "aaaaaaaa-0000-4000-8000-000000000001",
+  client: "aaaaaaaa-0000-4000-8000-000000000002",
+  member: "aaaaaaaa-0000-4000-8000-000000000003",
+};
+
+/** A fake Anvil with the seeded roles and, when `role` (a slug) is set, one accounts row for Ann pointing at it. */
+function store(role: string | null, status = 200) {
+  const roles = Object.entries(ROLE_IDS).map(([slug, id]) => ({ key: id, body: { id, slug, name: slug, description: "", builtin: true }, created_at: 1, updated_at: 1, version: 1 }));
   globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
     const path = String(input).replace("https://anvil.test", "");
     if (status !== 200) return new Response(JSON.stringify({ error: "down" }), { status });
     if (init?.method === "POST" && /^\/docs\/app_devforge\.(roles|accounts)$/.test(path)) return Response.json({});
-    if (init?.method === "PUT" && path.startsWith("/docs/app_devforge.roles/")) return new Response(JSON.stringify({ error: "exists" }), { status: 409 });
     if (init?.method === "POST" && path === "/docs/app_devforge.roles/query") return Response.json({ documents: roles });
-    if (path === "/docs/app_devforge.accounts/u-ann" && roleId) {
-      return Response.json({ key: "u-ann", body: { user_id: "u-ann", role_id: roleId }, created_at: 1, updated_at: 1, version: 1 });
+    if (path === "/docs/app_devforge.accounts/u-ann" && role) {
+      return Response.json({ key: "u-ann", body: { user_id: "u-ann", role_id: ROLE_IDS[role] }, created_at: 1, updated_at: 1, version: 1 });
     }
     return new Response(JSON.stringify({ error: "not found" }), { status: 404 });
   }) as typeof fetch;
@@ -45,7 +50,7 @@ beforeEach(() => {
   console.error = realError;
 });
 
-test("the cookie carries the role id; a cookie without one reads as member", async () => {
+test("the cookie carries the role slug; a cookie without one reads as member", async () => {
   const user = await getAccountUser(await requestWith(await accountSignInHeaders(identity, tokens, "client")));
   assert.equal(user?.id, "u-ann");
   assert.equal(user?.email, "ann@example.com");

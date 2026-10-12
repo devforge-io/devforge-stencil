@@ -21,9 +21,9 @@ export function meta() {
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const user = await requireAccountUser(request);
-  const [{ token, setCookie }, chrome, roleId] = await Promise.all([ensureCsrfToken(request), getSiteChrome(), currentRole(user)]);
-  const role = await describeRole(roleId);
-  const data = { csrfToken: token, chrome, user: { email: user.email, username: user.username, role: { id: role.id, name: role.name, description: role.description } } };
+  const [{ token, setCookie }, chrome, slug] = await Promise.all([ensureCsrfToken(request), getSiteChrome(), currentRole(user)]);
+  const role = await describeRole(slug);
+  const data = { csrfToken: token, chrome, user: { email: user.email, username: user.username, role: { slug: role.slug, name: role.name, description: role.description } } };
   return setCookie ? Response.json(data, { headers: { "Set-Cookie": setCookie } }) : data;
 }
 
@@ -44,7 +44,7 @@ export default function Account() {
         </p>
 
         <div className="mt-8 grid gap-5 md:grid-cols-2">
-          {user.role.id === ADMIN_ROLE ? (
+          {user.role.slug === ADMIN_ROLE ? (
             <Card className="md:col-span-2">
               <h2 className="flex items-center gap-2 text-base font-semibold text-white">
                 <Users size={15} aria-hidden="true" /> People

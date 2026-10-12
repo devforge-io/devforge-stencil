@@ -1,10 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { ADMIN_ROLE, BUILTIN_ROLES, DEFAULT_ROLE, isRoleId, roleAllows, roleIdFromName } from "./roles";
+import { ADMIN_ROLE, BUILTIN_ROLES, DEFAULT_ROLE, isRoleId, isRoleSlug, roleAllows, roleSlugFromName } from "./roles";
 
 test("three built-in roles, member by default, admin on top", () => {
   assert.deepEqual(
-    BUILTIN_ROLES.map((r) => r.id),
+    BUILTIN_ROLES.map((r) => r.slug),
     ["admin", "client", "member"],
   );
   assert.ok(BUILTIN_ROLES.every((r) => r.builtin && r.name && r.description));
@@ -12,25 +12,30 @@ test("three built-in roles, member by default, admin on top", () => {
   assert.equal(ADMIN_ROLE, "admin");
 });
 
-test("role ids are short lower-case slugs", () => {
-  assert.ok(isRoleId("admin"));
-  assert.ok(isRoleId("partner-agency"));
-  assert.ok(isRoleId("tier_2"));
-  assert.ok(!isRoleId("Admin"));
-  assert.ok(!isRoleId("2fa"));
+test("role slugs are short lower-case names, role ids are UUIDs", () => {
+  assert.ok(isRoleSlug("admin"));
+  assert.ok(isRoleSlug("partner-agency"));
+  assert.ok(isRoleSlug("tier_2"));
+  assert.ok(!isRoleSlug("Admin"));
+  assert.ok(!isRoleSlug("2fa"));
+  assert.ok(!isRoleSlug(""));
+  assert.ok(!isRoleSlug("a".repeat(33)));
+  assert.ok(!isRoleSlug(undefined));
+  assert.ok(isRoleId("f678da77-eb48-4f4c-9cad-c2f412f36bfa"));
+  assert.ok(isRoleId("F678DA77-EB48-4F4C-9CAD-C2F412F36BFA"));
+  assert.ok(!isRoleId("admin"));
+  assert.ok(!isRoleId("f678da77eb484f4c9cadc2f412f36bfa"));
   assert.ok(!isRoleId(""));
-  assert.ok(!isRoleId("a".repeat(33)));
-  assert.ok(!isRoleId(undefined));
-  assert.ok(!isRoleId(["admin"]));
+  assert.ok(!isRoleId(null));
 });
 
-test("a role id is made from the display name", () => {
-  assert.equal(roleIdFromName("Partner agency"), "partner-agency");
-  assert.equal(roleIdFromName("  Client  "), "client");
-  assert.equal(roleIdFromName("VIP (2026)"), "vip-2026");
-  assert.equal(roleIdFromName("2nd tier"), "nd-tier");
-  assert.equal(roleIdFromName("!!!"), null);
-  assert.equal(roleIdFromName("x".repeat(50))?.length, 32);
+test("a slug is made from the display name", () => {
+  assert.equal(roleSlugFromName("Partner agency"), "partner-agency");
+  assert.equal(roleSlugFromName("  Client  "), "client");
+  assert.equal(roleSlugFromName("VIP (2026)"), "vip-2026");
+  assert.equal(roleSlugFromName("2nd tier"), "nd-tier");
+  assert.equal(roleSlugFromName("!!!"), null);
+  assert.equal(roleSlugFromName("x".repeat(50))?.length, 32);
 });
 
 test("admins pass every check, others need their role listed", () => {

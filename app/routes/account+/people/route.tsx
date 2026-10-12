@@ -2,9 +2,10 @@
  * /account/people: admins only. Everyone with a Devforge account (members of
  * the account app, plus anyone holding an assigned role) with the role they
  * hold, a select per row to change it, a form to assign a role by email and
- * one to add a role. Roles live in app_devforge.roles, assignments in
- * app_devforge.accounts; names and emails come from auth.users. Addresses in
- * ACCOUNT_ADMINS are admin whatever is stored, and nobody changes their own.
+ * one to add a role. Roles live in app_devforge.roles (UUID keys, a slug for
+ * the code), assignments in app_devforge.accounts; names and emails come from
+ * auth.users. Addresses in ACCOUNT_ADMINS are admin whatever is stored, and
+ * nobody changes their own.
  */
 
 import { Form, useActionData, useLoaderData, useNavigation, type ActionFunctionArgs, type LoaderFunctionArgs } from "react-router";
@@ -15,7 +16,7 @@ import { CsrfInput, CsrfProvider } from "~/components/csrf-input";
 import { requireAccountRole } from "~/lib/account/session.server";
 import { assignRoleByEmail, configuredAdmins, createRole, listPeople, listRoles, setAccountRole } from "~/lib/account/accounts.server";
 import { ACCOUNT_PATH } from "~/lib/account/paths";
-import { ADMIN_ROLE, isRoleId, type RoleDef, type RoleId } from "~/lib/account/roles";
+import { ADMIN_ROLE, isRoleId, type RoleDef, type RoleSlug } from "~/lib/account/roles";
 import { Card, Field, Notice, Shell, formatDate, ghostBtn, inputClass, primaryBtn, primaryBtnStyle } from "~/components/tools/feature-requests/shell";
 
 export function meta() {
@@ -43,14 +44,13 @@ export async function action({ request }: ActionFunctionArgs) {
       const roleDescription = String(form.get("description") ?? "");
       const res = await createRole({ name: roleName, description: roleDescription }, me.id);
       if (res.outcome === "invalid") return Response.json({ error: res.reason, roleName, roleDescription } satisfies ActionData, { status: 400 });
-      if (res.outcome === "exists") return Response.json({ error: `There is already a role with the id ${res.role?.id}.`, roleName, roleDescription } satisfies ActionData, { status: 409 });
-      return { ok: `Added the role ${res.role?.name} (id ${res.role?.id}).` } satisfies ActionData;
+      if (res.outcome === "exists") return Response.json({ error: `There is already a role with the slug ${res.role?.slug}.`, roleName, roleDescription } satisfies ActionData, { status: 409 });
+      return { ok: `Added the role ${res.role?.name} (${res.role?.slug}).` } satisfies ActionData;
     }
 
     const roleId = String(form.get("role") ?? "");
     if (!isRoleId(roleId)) return Response.json({ error: "Pick a role." } satisfies ActionData, { status: 400 });
-    const roles = await listRoles();
-    const role = roles.find((r) => r.id === roleId);
+    const role = (await listRoles()).find((r) => r.id === roleId);
     if (!role) return Response.json({ error: "That role does not exist." } satisfies ActionData, { status: 400 });
     const label = role.name.toLowerCase();
 
@@ -91,8 +91,8 @@ const chipTone: Record<string, string> = {
 };
 const customTone = "border-emerald-400/30 bg-emerald-400/10 text-emerald-200";
 
-function RoleChip({ role, roles }: { role: RoleId; roles: RoleDef[] }) {
-  const def = roles.find((r) => r.id === role);
+function RoleChip({ role, roles }: { role: RoleSlug; roles: RoleDef[] }) {
+  const def = roles.find((r) => r.slug === role);
   return (
     <span className={`inline-flex items-center rounded-full border px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.16em] ${chipTone[role] ?? customTone}`}>
       {def?.name ?? role}
@@ -100,7 +100,8 @@ function RoleChip({ role, roles }: { role: RoleId; roles: RoleDef[] }) {
   );
 }
 
-function RoleSelect({ id, name, defaultValue, roles }: { id: string; name: string; defaultValue: RoleId; roles: RoleDef[] }) {
+/** Options carry the role UUID; `defaultValue` is a UUID too. */
+function RoleSelect({ id, name, defaultValue, roles }: { id: string; name: string; defaultValue: string; roles: RoleDef[] }) {
   return (
     <select id={id} name={name} defaultValue={defaultValue} className={`${inputClass} w-auto min-w-[8rem] py-1.5`}>
       {roles.map((r) => (
@@ -117,7 +118,8 @@ export default function People() {
   const data = (useActionData() ?? {}) as ActionData;
   const busy = useNavigation().state === "submitting";
   const counts = new Map<string, number>();
-  for (const p of people) counts.set(p.roleId, (counts.get(p.roleId) ?? 0) + 1);
+  for (const p of people) counts.set(p.role, (counts.get(p.role) ?? 0) + 1);
+  const clientRoleId = roles.find((r) => r.slug === "client")?.id ?? roles[0]?.id ?? "";
 
   return (
     <CsrfProvider token={csrfToken}>
@@ -148,13 +150,13 @@ export default function People() {
             {roles.map((r) => (
               <li key={r.id} className="rounded-xl border border-white/10 bg-white/[0.02] px-4 py-3">
                 <div className="flex items-center justify-between gap-2">
-                  <RoleChip role={r.id} roles={roles} />
-                  <span className="font-mono text-sm text-white/70">{counts.get(r.id) ?? 0}</span>
+                  <RoleChip role={r.slug} roles={roles} />
+                  <span className="font-mono text-sm text-white/70">{counts.get(r.slug) ?? 0}</span>
                 </div>
                 <p className="mt-2 text-xs text-white/45">{r.description || "No description."}</p>
-                <p className="mt-1 font-mono text-[10px] text-white/30">
-                  id {r.id}
-                  {r.builtin ? " · built in" : ""}
+                <p className="mt-1 break-all font-mono text-[10px] text-white/30">
+                  {r.slug}
+                  {r.builtin ? " · built in" : ""} · {r.id}
                 </p>
               </li>
             ))}
@@ -163,7 +165,7 @@ export default function People() {
             <CsrfInput />
             <input type="hidden" name="intent" value="add-role" />
             <div className="min-w-[12rem]">
-              <Field label="New role" htmlFor="role-name" hint="The id is made from the name.">
+              <Field label="New role" htmlFor="role-name" hint="Gets a UUID; its slug is made from the name.">
                 <input id="role-name" name="name" type="text" required minLength={2} maxLength={40} defaultValue={data.roleName ?? ""} className={inputClass} />
               </Field>
             </div>
@@ -190,7 +192,7 @@ export default function People() {
               </Field>
             </div>
             <Field label="Role" htmlFor="assign-role">
-              <RoleSelect id="assign-role" name="role" defaultValue="client" roles={roles} />
+              <RoleSelect id="assign-role" name="role" defaultValue={clientRoleId} roles={roles} />
             </Field>
             <button type="submit" disabled={busy} className={primaryBtn} style={primaryBtnStyle}>
               Assign
@@ -237,7 +239,7 @@ export default function People() {
                         </div>
                       </td>
                       <td className="py-3 pr-4">
-                        <RoleChip role={p.roleId} roles={roles} />
+                        <RoleChip role={p.role} roles={roles} />
                         <div className="mt-1 text-xs text-white/40">{p.pinned ? "by ACCOUNT_ADMINS" : p.assigned ? "assigned" : "default"}</div>
                       </td>
                       <td className="py-3 pr-4 text-white/60">{p.lastSignedInAt ? formatDate(p.lastSignedInAt) : "never"}</td>
