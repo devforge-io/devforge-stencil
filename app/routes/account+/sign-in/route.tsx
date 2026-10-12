@@ -6,7 +6,8 @@
  *
  * The account belongs to the Anvil app named by `ANVIL_APP` (default
  * `devforge`): code requests carry it so the app's email template and OTP
- * settings apply, and every successful sign-in enrols the person as a member.
+ * settings apply, and every successful sign-in enrols the person as a member
+ * and records them, with their Devforge role, in the account store.
  */
 
 import { Form, redirect, useActionData, useLoaderData, useNavigation, type ActionFunctionArgs, type LoaderFunctionArgs } from "react-router";
@@ -17,6 +18,7 @@ import { CsrfInput, CsrfProvider } from "~/components/csrf-input";
 import { AnvilError, anvilLogin, anvilOtpRequest, anvilOtpVerify, identityFromToken } from "~/lib/feature-requests/anvil.server";
 import { accountSignInHeaders, getAccountUser } from "~/lib/account/session.server";
 import { accountAppSlug, ensureAccountMember } from "~/lib/account/anvil-app.server";
+import { recordSignIn } from "~/lib/account/accounts.server";
 import { safeNext, signInHref, signUpHref } from "~/lib/account/paths";
 import { clientIp, rateLimited } from "~/lib/feature-requests/http.server";
 import { Card, Field, Notice, Shell, ghostBtn, inputClass, primaryBtn, primaryBtnStyle } from "~/components/tools/feature-requests/shell";
@@ -62,16 +64,16 @@ export async function action({ request }: ActionFunctionArgs) {
       const tokens = await anvilOtpVerify(email, code);
       const identity = identityFromToken(tokens.accessToken);
       if (!identity) throw new AnvilError("Anvil returned an unreadable token", 502);
-      await ensureAccountMember(identity.sub);
-      return redirect(next, { headers: await accountSignInHeaders(identity, tokens) });
+      const [, role] = await Promise.all([ensureAccountMember(identity.sub), recordSignIn(identity)]);
+      return redirect(next, { headers: await accountSignInHeaders(identity, tokens, role) });
     }
     const password = String(form.get("password") ?? "");
     if (!password) return Response.json({ error: "Enter your password." } satisfies ActionData, { status: 400 });
     const tokens = await anvilLogin(email, password);
     const identity = identityFromToken(tokens.accessToken);
     if (!identity) throw new AnvilError("Anvil returned an unreadable token", 502);
-    await ensureAccountMember(identity.sub);
-    return redirect(next, { headers: await accountSignInHeaders(identity, tokens) });
+    const [, role] = await Promise.all([ensureAccountMember(identity.sub), recordSignIn(identity)]);
+    return redirect(next, { headers: await accountSignInHeaders(identity, tokens, role) });
   } catch (err) {
     const e = err as AnvilError;
     const status = typeof e.status === "number" ? e.status : 500;

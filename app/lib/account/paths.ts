@@ -8,6 +8,8 @@ export const ACCOUNT_PATH = "/account";
 export const SIGN_IN_PATH = "/account/sign-in";
 export const SIGN_UP_PATH = "/account/sign-up";
 export const SIGN_OUT_PATH = "/account/sign-out";
+/** Admin-only: everyone with an account and their Devforge role. */
+export const PEOPLE_PATH = "/account/people";
 
 /** Pages that must never be a post-sign-in destination: they would bounce straight back. */
 const NO_RETURN = new Set([SIGN_IN_PATH, SIGN_UP_PATH, SIGN_OUT_PATH, "/login", "/logout"]);

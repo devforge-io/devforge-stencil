@@ -4,12 +4,13 @@
  */
 
 import { Form, useLoaderData, type LoaderFunctionArgs } from "react-router";
-import { ArrowRight, KeyRound, UserRound } from "lucide-react";
+import { ArrowRight, KeyRound, UserRound, Users } from "lucide-react";
 import { getSiteChrome } from "~/lib/site-chrome.server";
 import { ensureCsrfToken } from "~/lib/csrf.server";
 import { CsrfInput, CsrfProvider } from "~/components/csrf-input";
-import { requireAccountUser } from "~/lib/account/session.server";
-import { SIGN_OUT_PATH } from "~/lib/account/paths";
+import { currentRole, requireAccountUser } from "~/lib/account/session.server";
+import { PEOPLE_PATH, SIGN_OUT_PATH } from "~/lib/account/paths";
+import { ROLE_INFO } from "~/lib/account/roles";
 import { LICENSES_PATH } from "~/lib/licensing/shared";
 import { Card, PROJECTS_PATH, Shell, ghostBtn } from "~/components/tools/feature-requests/shell";
 
@@ -19,8 +20,8 @@ export function meta() {
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const user = await requireAccountUser(request);
-  const [{ token, setCookie }, chrome] = await Promise.all([ensureCsrfToken(request), getSiteChrome()]);
-  const data = { csrfToken: token, chrome, user: { email: user.email, username: user.username } };
+  const [{ token, setCookie }, chrome, role] = await Promise.all([ensureCsrfToken(request), getSiteChrome(), currentRole(user)]);
+  const data = { csrfToken: token, chrome, user: { email: user.email, username: user.username, role } };
   return setCookie ? Response.json(data, { headers: { "Set-Cookie": setCookie } }) : data;
 }
 
@@ -33,8 +34,25 @@ export default function Account() {
         <p className="mt-3 text-white/55">
           Signed in as <span className="font-mono text-white/75">{user.email}</span>. One account for every tool on this site.
         </p>
+        <p className="mt-3 flex flex-wrap items-center gap-2 text-sm text-white/55">
+          <span className="inline-flex items-center rounded-full border border-[#f5a524]/40 bg-[#f5a524]/10 px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.16em] text-[#ffd98a]">
+            {ROLE_INFO[user.role].label}
+          </span>
+          {ROLE_INFO[user.role].summary}
+        </p>
 
         <div className="mt-8 grid gap-5 md:grid-cols-2">
+          {user.role === "admin" ? (
+            <Card className="md:col-span-2">
+              <h2 className="flex items-center gap-2 text-base font-semibold text-white">
+                <Users size={15} aria-hidden="true" /> People
+              </h2>
+              <p className="mt-2 text-sm text-white/55">Everyone with a Devforge account and their role: admin, client or member. Admins only.</p>
+              <a href={PEOPLE_PATH} className={`mt-4 ${ghostBtn}`}>
+                Manage people <ArrowRight size={14} aria-hidden="true" />
+              </a>
+            </Card>
+          ) : null}
           <Card>
             <h2 className="text-base font-semibold text-white">Feature requests</h2>
             <p className="mt-2 text-sm text-white/55">Projects you created in the feature requests tool: boards, embeds and triage.</p>
