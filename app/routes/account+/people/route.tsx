@@ -1,9 +1,10 @@
 /**
- * /account/people: admins only. Everyone with a Devforge account record and
- * their role (admin, client or member), with a form per row to change it and
- * one to assign a role by email, for people who have an Anvil account but
- * have not signed in here since roles existed. Addresses in ACCOUNT_ADMINS
- * are admins whatever is stored, and nobody can change their own role.
+ * /account/people: admins only. Everyone with a Devforge account (members of
+ * the account app, plus anyone holding an assigned role) with the role they
+ * hold, a select per row to change it, a form to assign a role by email and
+ * one to add a role. Roles live in app_devforge.roles, assignments in
+ * app_devforge.accounts; names and emails come from auth.users. Addresses in
+ * ACCOUNT_ADMINS are admin whatever is stored, and nobody changes their own.
  */
 
 import { Form, useActionData, useLoaderData, useNavigation, type ActionFunctionArgs, type LoaderFunctionArgs } from "react-router";
@@ -12,52 +13,53 @@ import { getSiteChrome } from "~/lib/site-chrome.server";
 import { ensureCsrfToken, validateCsrf } from "~/lib/csrf.server";
 import { CsrfInput, CsrfProvider } from "~/components/csrf-input";
 import { requireAccountRole } from "~/lib/account/session.server";
-import { assignRoleByEmail, configuredAdmins, isConfiguredAdmin, listAccounts, setAccountRole } from "~/lib/account/accounts.server";
+import { assignRoleByEmail, configuredAdmins, createRole, listPeople, listRoles, setAccountRole } from "~/lib/account/accounts.server";
 import { ACCOUNT_PATH } from "~/lib/account/paths";
-import { ACCOUNT_ROLES, ROLE_INFO, isAccountRole, type AccountRole } from "~/lib/account/roles";
+import { ADMIN_ROLE, isRoleId, type RoleDef, type RoleId } from "~/lib/account/roles";
 import { Card, Field, Notice, Shell, formatDate, ghostBtn, inputClass, primaryBtn, primaryBtnStyle } from "~/components/tools/feature-requests/shell";
 
 export function meta() {
   return [{ title: "People · Devforge" }, { name: "robots", content: "noindex" }];
 }
 
-type Row = { id: string; email: string; username: string; role: AccountRole; lastSignInAt: number; createdAt: number; pinned: boolean };
-
 export async function loader({ request }: LoaderFunctionArgs) {
-  const me = await requireAccountRole(request, ["admin"]);
-  const [{ token, setCookie }, chrome, accounts] = await Promise.all([ensureCsrfToken(request), getSiteChrome(), listAccounts()]);
-  const rows: Row[] = accounts.map((a) => ({
-    id: a.id,
-    email: a.email,
-    username: a.username,
-    role: a.role,
-    lastSignInAt: a.lastSignInAt,
-    createdAt: a.createdAt,
-    pinned: isConfiguredAdmin(a.email),
-  }));
-  const data = { csrfToken: token, chrome, me: me.id, rows, pinnedAdmins: [...configuredAdmins()].sort() };
+  const me = await requireAccountRole(request, [ADMIN_ROLE]);
+  const [{ token, setCookie }, chrome, roles, people] = await Promise.all([ensureCsrfToken(request), getSiteChrome(), listRoles(), listPeople()]);
+  const data = { csrfToken: token, chrome, me: me.id, roles, people, pinnedAdmins: [...configuredAdmins()].sort() };
   return setCookie ? Response.json(data, { headers: { "Set-Cookie": setCookie } }) : data;
 }
 
-type ActionData = { error?: string; ok?: string; email?: string };
+type ActionData = { error?: string; ok?: string; email?: string; roleName?: string; roleDescription?: string };
 
 export async function action({ request }: ActionFunctionArgs) {
-  const me = await requireAccountRole(request, ["admin"]);
+  const me = await requireAccountRole(request, [ADMIN_ROLE]);
   const form = await request.formData();
   await validateCsrf(request, form);
   const intent = String(form.get("intent") ?? "");
-  const role = String(form.get("role") ?? "");
-  if (!isAccountRole(role)) return Response.json({ error: "Pick a role." } satisfies ActionData, { status: 400 });
-  const label = ROLE_INFO[role].label.toLowerCase();
 
   try {
+    if (intent === "add-role") {
+      const roleName = String(form.get("name") ?? "");
+      const roleDescription = String(form.get("description") ?? "");
+      const res = await createRole({ name: roleName, description: roleDescription }, me.id);
+      if (res.outcome === "invalid") return Response.json({ error: res.reason, roleName, roleDescription } satisfies ActionData, { status: 400 });
+      if (res.outcome === "exists") return Response.json({ error: `There is already a role with the id ${res.role?.id}.`, roleName, roleDescription } satisfies ActionData, { status: 409 });
+      return { ok: `Added the role ${res.role?.name} (id ${res.role?.id}).` } satisfies ActionData;
+    }
+
+    const roleId = String(form.get("role") ?? "");
+    if (!isRoleId(roleId)) return Response.json({ error: "Pick a role." } satisfies ActionData, { status: 400 });
+    const roles = await listRoles();
+    const role = roles.find((r) => r.id === roleId);
+    if (!role) return Response.json({ error: "That role does not exist." } satisfies ActionData, { status: 400 });
+    const label = role.name.toLowerCase();
+
     if (intent === "set-role") {
       const id = String(form.get("user") ?? "");
       if (!id) return Response.json({ error: "No account given." } satisfies ActionData, { status: 400 });
       if (id === me.id) return Response.json({ error: "You cannot change your own role. Ask another admin." } satisfies ActionData, { status: 400 });
-      const rec = await setAccountRole(id, role, me.id);
-      if (!rec) return Response.json({ error: "That account has no record here yet. Assign the role by email instead." } satisfies ActionData, { status: 404 });
-      return { ok: `${rec.email} is now ${label}.` } satisfies ActionData;
+      await setAccountRole(id, roleId, me.id);
+      return { ok: `Role saved: ${label}.` } satisfies ActionData;
     }
 
     if (intent === "assign-email") {
@@ -68,14 +70,11 @@ export async function action({ request }: ActionFunctionArgs) {
       if (email === me.email.trim().toLowerCase()) {
         return Response.json({ error: "You cannot change your own role. Ask another admin.", email } satisfies ActionData, { status: 400 });
       }
-      const res = await assignRoleByEmail(email, role, me.id);
+      const res = await assignRoleByEmail(email, roleId, me.id);
       if (res.outcome === "no_account") {
-        return Response.json({ error: `No Devforge account uses ${email}. They need to sign up first.`, email } satisfies ActionData, { status: 404 });
+        return Response.json({ error: `No Anvil account uses ${email}. They need to sign up first.`, email } satisfies ActionData, { status: 404 });
       }
-      if (res.outcome === "unchanged") return { ok: `${email} is already ${label}.` } satisfies ActionData;
-      return {
-        ok: res.outcome === "created" ? `${email} is now ${label}. The role applies from their next sign-in here.` : `${email} is now ${label}.`,
-      } satisfies ActionData;
+      return { ok: res.outcome === "unchanged" ? `${email} is already ${label}.` : `${email} is now ${label}.` } satisfies ActionData;
     }
   } catch (err) {
     console.error("[account] role change failed", (err as Error).message);
@@ -85,26 +84,28 @@ export async function action({ request }: ActionFunctionArgs) {
   return Response.json({ error: "Unknown action." } satisfies ActionData, { status: 400 });
 }
 
-const roleChip: Record<AccountRole, string> = {
+const chipTone: Record<string, string> = {
   admin: "border-[#f5a524]/40 bg-[#f5a524]/10 text-[#ffd98a]",
   client: "border-sky-400/30 bg-sky-400/10 text-sky-200",
   member: "border-white/15 bg-white/[0.04] text-white/60",
 };
+const customTone = "border-emerald-400/30 bg-emerald-400/10 text-emerald-200";
 
-function RoleChip({ role }: { role: AccountRole }) {
+function RoleChip({ role, roles }: { role: RoleId; roles: RoleDef[] }) {
+  const def = roles.find((r) => r.id === role);
   return (
-    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.16em] ${roleChip[role]}`}>
-      {ROLE_INFO[role].label}
+    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.16em] ${chipTone[role] ?? customTone}`}>
+      {def?.name ?? role}
     </span>
   );
 }
 
-function RoleSelect({ id, name, defaultValue }: { id: string; name: string; defaultValue: AccountRole }) {
+function RoleSelect({ id, name, defaultValue, roles }: { id: string; name: string; defaultValue: RoleId; roles: RoleDef[] }) {
   return (
     <select id={id} name={name} defaultValue={defaultValue} className={`${inputClass} w-auto min-w-[8rem] py-1.5`}>
-      {ACCOUNT_ROLES.map((r) => (
-        <option key={r} value={r} className="bg-[#08060f]">
-          {ROLE_INFO[r].label}
+      {roles.map((r) => (
+        <option key={r.id} value={r.id} className="bg-[#08060f]">
+          {r.name}
         </option>
       ))}
     </select>
@@ -112,30 +113,20 @@ function RoleSelect({ id, name, defaultValue }: { id: string; name: string; defa
 }
 
 export default function People() {
-  const { chrome, csrfToken, me, rows, pinnedAdmins } = useLoaderData<typeof loader>();
+  const { chrome, csrfToken, me, roles, people, pinnedAdmins } = useLoaderData<typeof loader>();
   const data = (useActionData() ?? {}) as ActionData;
   const busy = useNavigation().state === "submitting";
-  const counts = rows.reduce<Record<AccountRole, number>>((acc, r) => ((acc[r.role] += 1), acc), { admin: 0, client: 0, member: 0 });
+  const counts = new Map<string, number>();
+  for (const p of people) counts.set(p.roleId, (counts.get(p.roleId) ?? 0) + 1);
 
   return (
     <CsrfProvider token={csrfToken}>
       <Shell chrome={chrome} backHref={ACCOUNT_PATH} backLabel="Your account" eyebrow="People" icon={<Users size={13} aria-hidden="true" />} wide>
         <h1 className="text-3xl font-semibold tracking-tight text-white sm:text-4xl">People</h1>
         <p className="mt-3 max-w-2xl text-white/55">
-          Everyone with a Devforge account record and the role they hold on this site. Roles are Devforge's own, not Anvil's: they decide what a
-          person may do on devforge.io.
+          Everyone with a Devforge account and the role they hold on this site. Roles are Devforge's own, not Anvil's: they decide what a person
+          may do on devforge.io.
         </p>
-        <dl className="mt-5 grid max-w-2xl gap-3 sm:grid-cols-3">
-          {ACCOUNT_ROLES.map((r) => (
-            <div key={r} className="rounded-xl border border-white/10 bg-white/[0.02] px-4 py-3">
-              <dt className="flex items-center justify-between gap-2">
-                <RoleChip role={r} />
-                <span className="font-mono text-sm text-white/70">{counts[r]}</span>
-              </dt>
-              <dd className="mt-2 text-xs text-white/45">{ROLE_INFO[r].summary}</dd>
-            </div>
-          ))}
-        </dl>
 
         {data.error ? (
           <div className="mt-6">
@@ -149,11 +140,47 @@ export default function People() {
         ) : null}
 
         <Card className="mt-6">
+          <div className="flex flex-wrap items-baseline justify-between gap-3">
+            <h2 className="text-base font-semibold text-white">Roles</h2>
+            <span className="font-mono text-xs text-white/45">app_devforge.roles</span>
+          </div>
+          <ul className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {roles.map((r) => (
+              <li key={r.id} className="rounded-xl border border-white/10 bg-white/[0.02] px-4 py-3">
+                <div className="flex items-center justify-between gap-2">
+                  <RoleChip role={r.id} roles={roles} />
+                  <span className="font-mono text-sm text-white/70">{counts.get(r.id) ?? 0}</span>
+                </div>
+                <p className="mt-2 text-xs text-white/45">{r.description || "No description."}</p>
+                <p className="mt-1 font-mono text-[10px] text-white/30">
+                  id {r.id}
+                  {r.builtin ? " · built in" : ""}
+                </p>
+              </li>
+            ))}
+          </ul>
+          <Form method="post" className="mt-5 flex flex-wrap items-end gap-3 border-t border-white/[0.06] pt-5">
+            <CsrfInput />
+            <input type="hidden" name="intent" value="add-role" />
+            <div className="min-w-[12rem]">
+              <Field label="New role" htmlFor="role-name" hint="The id is made from the name.">
+                <input id="role-name" name="name" type="text" required minLength={2} maxLength={40} defaultValue={data.roleName ?? ""} className={inputClass} />
+              </Field>
+            </div>
+            <div className="min-w-[16rem] flex-1">
+              <Field label="Description" htmlFor="role-description">
+                <input id="role-description" name="description" type="text" maxLength={200} defaultValue={data.roleDescription ?? ""} className={inputClass} />
+              </Field>
+            </div>
+            <button type="submit" disabled={busy} className={ghostBtn}>
+              Add role
+            </button>
+          </Form>
+        </Card>
+
+        <Card className="mt-5">
           <h2 className="text-base font-semibold text-white">Assign a role by email</h2>
-          <p className="mt-2 text-sm text-white/55">
-            For someone who already has a Devforge account. If they have not signed in since roles existed, their record is created now and the
-            role applies from their next sign-in.
-          </p>
+          <p className="mt-2 text-sm text-white/55">For anyone with an Anvil account, whether or not they appear in the list below.</p>
           <Form method="post" className="mt-4 flex flex-wrap items-end gap-3">
             <CsrfInput />
             <input type="hidden" name="intent" value="assign-email" />
@@ -163,7 +190,7 @@ export default function People() {
               </Field>
             </div>
             <Field label="Role" htmlFor="assign-role">
-              <RoleSelect id="assign-role" name="role" defaultValue="client" />
+              <RoleSelect id="assign-role" name="role" defaultValue="client" roles={roles} />
             </Field>
             <button type="submit" disabled={busy} className={primaryBtn} style={primaryBtnStyle}>
               Assign
@@ -174,7 +201,7 @@ export default function People() {
         <Card className="mt-5">
           <div className="flex flex-wrap items-baseline justify-between gap-3">
             <h2 className="text-base font-semibold text-white">Accounts</h2>
-            <span className="font-mono text-xs text-white/45">{rows.length} with a record</span>
+            <span className="font-mono text-xs text-white/45">{people.length} people</span>
           </div>
           {pinnedAdmins.length > 0 ? (
             <p className="mt-2 text-xs text-white/45">
@@ -183,11 +210,11 @@ export default function People() {
             </p>
           ) : (
             <p className="mt-2 text-xs text-white/45">
-              No <span className="font-mono text-white/60">ACCOUNT_ADMINS</span> is set on the server, so admins exist only as stored roles.
+              No <span className="font-mono text-white/60">ACCOUNT_ADMINS</span> is set on the server, so admins exist only as assigned roles.
             </p>
           )}
-          {rows.length === 0 ? (
-            <p className="mt-4 text-sm text-white/55">No records yet. A record appears when someone signs in, or when you assign a role by email above.</p>
+          {people.length === 0 ? (
+            <p className="mt-4 text-sm text-white/55">Nobody has signed in yet.</p>
           ) : (
             <div className="mt-4 overflow-x-auto">
               <table className="w-full min-w-[40rem] text-left text-sm">
@@ -200,32 +227,32 @@ export default function People() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/[0.06]">
-                  {rows.map((r) => (
-                    <tr key={r.id} className="align-top">
+                  {people.map((p) => (
+                    <tr key={p.id} className="align-top">
                       <td className="py-3 pr-4">
-                        <div className="font-mono text-white/80">{r.email || r.id}</div>
+                        <div className="font-mono text-white/80">{p.email || (p.username ? `@${p.username}` : p.id)}</div>
                         <div className="mt-0.5 text-xs text-white/40">
-                          {r.username ? `@${r.username}` : "no username yet"}
-                          {r.id === me ? " · you" : ""}
+                          {p.email ? (p.username ? `@${p.username}` : "no username") : "no email on the Anvil account"}
+                          {p.id === me ? " · you" : ""}
                         </div>
                       </td>
                       <td className="py-3 pr-4">
-                        <RoleChip role={r.role} />
-                        {r.pinned && r.role !== "admin" ? <div className="mt-1 text-xs text-white/40">admin by ACCOUNT_ADMINS</div> : null}
+                        <RoleChip role={p.roleId} roles={roles} />
+                        <div className="mt-1 text-xs text-white/40">{p.pinned ? "by ACCOUNT_ADMINS" : p.assigned ? "assigned" : "default"}</div>
                       </td>
-                      <td className="py-3 pr-4 text-white/60">{r.lastSignInAt ? formatDate(r.lastSignInAt) : "never"}</td>
+                      <td className="py-3 pr-4 text-white/60">{p.lastSignedInAt ? formatDate(p.lastSignedInAt) : "never"}</td>
                       <td className="py-3">
-                        {r.id === me ? (
+                        {p.id === me ? (
                           <span className="text-xs text-white/40">Another admin changes yours.</span>
                         ) : (
                           <Form method="post" className="flex flex-wrap items-center gap-2">
                             <CsrfInput />
                             <input type="hidden" name="intent" value="set-role" />
-                            <input type="hidden" name="user" value={r.id} />
-                            <label htmlFor={`role-${r.id}`} className="sr-only">
-                              Role for {r.email}
+                            <input type="hidden" name="user" value={p.id} />
+                            <label htmlFor={`role-${p.id}`} className="sr-only">
+                              Role for {p.email || p.username || p.id}
                             </label>
-                            <RoleSelect id={`role-${r.id}`} name="role" defaultValue={r.role} />
+                            <RoleSelect id={`role-${p.id}`} name="role" defaultValue={p.roleId} roles={roles} />
                             <button type="submit" disabled={busy} className={ghostBtn}>
                               Save
                             </button>

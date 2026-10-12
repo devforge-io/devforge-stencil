@@ -14,7 +14,7 @@ import { CsrfInput, CsrfProvider } from "~/components/csrf-input";
 import { AnvilError, anvilLogin, anvilRegister, identityFromToken } from "~/lib/feature-requests/anvil.server";
 import { accountSignInHeaders, getAccountUser } from "~/lib/account/session.server";
 import { accountAppSlug, ensureAccountMember } from "~/lib/account/anvil-app.server";
-import { recordSignIn } from "~/lib/account/accounts.server";
+import { roleForSignIn } from "~/lib/account/accounts.server";
 import { safeNext, signInHref } from "~/lib/account/paths";
 import { clientIp, rateLimited } from "~/lib/feature-requests/http.server";
 import { Card, Field, Notice, Shell, inputClass, primaryBtn, primaryBtnStyle } from "~/components/tools/feature-requests/shell";
@@ -73,7 +73,7 @@ export async function action({ request }: ActionFunctionArgs) {
     const tokens = await anvilLogin(email, password);
     const identity = identityFromToken(tokens.accessToken);
     if (!identity) throw new AnvilError("Anvil returned an unreadable token", 502);
-    const [, role] = await Promise.all([ensureAccountMember(identity.sub, { fresh: true }), recordSignIn(identity)]);
+    const [, role] = await Promise.all([ensureAccountMember(identity.sub, { fresh: true }), roleForSignIn(identity)]);
     return redirect(next, { headers: await accountSignInHeaders(identity, tokens, role) });
   } catch {
     // Membership is ensured on the next sign-in if the login step failed here.

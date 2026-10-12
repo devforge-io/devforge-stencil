@@ -10,7 +10,8 @@ import { ensureCsrfToken } from "~/lib/csrf.server";
 import { CsrfInput, CsrfProvider } from "~/components/csrf-input";
 import { currentRole, requireAccountUser } from "~/lib/account/session.server";
 import { PEOPLE_PATH, SIGN_OUT_PATH } from "~/lib/account/paths";
-import { ROLE_INFO } from "~/lib/account/roles";
+import { ADMIN_ROLE } from "~/lib/account/roles";
+import { describeRole } from "~/lib/account/accounts.server";
 import { LICENSES_PATH } from "~/lib/licensing/shared";
 import { Card, PROJECTS_PATH, Shell, ghostBtn } from "~/components/tools/feature-requests/shell";
 
@@ -20,8 +21,9 @@ export function meta() {
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const user = await requireAccountUser(request);
-  const [{ token, setCookie }, chrome, role] = await Promise.all([ensureCsrfToken(request), getSiteChrome(), currentRole(user)]);
-  const data = { csrfToken: token, chrome, user: { email: user.email, username: user.username, role } };
+  const [{ token, setCookie }, chrome, roleId] = await Promise.all([ensureCsrfToken(request), getSiteChrome(), currentRole(user)]);
+  const role = await describeRole(roleId);
+  const data = { csrfToken: token, chrome, user: { email: user.email, username: user.username, role: { id: role.id, name: role.name, description: role.description } } };
   return setCookie ? Response.json(data, { headers: { "Set-Cookie": setCookie } }) : data;
 }
 
@@ -36,13 +38,13 @@ export default function Account() {
         </p>
         <p className="mt-3 flex flex-wrap items-center gap-2 text-sm text-white/55">
           <span className="inline-flex items-center rounded-full border border-[#f5a524]/40 bg-[#f5a524]/10 px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.16em] text-[#ffd98a]">
-            {ROLE_INFO[user.role].label}
+            {user.role.name}
           </span>
-          {ROLE_INFO[user.role].summary}
+          {user.role.description}
         </p>
 
         <div className="mt-8 grid gap-5 md:grid-cols-2">
-          {user.role === "admin" ? (
+          {user.role.id === ADMIN_ROLE ? (
             <Card className="md:col-span-2">
               <h2 className="flex items-center gap-2 text-base font-semibold text-white">
                 <Users size={15} aria-hidden="true" /> People

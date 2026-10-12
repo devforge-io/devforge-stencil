@@ -1,63 +1,150 @@
 /**
- * Devforge account records and roles, in Anvil's document store under the
+ * Devforge roles and who holds them, in Anvil's document store under the
  * account app's schema (app_devforge, next to the licence records).
  *
- *   accounts   key = Anvil user id (JWT sub)   {id, email, username, role, roleSetAt?,
- *                                               roleSetBy?, createdAt, lastSignInAt, updatedAt}
+ *   roles      key = role id      {id, name, description, builtin, created_by, created_at, updated_at}
+ *   accounts   key = user id      {user_id, role_id, set_by, set_at, created_at, updated_at}
  *
- * Anvil authenticates the person; this record is what devforge.io knows about
- * them: which of the site's roles they hold (roles.ts) and when they were
- * last here. A record appears on the first sign-in after this module went
- * live, or when an admin assigns a role to an email that already has an Anvil
- * account. Addresses listed in `ACCOUNT_ADMINS` are admins whatever the record
- * says, which is how the first admin gets in.
+ * Nothing about the person is copied here: email, username and last sign-in
+ * stay in `auth.users`, and who has a Devforge account is the member list of
+ * the account app (`auth.app_members`). An accounts row exists only once a
+ * role has been assigned; no row means the default role (member). The three
+ * built-in roles are seeded on first use and admins can add more. Addresses
+ * listed in `ACCOUNT_ADMINS` are admins whatever the rows say, which is how
+ * the first admin gets in.
  */
 
 import { AnvilError, docEnsureCollection, docGet, docPut, docQuery, lookupUserIdByEmail, type AnvilDocument } from "../feature-requests/anvil.server";
-import { DEFAULT_ROLE, isAccountRole, type AccountRole } from "./roles";
+import { listAccountAppMemberIds } from "./anvil-app.server";
+import { ADMIN_ROLE, BUILTIN_ROLES, DEFAULT_ROLE, isRoleId, roleIdFromName, type RoleDef, type RoleId } from "./roles";
 
+const ROLES = "app_devforge.roles";
 const ACCOUNTS = "app_devforge.accounts";
 
 export type AccountRecord = {
   /** Anvil user id (the JWT `sub`). */
-  id: string;
-  /** Lower-cased. */
-  email: string;
-  username: string;
-  role: AccountRole;
-  /** Unix ms of the last explicit role change, and who made it. */
-  roleSetAt?: number;
-  roleSetBy?: string;
-  /** Unix ms. */
+  userId: string;
+  roleId: RoleId;
+  /** Who assigned the role (a user id, or `env` for the ACCOUNT_ADMINS bootstrap) and when (unix ms). */
+  setBy: string;
+  setAt: number;
   createdAt: number;
-  /** Unix ms; 0 for a record created by an admin before the person's first sign-in. */
-  lastSignInAt: number;
   updatedAt: number;
 };
 
-let collectionReady: Promise<void> | null = null;
+const str = (v: unknown, fallback = ""): string => (typeof v === "string" ? v : fallback);
+const num = (v: unknown, fallback = 0): number => (typeof v === "number" && Number.isFinite(v) ? v : fallback);
 
-function ensureCollection(): Promise<void> {
-  collectionReady ??= docEnsureCollection(ACCOUNTS).catch((err) => {
-    collectionReady = null;
-    throw err;
-  });
-  return collectionReady;
+/* ---------------------------------------------------------------------- */
+/* Collections and seed                                                    */
+/* ---------------------------------------------------------------------- */
+
+let ready: Promise<void> | null = null;
+
+async function seedRoles(): Promise<void> {
+  const now = Date.now();
+  for (const r of BUILTIN_ROLES) {
+    try {
+      await docPut(ROLES, r.id, { id: r.id, name: r.name, description: r.description, builtin: true, created_by: "seed", created_at: now, updated_at: now }, { ifNotExists: true });
+    } catch (err) {
+      if (err instanceof AnvilError && err.status === 409) continue;
+      throw err;
+    }
+  }
 }
 
-const ROLE_TTL = 60_000;
-const roleCache = new Map<string, { role: AccountRole; expiresAt: number }>();
+function ensureReady(): Promise<void> {
+  ready ??= Promise.all([docEnsureCollection(ROLES), docEnsureCollection(ACCOUNTS)])
+    .then(seedRoles)
+    .catch((err) => {
+      ready = null;
+      throw err;
+    });
+  return ready;
+}
 
-function remember(userId: string, role: AccountRole) {
-  if (roleCache.size > 10_000) roleCache.clear();
-  roleCache.set(userId, { role, expiresAt: Date.now() + ROLE_TTL });
+const CACHE_TTL = 60_000;
+let rolesCache: { roles: RoleDef[]; expiresAt: number } | null = null;
+const roleOfUser = new Map<string, { role: RoleId; expiresAt: number }>();
+
+function rememberRole(userId: string, role: RoleId) {
+  if (roleOfUser.size > 10_000) roleOfUser.clear();
+  roleOfUser.set(userId, { role, expiresAt: Date.now() + CACHE_TTL });
 }
 
 /** For tests. */
 export function resetAccountsCache(): void {
-  collectionReady = null;
-  roleCache.clear();
+  ready = null;
+  rolesCache = null;
+  roleOfUser.clear();
 }
+
+/* ---------------------------------------------------------------------- */
+/* Roles                                                                   */
+/* ---------------------------------------------------------------------- */
+
+function toRole(doc: AnvilDocument): RoleDef {
+  const b = doc.body;
+  return { id: str(b.id, doc.key), name: str(b.name, doc.key), description: str(b.description), builtin: b.builtin === true };
+}
+
+/** Every role, built-ins first in their canonical order, then the rest by name. Cached a minute. */
+export async function listRoles(): Promise<RoleDef[]> {
+  if (rolesCache && rolesCache.expiresAt > Date.now()) return rolesCache.roles;
+  await ensureReady();
+  const docs = await docQuery(ROLES, null, 1000);
+  const order = new Map(BUILTIN_ROLES.map((r, i) => [r.id, i]));
+  const roles = docs.map(toRole).sort((a, b) => {
+    const ia = order.get(a.id) ?? 99;
+    const ib = order.get(b.id) ?? 99;
+    return ia - ib || a.name.localeCompare(b.name);
+  });
+  rolesCache = { roles, expiresAt: Date.now() + CACHE_TTL };
+  return roles;
+}
+
+export async function getRole(id: RoleId): Promise<RoleDef | null> {
+  if (!isRoleId(id)) return null;
+  return (await listRoles()).find((r) => r.id === id) ?? null;
+}
+
+/** Name and description for a role id, falling back to the id itself when the row is gone or unreadable. */
+export async function describeRole(id: RoleId): Promise<RoleDef> {
+  try {
+    const role = await getRole(id);
+    if (role) return role;
+  } catch (err) {
+    console.error(`[account] could not read role ${id}: ${(err as Error).message}`);
+  }
+  return BUILTIN_ROLES.find((r) => r.id === id) ?? { id, name: id, description: "", builtin: false };
+}
+
+export type RoleCreate = { outcome: "created" | "exists" | "invalid"; role?: RoleDef; reason?: string };
+
+/** Adds a role; its id comes from the name. */
+export async function createRole(input: { name: string; description: string }, byUserId: string): Promise<RoleCreate> {
+  const name = input.name.trim().replace(/\s+/g, " ");
+  const description = input.description.trim();
+  if (name.length < 2 || name.length > 40) return { outcome: "invalid", reason: "Give the role a name of 2 to 40 characters." };
+  if (description.length > 200) return { outcome: "invalid", reason: "Keep the description under 200 characters." };
+  const id = roleIdFromName(name);
+  if (!id) return { outcome: "invalid", reason: "The name needs at least one letter." };
+  await ensureReady();
+  const now = Date.now();
+  const role: RoleDef = { id, name, description, builtin: false };
+  try {
+    await docPut(ROLES, id, { id, name, description, builtin: false, created_by: byUserId, created_at: now, updated_at: now }, { ifNotExists: true });
+  } catch (err) {
+    if (err instanceof AnvilError && err.status === 409) return { outcome: "exists", role: (await getRole(id)) ?? role };
+    throw err;
+  }
+  rolesCache = null;
+  return { outcome: "created", role };
+}
+
+/* ---------------------------------------------------------------------- */
+/* Who holds which role                                                    */
+/* ---------------------------------------------------------------------- */
 
 const USER_ID = /^[A-Za-z0-9_-]{1,64}$/;
 
@@ -76,134 +163,142 @@ export function isConfiguredAdmin(email: string): boolean {
   return needle.length > 0 && configuredAdmins().has(needle);
 }
 
-/** The role that counts: the ACCOUNT_ADMINS list wins, then the stored role, then member. */
-export function effectiveRole(record: Pick<AccountRecord, "role" | "email"> | null, email = ""): AccountRole {
-  if (isConfiguredAdmin(email) || (record && isConfiguredAdmin(record.email))) return "admin";
-  return record?.role ?? DEFAULT_ROLE;
+/** The role that counts: the ACCOUNT_ADMINS list wins, then the assigned role, then member. */
+export function effectiveRole(record: Pick<AccountRecord, "roleId"> | null, email: string): RoleId {
+  if (isConfiguredAdmin(email)) return ADMIN_ROLE;
+  return record?.roleId ?? DEFAULT_ROLE;
 }
-
-const str = (v: unknown, fallback = ""): string => (typeof v === "string" ? v : fallback);
-const num = (v: unknown, fallback = 0): number => (typeof v === "number" && Number.isFinite(v) ? v : fallback);
 
 function toRecord(doc: AnvilDocument): AccountRecord {
   const b = doc.body;
-  const out: AccountRecord = {
-    id: str(b.id, doc.key),
-    email: str(b.email).toLowerCase(),
-    username: str(b.username),
-    role: isAccountRole(b.role) ? b.role : DEFAULT_ROLE,
-    createdAt: num(b.createdAt),
-    lastSignInAt: num(b.lastSignInAt),
-    updatedAt: num(b.updatedAt),
+  return {
+    userId: str(b.user_id, doc.key),
+    roleId: isRoleId(b.role_id) ? b.role_id : DEFAULT_ROLE,
+    setBy: str(b.set_by),
+    setAt: num(b.set_at),
+    createdAt: num(b.created_at),
+    updatedAt: num(b.updated_at),
   };
-  if (typeof b.roleSetAt === "number") out.roleSetAt = b.roleSetAt;
-  if (typeof b.roleSetBy === "string") out.roleSetBy = b.roleSetBy;
-  return out;
 }
 
 export async function getAccountRecord(userId: string): Promise<AccountRecord | null> {
   if (!USER_ID.test(userId)) return null;
-  await ensureCollection();
+  await ensureReady();
   const doc = await docGet(ACCOUNTS, userId);
   return doc ? toRecord(doc) : null;
 }
 
 /**
- * Called on every successful sign-in: creates the record for a first-timer
- * (role member, or admin when the address is in ACCOUNT_ADMINS) and refreshes
- * email, username and lastSignInAt otherwise. Returns the effective role for
- * the session cookie. Never throws: Anvil trouble is logged and the person
- * signs in with the role the environment alone can vouch for.
+ * The role as assigned now (cached a minute), under the ACCOUNT_ADMINS
+ * override. A role whose row has been removed counts as member. Guards use
+ * this so a change made by an admin applies within a minute, not at the
+ * person's next sign-in. Throws when Anvil cannot be read.
  */
-export async function recordSignIn(identity: { sub: string; email: string; username: string }): Promise<AccountRole> {
-  const email = identity.email.trim().toLowerCase();
-  try {
-    const existing = await getAccountRecord(identity.sub);
-    const now = Date.now();
-    const record: AccountRecord = existing
-      ? { ...existing, email: email || existing.email, username: identity.username || existing.username, lastSignInAt: now, updatedAt: now }
-      : {
-          id: identity.sub,
-          email,
-          username: identity.username,
-          role: isConfiguredAdmin(email) ? "admin" : DEFAULT_ROLE,
-          createdAt: now,
-          lastSignInAt: now,
-          updatedAt: now,
-        };
-    await docPut(ACCOUNTS, identity.sub, { ...record });
-    const role = effectiveRole(record);
-    remember(identity.sub, role);
-    return role;
-  } catch (err) {
-    console.error(`[account] could not record sign-in for ${identity.sub}: ${(err as Error).message}`);
-    return effectiveRole(null, email);
-  }
-}
-
-/**
- * The role as stored now (cached for a minute), under the ACCOUNT_ADMINS
- * override. Guards use this so a change made by an admin applies within a
- * minute, not at the person's next sign-in. Throws when Anvil cannot be read.
- */
-export async function getAccountRole(userId: string, email: string): Promise<AccountRole> {
-  if (isConfiguredAdmin(email)) return "admin";
-  const cached = roleCache.get(userId);
+export async function getAccountRole(userId: string, email: string): Promise<RoleId> {
+  if (isConfiguredAdmin(email)) return ADMIN_ROLE;
+  const cached = roleOfUser.get(userId);
   if (cached && cached.expiresAt > Date.now()) return cached.role;
-  const record = await getAccountRecord(userId);
-  const role = effectiveRole(record, email);
-  remember(userId, role);
+  const [record, roles] = await Promise.all([getAccountRecord(userId), listRoles()]);
+  let role = effectiveRole(record, email);
+  if (!roles.some((r) => r.id === role)) role = DEFAULT_ROLE;
+  rememberRole(userId, role);
   return role;
 }
 
-/** Every account record, most recent sign-in first. */
-export async function listAccounts(): Promise<AccountRecord[]> {
-  await ensureCollection();
-  const docs = await docQuery(ACCOUNTS, null, 5000);
-  return docs.map(toRecord).sort((a, b) => b.lastSignInAt - a.lastSignInAt || a.email.localeCompare(b.email));
+/**
+ * The role for a fresh session cookie. Never throws: when Anvil cannot be
+ * read the person signs in with the role the environment alone can vouch for,
+ * and the error is logged.
+ */
+export async function roleForSignIn(identity: { sub: string; email: string }): Promise<RoleId> {
+  try {
+    return await getAccountRole(identity.sub, identity.email);
+  } catch (err) {
+    console.error(`[account] could not read the role of ${identity.sub} at sign-in: ${(err as Error).message}`);
+    return effectiveRole(null, identity.email);
+  }
 }
 
-/** Sets the stored role on an existing record; null when the person has none yet. */
-export async function setAccountRole(userId: string, role: AccountRole, byUserId: string): Promise<AccountRecord | null> {
+/** Assigns `roleId` to a user, creating or replacing their accounts row. The role must exist. */
+export async function setAccountRole(userId: string, roleId: RoleId, byUserId: string): Promise<AccountRecord> {
   if (!USER_ID.test(userId)) throw new AnvilError("Invalid user id", 400);
+  if (!(await getRole(roleId))) throw new AnvilError(`No role ${JSON.stringify(roleId)}`, 400);
   const existing = await getAccountRecord(userId);
-  if (!existing) return null;
   const now = Date.now();
-  const next: AccountRecord = { ...existing, role, roleSetAt: now, roleSetBy: byUserId, updatedAt: now };
-  await docPut(ACCOUNTS, userId, { ...next });
-  roleCache.delete(userId);
+  const next: AccountRecord = { userId, roleId, setBy: byUserId, setAt: now, createdAt: existing?.createdAt || now, updatedAt: now };
+  await docPut(ACCOUNTS, userId, { user_id: userId, role_id: roleId, set_by: byUserId, set_at: now, created_at: next.createdAt, updated_at: now });
+  roleOfUser.delete(userId);
   return next;
 }
 
-export type RoleChange = { outcome: "updated" | "created" | "unchanged" | "no_account"; record?: AccountRecord };
+export type RoleChange = { outcome: "updated" | "unchanged" | "no_account"; record?: AccountRecord };
 
-/**
- * Assigns a role by email: updates the record when the person has one,
- * otherwise looks the Anvil account up and creates the record, so a role can
- * be set before someone's first sign-in here. `no_account` when Anvil has no
- * user with that address.
- */
-export async function assignRoleByEmail(email: string, role: AccountRole, byUserId: string): Promise<RoleChange> {
+/** Assigns a role to whoever owns `email` in Anvil; `no_account` when nobody does. */
+export async function assignRoleByEmail(email: string, roleId: RoleId, byUserId: string): Promise<RoleChange> {
   const needle = email.trim().toLowerCase();
   if (!needle) return { outcome: "no_account" };
-  await ensureCollection();
-  const docs = await docQuery(ACCOUNTS, { op: "eq", field: "email", value: needle }, 5);
-  let existing: AccountRecord | null = docs.length > 0 ? toRecord(docs[0]) : null;
-  let userId = existing?.id ?? "";
-  if (!existing) {
-    userId = await lookupUserIdByEmail(needle);
-    if (!userId) return { outcome: "no_account" };
-    // The record may exist under an older spelling of the address.
-    existing = await getAccountRecord(userId);
+  const userId = await lookupUserIdByEmail(needle);
+  if (!userId) return { outcome: "no_account" };
+  const existing = await getAccountRecord(userId);
+  if (existing && existing.roleId === roleId) return { outcome: "unchanged", record: existing };
+  return { outcome: "updated", record: await setAccountRole(userId, roleId, byUserId) };
+}
+
+/* ---------------------------------------------------------------------- */
+/* People: members of the account app joined with auth.users               */
+/* ---------------------------------------------------------------------- */
+
+export type Person = {
+  id: string;
+  email: string;
+  username: string;
+  roleId: RoleId;
+  /** Unix ms from auth.users, 0 when unknown. */
+  lastSignedInAt: number;
+  /** Explicitly assigned (an accounts row exists) rather than the default. */
+  assigned: boolean;
+  /** Admin through ACCOUNT_ADMINS whatever the row says. */
+  pinned: boolean;
+};
+
+async function usersById(ids: string[]): Promise<Map<string, { email: string; username: string; lastSignedInAt: number }>> {
+  const out = new Map<string, { email: string; username: string; lastSignedInAt: number }>();
+  for (let i = 0; i < ids.length; i += 100) {
+    const chunk = ids.slice(i, i + 100);
+    const docs = await docQuery("auth.users", { op: "in", field: "id", values: chunk }, chunk.length);
+    for (const d of docs) {
+      const id = str(d.body.id, d.key);
+      out.set(id, { email: str(d.body.email).toLowerCase(), username: str(d.body.username), lastSignedInAt: num(d.body.last_signed_in_on) });
+    }
   }
-  if (existing) {
-    if (existing.role === role) return { outcome: "unchanged", record: existing };
-    const updated = await setAccountRole(existing.id, role, byUserId);
-    return updated ? { outcome: "updated", record: updated } : { outcome: "no_account" };
-  }
-  const now = Date.now();
-  const record: AccountRecord = { id: userId, email: needle, username: "", role, roleSetAt: now, roleSetBy: byUserId, createdAt: now, lastSignInAt: 0, updatedAt: now };
-  await docPut(ACCOUNTS, userId, { ...record });
-  roleCache.delete(userId);
-  return { outcome: "created", record };
+  return out;
+}
+
+/**
+ * Everyone with a Devforge account: members of the account app plus anyone
+ * holding an assigned role, with email and username from auth.users and the
+ * role they effectively hold. Most recent sign-in first.
+ */
+export async function listPeople(): Promise<Person[]> {
+  await ensureReady();
+  const [memberIds, rows] = await Promise.all([listAccountAppMemberIds(), docQuery(ACCOUNTS, null, 10_000)]);
+  const records = new Map(rows.map(toRecord).map((r) => [r.userId, r]));
+  const ids = [...new Set([...memberIds, ...records.keys()])];
+  const users = await usersById(ids);
+  return ids
+    .map((id): Person => {
+      const u = users.get(id);
+      const rec = records.get(id) ?? null;
+      const email = u?.email ?? "";
+      return {
+        id,
+        email,
+        username: u?.username ?? "",
+        roleId: effectiveRole(rec, email),
+        lastSignedInAt: u?.lastSignedInAt ?? 0,
+        assigned: rec !== null,
+        pinned: isConfiguredAdmin(email),
+      };
+    })
+    .sort((a, b) => b.lastSignedInAt - a.lastSignedInAt || a.email.localeCompare(b.email));
 }

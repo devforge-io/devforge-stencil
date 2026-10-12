@@ -35,7 +35,8 @@ const MEMBER_TTL = 6 * 60 * 60 * 1000;
 let appIdCache: { slug: string; id: string; expiresAt: number } | null = null;
 const knownMembers = new Map<string, number>();
 
-async function accountAppId(slug: string): Promise<string> {
+/** Id of the account app (cached an hour). */
+export async function accountAppId(slug: string = accountAppSlug()): Promise<string> {
   if (appIdCache && appIdCache.slug === slug && appIdCache.expiresAt > Date.now()) return appIdCache.id;
   const app = await serviceFetch<{ id?: unknown }>(`/apps/${encodeURIComponent(slug)}`);
   if (typeof app.id !== "string" || !app.id) throw new AnvilError(`Anvil did not return an id for app ${slug}`, 502);
@@ -90,6 +91,15 @@ export async function ensureAccountMember(userId: string, opts: { fresh?: boolea
     console.error(`[account] could not enrol user ${userId} in the Anvil app: ${(err as Error).message}`);
     return "failed";
   }
+}
+
+/** User ids of everyone enrolled in the account app, in no particular order. */
+export async function listAccountAppMemberIds(): Promise<string[]> {
+  const appId = await accountAppId();
+  const rows = await docQuery("auth.app_members", { op: "eq", field: "app_id", value: appId }, 10_000);
+  const ids = new Set<string>();
+  for (const r of rows) if (typeof r.body.user_id === "string" && r.body.user_id) ids.add(r.body.user_id);
+  return [...ids];
 }
 
 /** Test hook: forgets the cached app id and member set. */

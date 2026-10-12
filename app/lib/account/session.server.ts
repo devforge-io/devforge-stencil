@@ -11,26 +11,26 @@
  * `_fr_session` predates the universal login and is kept so existing sessions
  * survive the change.
  *
- * The cookie also carries the person's Devforge role (admin, client or
- * member, see roles.ts) as it was at sign-in. Sessions from before roles
- * existed read as member until the next sign-in.
+ * The cookie also carries the id of the person's Devforge role (roles.ts) as
+ * it was at sign-in. Sessions from before roles existed read as member until
+ * the next sign-in.
  */
 
 import { createCookie, redirect } from "react-router";
 import type { AnvilIdentity, AnvilTokens } from "../feature-requests/anvil.server";
 import { getAccountRole } from "./accounts.server";
 import { SIGN_IN_PATH } from "./paths";
-import { DEFAULT_ROLE, isAccountRole, roleAllows, type AccountRole } from "./roles";
+import { DEFAULT_ROLE, isRoleId, roleAllows, type RoleId } from "./roles";
 
 export type AccountUser = {
   id: string;
   email: string;
   username: string;
   /**
-   * Devforge role as it was at sign-in (roles.ts). A snapshot: pages that gate
-   * on a role use `requireAccountRole`, which checks the stored role live.
+   * Devforge role id as it was at sign-in (roles.ts). A snapshot: pages that
+   * gate on a role use `requireAccountRole`, which checks the stored role live.
    */
-  role: AccountRole;
+  role: RoleId;
   /** Unix ms when the session was created. */
   iat: number;
 };
@@ -88,7 +88,7 @@ export async function getAccountUser(request: Request): Promise<AccountUser | nu
     id: p.id,
     email: typeof p.email === "string" ? p.email : "",
     username: typeof p.username === "string" ? p.username : "",
-    role: isAccountRole(p.role) ? p.role : DEFAULT_ROLE,
+    role: isRoleId(p.role) ? p.role : DEFAULT_ROLE,
     iat: p.iat,
   };
 }
@@ -107,7 +107,7 @@ export async function requireAccountUser(request: Request, signInPath: string = 
  * within a minute rather than at the next sign-in. Falls back to the cookie's
  * snapshot when the store cannot be read (logged).
  */
-export async function currentRole(user: AccountUser): Promise<AccountRole> {
+export async function currentRole(user: AccountUser): Promise<RoleId> {
   try {
     return await getAccountRole(user.id, user.email);
   } catch (err) {
@@ -121,7 +121,7 @@ export async function currentRole(user: AccountUser): Promise<AccountRole> {
  * current role, or a 403 when that role is not in `allowed`. Admins always
  * pass. Anonymous visitors are sent to sign in first, like requireAccountUser.
  */
-export async function requireAccountRole(request: Request, allowed: readonly AccountRole[], signInPath: string = SIGN_IN_PATH): Promise<AccountUser> {
+export async function requireAccountRole(request: Request, allowed: readonly RoleId[], signInPath: string = SIGN_IN_PATH): Promise<AccountUser> {
   const user = await requireAccountUser(request, signInPath);
   const role = await currentRole(user);
   if (!roleAllows(role, allowed)) {
@@ -131,7 +131,7 @@ export async function requireAccountRole(request: Request, allowed: readonly Acc
 }
 
 /** Headers that set the session for a freshly authenticated identity (and clear the legacy-path cookie). */
-export async function accountSignInHeaders(identity: AnvilIdentity, tokens: AnvilTokens, role: AccountRole = DEFAULT_ROLE): Promise<Headers> {
+export async function accountSignInHeaders(identity: AnvilIdentity, tokens: AnvilTokens, role: RoleId = DEFAULT_ROLE): Promise<Headers> {
   const payload: SessionPayload = {
     id: identity.sub,
     email: identity.email || identity.username,

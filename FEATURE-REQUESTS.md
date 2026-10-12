@@ -14,7 +14,7 @@ data live in Anvil DB; this app talks to Anvil over its HTTP API.
 | `ANVIL_DATABASE` | no | Only for a non-default database. On Anvil 0.1.0 naming it also switches the schema context. |
 | `ANVIL_APP` | no | Slug of the Anvil app the Devforge account belongs to (default `devforge`). Account sign-up and code requests name it, and every sign-in enrols the person as a `reader` member of it. |
 | `SESSION_SECRET` | yes | Signs the `_fr_session` account cookie, shared by the site-wide account pages (`/account/*`), the tool and `/project`. |
-| `ACCOUNT_ADMINS` | no | Comma-separated emails that hold the Devforge `admin` role whatever the account store says. Bootstraps `/account/people`, where admins assign `admin`, `client` or `member` to everyone else. |
+| `ACCOUNT_ADMINS` | no | Comma-separated emails that hold the Devforge `admin` role whatever is stored. Bootstraps `/account/people`, where admins assign roles to everyone else and add new ones. |
 | `PUBLIC_ORIGIN` | no | Origin printed in the embed snippets (defaults to the request origin). |
 
 Never commit the key; it belongs in `.env` locally and in the deployment's environment.
@@ -256,7 +256,7 @@ resolves for app-written data.
 | `/api/projects/:id/uploads` | POST (CORS, bearer token): upload one attachment ahead of a submission. |
 | `/api/attachments/:aid` | GET streams the file; DELETE removes a pending upload (uploader only). |
 | `/api/auth` | Widget sign-in (CORS): `intent` otp-request (registers unknown addresses first) or otp-verify; returns the bearer token. |
-| `/account/people` | Admins only: every Devforge account record with its role (`admin`, `client`, `member`), a form per row to change it and one to assign a role by email. Roles are Devforge's own (`app/lib/account/roles.ts`), stored in `app_devforge.accounts` (`accounts.server.ts`), not Anvil's server roles or app privileges. A record is written on every sign-in; the session cookie carries a snapshot and `requireAccountRole()` checks the stored role live (cached a minute). Nobody can change their own role; `ACCOUNT_ADMINS` addresses are always admin. |
+| `/account/people` | Admins only: everyone with a Devforge account (members of the account app plus anyone holding an assigned role) with the role they hold, a select per row to change it, a form to assign a role by email and one to add a role. Roles are Devforge's own, not Anvil's server roles or app privileges: rows in `app_devforge.roles` (key = role id, three built-ins `admin`, `client`, `member` seeded on first use, `app/lib/account/roles.ts`); an assignment is a row in `app_devforge.accounts` (key = user id, body `user_id`, `role_id`, `set_by`, `set_at`, timestamps), no row means `member`. Nothing about the person is copied: email, username and last sign-in come from `auth.users` at read time (`accounts.server.ts`). Sign-in only reads the role; the session cookie carries the id as a snapshot and `requireAccountRole()` checks the assigned role live (cached a minute). Nobody can change their own role; `ACCOUNT_ADMINS` addresses are always admin. |
 | `/project`, `/project/:id` | Owner self-serve area: signs in through `/account/sign-in` (returns to `/project`), then every project whose `ownerId` matches the account. Same dashboard as the tools area (shared component). |
 | `GET /api/projects/:id/board?voter=` | Public JSON: project info + visible requests. |
 | `POST /api/projects/:id/requests` | Submit `{title, details, email, voter, website}`; `website` is a honeypot. |
