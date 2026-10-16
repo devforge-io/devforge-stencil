@@ -248,7 +248,7 @@ export default function AuditReportView({ report }: { report: AuditReport }) {
   ];
 
   return (
-    <div className="mx-auto w-full max-w-5xl print:max-w-none">
+    <div className="mx-auto w-full max-w-6xl print:max-w-none">
       {/* ---------------------------------------------------------------- Hero */}
       <section
         className={twMerge(CARD, "p-6 sm:p-8")}
